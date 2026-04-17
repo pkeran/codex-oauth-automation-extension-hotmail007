@@ -55,7 +55,6 @@ test('step 8 submits login verification directly without replaying step 7', asyn
     reuseOrCreateTab: async () => {},
     setState: async () => {},
     setStepStatus: async () => {},
-    shouldSkipLoginVerificationForCpaCallback: () => false,
     shouldUseCustomRegistrationEmail: () => false,
     sleepWithStop: async (ms) => {
       calls.sleep.push(ms);
@@ -123,7 +122,6 @@ test('step 8 disables resend interval for 2925 mailbox polling', async () => {
     reuseOrCreateTab: async () => {},
     setState: async () => {},
     setStepStatus: async () => {},
-    shouldSkipLoginVerificationForCpaCallback: () => false,
     shouldUseCustomRegistrationEmail: () => false,
     sleepWithStop: async () => {},
     STANDARD_MAIL_VERIFICATION_RESEND_INTERVAL_MS: 25000,

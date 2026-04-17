@@ -66,8 +66,6 @@ const rowVpsPassword = document.getElementById('row-vps-password');
 const inputVpsPassword = document.getElementById('input-vps-password');
 const rowLocalCpaStep9Mode = document.getElementById('row-local-cpa-step9-mode');
 const localCpaStep9ModeButtons = Array.from(document.querySelectorAll('[data-local-cpa-step9-mode]'));
-const rowCpaCallbackMode = document.getElementById('row-cpa-callback-mode');
-const cpaCallbackModeButtons = Array.from(document.querySelectorAll('[data-cpa-callback-mode]'));
 const rowSub2ApiUrl = document.getElementById('row-sub2api-url');
 const inputSub2ApiUrl = document.getElementById('input-sub2api-url');
 const rowSub2ApiEmail = document.getElementById('row-sub2api-email');
@@ -204,7 +202,6 @@ const VERIFICATION_RESEND_COUNT_MIN = 0;
 const VERIFICATION_RESEND_COUNT_MAX = 20;
 const DEFAULT_VERIFICATION_RESEND_COUNT = 4;
 const DEFAULT_LOCAL_CPA_STEP9_MODE = 'submit';
-const DEFAULT_CPA_CALLBACK_MODE = 'step9';
 const MAIL_2925_MODE_PROVIDE = 'provide';
 const MAIL_2925_MODE_RECEIVE = 'receive';
 const DEFAULT_MAIL_2925_MODE = MAIL_2925_MODE_PROVIDE;
@@ -1305,7 +1302,6 @@ function collectSettingsPayload() {
     vpsUrl: inputVpsUrl.value.trim(),
     vpsPassword: inputVpsPassword.value,
     localCpaStep9Mode: getSelectedLocalCpaStep9Mode(),
-    cpaCallbackMode: getSelectedCpaCallbackMode(),
     sub2apiUrl: inputSub2ApiUrl.value.trim(),
     sub2apiEmail: inputSub2ApiEmail.value.trim(),
     sub2apiPassword: inputSub2ApiPassword.value,
@@ -1352,17 +1348,6 @@ function normalizeLocalCpaStep9Mode(value = '') {
   return String(value || '').trim().toLowerCase() === 'bypass'
     ? 'bypass'
     : DEFAULT_LOCAL_CPA_STEP9_MODE;
-}
-
-function normalizeCpaCallbackMode(value = '') {
-  const normalized = String(value || '').trim().toLowerCase();
-  if (normalized === 'step7' || normalized === 'step6') {
-    return 'step7';
-  }
-  if (normalized === 'step9' || normalized === 'step8') {
-    return 'step9';
-  }
-  return DEFAULT_CPA_CALLBACK_MODE;
 }
 
 function normalizeMail2925Mode(value = '') {
@@ -1413,20 +1398,6 @@ function setLocalCpaStep9Mode(mode) {
   const resolvedMode = normalizeLocalCpaStep9Mode(mode);
   localCpaStep9ModeButtons.forEach((button) => {
     const active = button.dataset.localCpaStep9Mode === resolvedMode;
-    button.classList.toggle('is-active', active);
-    button.setAttribute('aria-pressed', String(active));
-  });
-}
-
-function getSelectedCpaCallbackMode() {
-  const activeButton = cpaCallbackModeButtons.find((button) => button.classList.contains('is-active'));
-  return normalizeCpaCallbackMode(activeButton?.dataset.cpaCallbackMode);
-}
-
-function setCpaCallbackMode(mode) {
-  const resolvedMode = normalizeCpaCallbackMode(mode);
-  cpaCallbackModeButtons.forEach((button) => {
-    const active = button.dataset.cpaCallbackMode === resolvedMode;
     button.classList.toggle('is-active', active);
     button.setAttribute('aria-pressed', String(active));
   });
@@ -1700,7 +1671,6 @@ function applySettingsState(state) {
   inputVpsUrl.value = state?.vpsUrl || '';
   inputVpsPassword.value = state?.vpsPassword || '';
   setLocalCpaStep9Mode(state?.localCpaStep9Mode);
-  setCpaCallbackMode(state?.cpaCallbackMode);
   selectPanelMode.value = state?.panelMode || 'cpa';
   inputSub2ApiUrl.value = state?.sub2apiUrl || '';
   inputSub2ApiEmail.value = state?.sub2apiEmail || '';
@@ -2496,7 +2466,6 @@ function updatePanelModeUI() {
   rowVpsUrl.style.display = useSub2Api ? 'none' : '';
   rowVpsPassword.style.display = useSub2Api ? 'none' : '';
   rowLocalCpaStep9Mode.style.display = useSub2Api ? 'none' : '';
-  rowCpaCallbackMode.style.display = useSub2Api ? 'none' : '';
   rowSub2ApiUrl.style.display = useSub2Api ? '' : 'none';
   rowSub2ApiEmail.style.display = useSub2Api ? '' : 'none';
   rowSub2ApiPassword.style.display = useSub2Api ? '' : 'none';
@@ -3238,18 +3207,6 @@ localCpaStep9ModeButtons.forEach((button) => {
       return;
     }
     setLocalCpaStep9Mode(nextMode);
-    markSettingsDirty(true);
-    saveSettings({ silent: true }).catch(() => { });
-  });
-});
-
-cpaCallbackModeButtons.forEach((button) => {
-  button.addEventListener('click', () => {
-    const nextMode = button.dataset.cpaCallbackMode;
-    if (getSelectedCpaCallbackMode() === normalizeCpaCallbackMode(nextMode)) {
-      return;
-    }
-    setCpaCallbackMode(nextMode);
     markSettingsDirty(true);
     saveSettings({ silent: true }).catch(() => { });
   });
@@ -4013,9 +3970,6 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       if (message.payload.localCpaStep9Mode !== undefined) {
         setLocalCpaStep9Mode(message.payload.localCpaStep9Mode);
       }
-      if (message.payload.cpaCallbackMode !== undefined) {
-        setCpaCallbackMode(message.payload.cpaCallbackMode);
-      }
       if (message.payload.oauthUrl !== undefined) {
         displayOauthUrl.textContent = message.payload.oauthUrl || '等待中...';
         displayOauthUrl.classList.toggle('has-value', Boolean(message.payload.oauthUrl));
@@ -4207,7 +4161,6 @@ initHotmailListExpandedState();
 updateSaveButtonState();
 updateConfigMenuControls();
 setLocalCpaStep9Mode(DEFAULT_LOCAL_CPA_STEP9_MODE);
-setCpaCallbackMode(DEFAULT_CPA_CALLBACK_MODE);
 setMail2925Mode(DEFAULT_MAIL_2925_MODE);
 initializeReleaseInfo().catch((err) => {
   console.error('Failed to initialize release info:', err);

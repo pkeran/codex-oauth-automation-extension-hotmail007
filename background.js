@@ -158,7 +158,6 @@ const DEFAULT_VERIFICATION_RESEND_COUNT = 4;
 const LEGACY_AUTO_STEP_DELAY_KEYS = ['autoStepRandomDelayMinSeconds', 'autoStepRandomDelayMaxSeconds'];
 const LEGACY_VERIFICATION_RESEND_COUNT_KEYS = ['signupVerificationResendCount', 'loginVerificationResendCount'];
 const DEFAULT_LOCAL_CPA_STEP9_MODE = 'submit';
-const DEFAULT_CPA_CALLBACK_MODE = 'step9';
 const MAIL_2925_MODE_PROVIDE = 'provide';
 const MAIL_2925_MODE_RECEIVE = 'receive';
 const DEFAULT_MAIL_2925_MODE = MAIL_2925_MODE_PROVIDE;
@@ -212,7 +211,6 @@ const PERSISTED_SETTING_DEFAULTS = {
   vpsUrl: '',
   vpsPassword: '',
   localCpaStep9Mode: DEFAULT_LOCAL_CPA_STEP9_MODE,
-  cpaCallbackMode: DEFAULT_CPA_CALLBACK_MODE,
   sub2apiUrl: DEFAULT_SUB2API_URL,
   sub2apiEmail: '',
   sub2apiPassword: '',
@@ -688,17 +686,6 @@ function normalizeLocalCpaStep9Mode(value = '') {
     : DEFAULT_LOCAL_CPA_STEP9_MODE;
 }
 
-function normalizeCpaCallbackMode(value = '') {
-  const normalized = String(value || '').trim().toLowerCase();
-  if (normalized === 'step7' || normalized === 'step6') {
-    return 'step7';
-  }
-  if (normalized === 'step9' || normalized === 'step8') {
-    return 'step9';
-  }
-  return DEFAULT_CPA_CALLBACK_MODE;
-}
-
 function normalizeCloudflareDomain(rawValue = '') {
   let value = String(rawValue || '').trim().toLowerCase();
   if (!value) return '';
@@ -833,8 +820,6 @@ function normalizePersistentSettingValue(key, value) {
       return String(value || '');
     case 'localCpaStep9Mode':
       return normalizeLocalCpaStep9Mode(value);
-    case 'cpaCallbackMode':
-      return normalizeCpaCallbackMode(value);
     case 'sub2apiUrl':
       return String(value || '').trim();
     case 'sub2apiEmail':
@@ -3585,14 +3570,6 @@ function shouldBypassStep9ForLocalCpa(state) {
     && isLocalCpaUrl(state?.vpsUrl);
 }
 
-function shouldSkipLoginVerificationForCpaCallback(state) {
-  if (typeof navigationUtils !== 'undefined' && navigationUtils?.shouldSkipLoginVerificationForCpaCallback) {
-    return navigationUtils.shouldSkipLoginVerificationForCpaCallback(state);
-  }
-  return getPanelMode(state) === 'cpa'
-    && normalizeCpaCallbackMode(state?.cpaCallbackMode) === 'step7';
-}
-
 function matchesSourceUrlFamily(source, candidateUrl, referenceUrl) {
   if (typeof navigationUtils !== 'undefined' && navigationUtils?.matchesSourceUrlFamily) {
     return navigationUtils.matchesSourceUrlFamily(source, candidateUrl, referenceUrl);
@@ -3819,7 +3796,6 @@ function isRetryableContentScriptTransportError(error) {
 
 const navigationUtils = self.MultiPageBackgroundNavigationUtils?.createNavigationUtils({
   DEFAULT_SUB2API_URL,
-  normalizeCpaCallbackMode,
   normalizeLocalCpaStep9Mode,
 });
 
@@ -5501,10 +5477,6 @@ async function runAutoSequenceFromStep(startStep, context = {}) {
     try {
       await executeStepAndWait(step, AUTO_STEP_DELAYS[step]);
       const latestState = await getState();
-      if (step === FINAL_OAUTH_CHAIN_START_STEP && shouldSkipLoginVerificationForCpaCallback(latestState)) {
-        step = 9;
-        continue;
-      }
       step += 1;
     } catch (err) {
       if (isStopError(err)) {
@@ -5816,8 +5788,6 @@ const step7Executor = self.MultiPageBackgroundStep7?.createStep7Executor({
   refreshOAuthUrlBeforeStep6,
   reuseOrCreateTab,
   sendToContentScriptResilient,
-  shouldSkipLoginVerificationForCpaCallback,
-  skipLoginVerificationStepsForCpaCallback,
   startOAuthFlowTimeoutWindow,
   STEP6_MAX_ATTEMPTS,
   throwIfStopped,
@@ -5843,7 +5813,6 @@ const step8Executor = self.MultiPageBackgroundStep8?.createStep8Executor({
   reuseOrCreateTab,
   setState,
   setStepStatus,
-  shouldSkipLoginVerificationForCpaCallback,
   shouldUseCustomRegistrationEmail,
   sleepWithStop,
   STANDARD_MAIL_VERIFICATION_RESEND_INTERVAL_MS,
@@ -6464,21 +6433,6 @@ async function ensureStep8VerificationPageReady(options = {}) {
   const stateLabel = getLoginAuthStateLabel(pageState.state);
   const urlPart = pageState.url ? ` URL: ${pageState.url}` : '';
   throw new Error(`当前未进入登录验证码页面，请先重新完成步骤 7。当前状态：${stateLabel}.${urlPart}`.trim());
-}
-
-async function skipLoginVerificationStepsForCpaCallback() {
-  await setState({
-    lastLoginCode: null,
-    loginVerificationRequestedAt: null,
-    oauthFlowDeadlineAt: null,
-  });
-  await setStepStatus(7, 'skipped');
-  await addLog('步骤 7：当前已选择“第七步回调”，直接跳过步骤 7、8。', 'warn');
-  const latestState = await getState();
-  if (!isStepDoneStatus(latestState.stepStatuses?.[8])) {
-    await setStepStatus(8, 'skipped');
-    await addLog('步骤 8：当前已选择“第七步回调”，本轮无需获取登录验证码。', 'warn');
-  }
 }
 
 async function executeStep6() {

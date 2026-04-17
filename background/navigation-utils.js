@@ -4,7 +4,6 @@
   function createNavigationUtils(deps = {}) {
     const {
       DEFAULT_SUB2API_URL,
-      normalizeCpaCallbackMode,
       normalizeLocalCpaStep9Mode,
     } = deps;
 
@@ -90,11 +89,6 @@
         && isLocalCpaUrl(state?.vpsUrl);
     }
 
-    function shouldSkipLoginVerificationForCpaCallback(state) {
-      return getPanelMode(state) === 'cpa'
-        && normalizeCpaCallbackMode(state?.cpaCallbackMode) === 'step7';
-    }
-
     function matchesSourceUrlFamily(source, candidateUrl, referenceUrl) {
       const candidate = parseUrlSafely(candidateUrl);
       if (!candidate) return false;
@@ -169,7 +163,6 @@
       normalizeSub2ApiUrl,
       parseUrlSafely,
       shouldBypassStep9ForLocalCpa,
-      shouldSkipLoginVerificationForCpaCallback,
     };
   }
 

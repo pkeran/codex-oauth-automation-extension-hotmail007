@@ -22,7 +22,6 @@
       reuseOrCreateTab,
       setState,
       setStepStatus,
-      shouldSkipLoginVerificationForCpaCallback,
       shouldUseCustomRegistrationEmail,
       sleepWithStop,
       STANDARD_MAIL_VERIFICATION_RESEND_INTERVAL_MS,
@@ -127,17 +126,6 @@
     }
 
     async function executeStep8(state) {
-      if (shouldSkipLoginVerificationForCpaCallback(state)) {
-        await setState({
-          lastLoginCode: null,
-          loginVerificationRequestedAt: null,
-          oauthFlowDeadlineAt: null,
-        });
-        await setStepStatus(8, 'skipped');
-        await addLog('步骤 8：当前已选择“第七步回调”，本轮无需获取登录验证码。', 'warn');
-        return;
-      }
-
       let currentState = state;
       let mailPollingAttempt = 1;
       let lastMailPollingError = null;

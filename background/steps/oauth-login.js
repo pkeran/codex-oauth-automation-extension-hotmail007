@@ -14,18 +14,12 @@
       refreshOAuthUrlBeforeStep6,
       reuseOrCreateTab,
       sendToContentScriptResilient,
-      shouldSkipLoginVerificationForCpaCallback,
-      skipLoginVerificationStepsForCpaCallback,
       startOAuthFlowTimeoutWindow,
       STEP6_MAX_ATTEMPTS,
       throwIfStopped,
     } = deps;
 
     async function executeStep7(state) {
-      if (shouldSkipLoginVerificationForCpaCallback(state)) {
-        await skipLoginVerificationStepsForCpaCallback();
-        return;
-      }
       if (!state.email) {
         throw new Error('缺少邮箱地址，请先完成步骤 3。');
       }

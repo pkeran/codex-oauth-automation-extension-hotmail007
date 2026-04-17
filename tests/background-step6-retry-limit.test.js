@@ -61,8 +61,6 @@ test('step 7 retries up to configured limit and then fails', async () => {
         message: '当前仍停留在邮箱页。',
       };
     },
-    shouldSkipLoginVerificationForCpaCallback: () => false,
-    skipLoginVerificationStepsForCpaCallback: async () => {},
     STEP6_MAX_ATTEMPTS: 3,
     throwIfStopped: () => {},
   });
@@ -105,8 +103,6 @@ test('step 7 starts a new oauth timeout window for each refreshed oauth url', as
       step6Outcome: 'success',
       usedTimeoutMs: options.timeoutMs,
     }),
-    shouldSkipLoginVerificationForCpaCallback: () => false,
-    skipLoginVerificationStepsForCpaCallback: async () => {},
     startOAuthFlowTimeoutWindow: async (payload) => {
       events.startedWindows.push(payload);
     },

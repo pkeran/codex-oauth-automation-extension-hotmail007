@@ -143,9 +143,6 @@ async function getTabId() {
   return 1;
 }
 
-function shouldSkipLoginVerificationForCpaCallback() {
-  return false;
-}
 
 async function invalidateDownstreamAfterStepRestart(step, options = {}) {
   events.invalidations.push({ step, options });
