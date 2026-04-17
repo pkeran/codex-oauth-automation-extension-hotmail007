@@ -4385,10 +4385,16 @@ async function skipStep(step) {
 
   if (step === 1) {
     const latestState = await getState();
-    const step2Status = latestState.stepStatuses?.[2];
-    if (!isStepDoneStatus(step2Status) && step2Status !== 'running') {
-      await setStepStatus(2, 'skipped');
-      await addLog('步骤 1 已跳过，步骤 2 也已同时跳过。', 'warn');
+    const skippedSteps = [];
+    for (let linkedStep = 2; linkedStep <= 5; linkedStep += 1) {
+      const linkedStatus = latestState.stepStatuses?.[linkedStep];
+      if (!isStepDoneStatus(linkedStatus) && linkedStatus !== 'running') {
+        await setStepStatus(linkedStep, 'skipped');
+        skippedSteps.push(linkedStep);
+      }
+    }
+    if (skippedSteps.length) {
+      await addLog(`步骤 1 已跳过，步骤 ${skippedSteps.join('、')} 也已同时跳过。`, 'warn');
     }
   }
 
