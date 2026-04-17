@@ -5062,6 +5062,10 @@ async function runAutoSequenceFromStep(startStep, context = {}) {
       }
       step += 1;
     } catch (err) {
+      if (isStopError(err)) {
+        throw err;
+      }
+
       const restartDecision = await getPostStep6AutoRestartDecision(step, err);
       if (restartDecision.shouldRestart) {
         postStep6RestartCount += 1;

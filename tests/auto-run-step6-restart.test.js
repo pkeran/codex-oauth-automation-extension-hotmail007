@@ -96,6 +96,9 @@ async function getState() {
     mailProvider: '163',
   };
 }
+function isStopError(error) {
+  return (error?.message || String(error || '')) === '流程已被用户停止。';
+}
 function isStepDoneStatus(status) {
   return status === 'completed' || status === 'manual_completed' || status === 'skipped';
 }
@@ -194,4 +197,20 @@ test('auto-run stops restarting once add-phone is detected', async () => {
   assert.equal(result.events.invalidations.length, 0);
   assert.deepStrictEqual(result.events.steps, [6]);
   assert.ok(result.events.logs.some(({ message }) => /进入 add-phone/.test(message)));
+});
+
+test('auto-run stop errors after step 6 are rethrown immediately instead of restarting', async () => {
+  const harness = createHarness({
+    failureStep: 8,
+    failureBudget: 1,
+    failureMessage: '流程已被用户停止。',
+    authState: { state: 'password_page', url: 'https://auth.openai.com/log-in' },
+  });
+
+  const result = await harness.runAndCaptureError();
+
+  assert.equal(result?.error?.message, '流程已被用户停止。');
+  assert.equal(result.events.invalidations.length, 0);
+  assert.deepStrictEqual(result.events.steps, [6, 7, 8]);
+  assert.ok(!result.events.logs.some(({ message }) => /回到步骤 6 重新开始授权流程/.test(message)));
 });
