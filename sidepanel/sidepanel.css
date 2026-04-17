@@ -97,8 +97,14 @@ header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  position: sticky;
+  top: 0;
+  z-index: 200;
   margin-bottom: 14px;
+  padding-top: 4px;
   padding-bottom: 12px;
+  background: color-mix(in srgb, var(--bg-base) 94%, transparent);
+  backdrop-filter: blur(8px);
   border-bottom: 1px solid var(--border-subtle);
 }
 
