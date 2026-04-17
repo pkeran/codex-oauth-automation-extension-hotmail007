@@ -80,6 +80,36 @@
       };
     }
 
+    async function waitForRetryPageRecoveryAfterClick(options = {}) {
+      const {
+        pathPatterns = [],
+        pollIntervalMs = 250,
+        settleAfterClickMs = 3000,
+      } = options;
+      const startedAt = Date.now();
+
+      while (Date.now() - startedAt < settleAfterClickMs) {
+        if (typeof throwIfStopped === 'function') {
+          throwIfStopped();
+        }
+
+        const retryState = getAuthTimeoutErrorPageState({ pathPatterns });
+        if (!retryState) {
+          return {
+            recovered: true,
+            elapsedMs: Date.now() - startedAt,
+          };
+        }
+
+        await sleep(pollIntervalMs);
+      }
+
+      return {
+        recovered: false,
+        elapsedMs: Date.now() - startedAt,
+      };
+    }
+
     async function recoverAuthRetryPage(options = {}) {
       const {
         logLabel = '',
@@ -87,7 +117,7 @@
         pollIntervalMs = 250,
         step = null,
         timeoutMs = 12000,
-        waitAfterClickMs = 1200,
+        waitAfterClickMs = 3000,
       } = options;
       const start = Date.now();
       let clickCount = 0;
@@ -116,7 +146,18 @@
             await humanPause(300, 800);
           }
           simulateClick(retryState.retryButton);
-          await sleep(waitAfterClickMs);
+          const recoveryResult = await waitForRetryPageRecoveryAfterClick({
+            pathPatterns,
+            pollIntervalMs,
+            settleAfterClickMs: waitAfterClickMs,
+          });
+          if (recoveryResult.recovered) {
+            return {
+              recovered: true,
+              clickCount,
+              url: location.href,
+            };
+          }
           continue;
         }
 

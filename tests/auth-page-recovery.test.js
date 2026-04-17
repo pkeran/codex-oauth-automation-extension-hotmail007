@@ -44,10 +44,19 @@ function createRecoveryApi(state) {
     log: () => {},
     simulateClick: () => {
       state.clickCount += 1;
+      if (typeof state.onClick === 'function') {
+        state.onClick(state);
+        return;
+      }
       state.retryVisible = false;
       state.pageText = 'Recovered login form';
     },
-    sleep: async () => {},
+    sleep: async (ms = 0) => {
+      await new Promise((resolve) => setTimeout(resolve, Math.max(1, Math.min(5, ms))));
+      if (typeof state.onSleep === 'function') {
+        state.onSleep(state);
+      }
+    },
     throwIfStopped: () => {},
     titlePattern: /something went wrong/i,
   });
@@ -92,5 +101,37 @@ test('auth page recovery clicks retry and waits until page recovers', async () =
     url: 'https://auth.openai.com/log-in',
   });
   assert.equal(state.clickCount, 1);
+  assert.equal(state.retryVisible, false);
+});
+
+test('auth page recovery can click retry twice before page recovers', async () => {
+  const state = {
+    clickCount: 0,
+    pageText: 'Something went wrong. Operation timed out.',
+    retryVisible: true,
+    onClick(currentState) {
+      if (currentState.clickCount >= 2) {
+        currentState.retryVisible = false;
+        currentState.pageText = 'Recovered login form';
+      }
+    },
+  };
+  const api = createRecoveryApi(state);
+
+  const result = await api.recoverAuthRetryPage({
+    logLabel: '步骤 8：检测到重试页，正在点击“重试”恢复',
+    pathPatterns: [/\/log-in(?:[/?#]|$)/i],
+    step: 8,
+    timeoutMs: 200,
+    waitAfterClickMs: 10,
+    pollIntervalMs: 1,
+  });
+
+  assert.deepStrictEqual(result, {
+    recovered: true,
+    clickCount: 2,
+    url: 'https://auth.openai.com/log-in',
+  });
+  assert.equal(state.clickCount, 2);
   assert.equal(state.retryVisible, false);
 });

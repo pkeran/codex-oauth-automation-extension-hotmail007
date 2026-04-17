@@ -955,7 +955,7 @@ async function recoverCurrentAuthRetryPage(payload = {}) {
     logLabel = '',
     step = null,
     timeoutMs = 12000,
-    waitAfterClickMs = 1200,
+    waitAfterClickMs = 3000,
   } = payload;
   const pathPatterns = getAuthRetryPathPatternsForFlow(flow);
   if (authPageRecovery?.recoverAuthRetryPage) {
@@ -986,7 +986,18 @@ async function recoverCurrentAuthRetryPage(payload = {}) {
       log(`${logLabel || `步骤 ${step || '?'}：检测到重试页，正在点击“重试”恢复`}（第 ${clickCount} 次）...`, 'warn');
       await humanPause(300, 800);
       simulateClick(retryState.retryButton);
-      await sleep(waitAfterClickMs);
+      const settleStart = Date.now();
+      while (Date.now() - settleStart < waitAfterClickMs) {
+        throwIfStopped();
+        if (!getCurrentAuthRetryPageState(flow)) {
+          return {
+            recovered: true,
+            clickCount,
+            url: location.href,
+          };
+        }
+        await sleep(250);
+      }
       continue;
     }
 
