@@ -232,3 +232,121 @@ test('verification flow refreshes Hotmail signup filter timestamp after step 4 r
   assert.equal(pollPayloads[0].filterAfterTimestamp, 85000);
   assert.equal(pollPayloads[1].filterAfterTimestamp, 185000);
 });
+
+test('verification flow uses configured signup resend count for step 4', async () => {
+  const resendSteps = [];
+  let pollCalls = 0;
+
+  const helpers = api.createVerificationFlowHelpers({
+    addLog: async () => {},
+    chrome: { tabs: { update: async () => {} } },
+    CLOUDFLARE_TEMP_EMAIL_PROVIDER: 'cloudflare-temp-email',
+    completeStepFromBackground: async () => {},
+    confirmCustomVerificationStepBypassRequest: async () => ({ confirmed: true }),
+    getHotmailVerificationPollConfig: () => ({}),
+    getHotmailVerificationRequestTimestamp: () => 0,
+    getState: async () => ({}),
+    getTabId: async () => 1,
+    HOTMAIL_PROVIDER: 'hotmail-api',
+    isStopError: () => false,
+    LUCKMAIL_PROVIDER: 'luckmail-api',
+    MAIL_2925_VERIFICATION_INTERVAL_MS: 15000,
+    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 15,
+    pollCloudflareTempEmailVerificationCode: async () => ({}),
+    pollHotmailVerificationCode: async () => ({}),
+    pollLuckmailVerificationCode: async () => ({}),
+    sendToContentScript: async (_source, message) => {
+      if (message.type === 'RESEND_VERIFICATION_CODE') {
+        resendSteps.push(message.step);
+      }
+      return {};
+    },
+    sendToMailContentScriptResilient: async () => {
+      pollCalls += 1;
+      return pollCalls === 2
+        ? { code: '654321', emailTimestamp: 123 }
+        : {};
+    },
+    setState: async () => {},
+    setStepStatus: async () => {},
+    sleepWithStop: async () => {},
+    throwIfStopped: () => {},
+    VERIFICATION_POLL_MAX_ROUNDS: 5,
+  });
+
+  await helpers.resolveVerificationStep(
+    4,
+    {
+      email: 'user@example.com',
+      verificationResendCount: 2,
+      lastSignupCode: null,
+    },
+    { provider: 'qq', label: 'QQ 邮箱' },
+    {
+      requestFreshCodeFirst: true,
+      resendIntervalMs: 0,
+    }
+  );
+
+  assert.deepStrictEqual(resendSteps, [4, 4]);
+  assert.equal(pollCalls, 2);
+});
+
+test('verification flow uses configured login resend count for step 8', async () => {
+  const resendSteps = [];
+  let pollCalls = 0;
+
+  const helpers = api.createVerificationFlowHelpers({
+    addLog: async () => {},
+    chrome: { tabs: { update: async () => {} } },
+    CLOUDFLARE_TEMP_EMAIL_PROVIDER: 'cloudflare-temp-email',
+    completeStepFromBackground: async () => {},
+    confirmCustomVerificationStepBypassRequest: async () => ({ confirmed: true }),
+    getHotmailVerificationPollConfig: () => ({}),
+    getHotmailVerificationRequestTimestamp: () => 0,
+    getState: async () => ({}),
+    getTabId: async () => 1,
+    HOTMAIL_PROVIDER: 'hotmail-api',
+    isStopError: () => false,
+    LUCKMAIL_PROVIDER: 'luckmail-api',
+    MAIL_2925_VERIFICATION_INTERVAL_MS: 15000,
+    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 15,
+    pollCloudflareTempEmailVerificationCode: async () => ({}),
+    pollHotmailVerificationCode: async () => ({}),
+    pollLuckmailVerificationCode: async () => ({}),
+    sendToContentScript: async (_source, message) => {
+      if (message.type === 'RESEND_VERIFICATION_CODE') {
+        resendSteps.push(message.step);
+      }
+      return {};
+    },
+    sendToMailContentScriptResilient: async () => {
+      pollCalls += 1;
+      return pollCalls === 3
+        ? { code: '654321', emailTimestamp: 123 }
+        : {};
+    },
+    setState: async () => {},
+    setStepStatus: async () => {},
+    sleepWithStop: async () => {},
+    throwIfStopped: () => {},
+    VERIFICATION_POLL_MAX_ROUNDS: 5,
+  });
+
+  await helpers.resolveVerificationStep(
+    8,
+    {
+      email: 'user@example.com',
+      verificationResendCount: 2,
+      lastLoginCode: null,
+    },
+    { provider: 'qq', label: 'QQ 邮箱' },
+    {
+      requestFreshCodeFirst: false,
+      resendIntervalMs: 0,
+    }
+  );
+
+  assert.deepStrictEqual(resendSteps, [8, 8]);
+  assert.equal(pollCalls, 3);
+});

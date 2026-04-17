@@ -1259,6 +1259,11 @@ header {
   margin-left: auto;
 }
 
+.setting-inline-right {
+  min-width: 196px;
+  justify-content: flex-end;
+}
+
 .toggle-switch {
   position: relative;
   display: inline-flex;

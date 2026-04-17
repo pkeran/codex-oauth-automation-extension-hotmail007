@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 
 <head>
@@ -244,25 +244,6 @@
         </div>
       </div>
       <div class="data-row">
-        <span class="data-label">自动重试</span>
-        <div class="data-inline fallback-inline">
-          <label class="toggle-switch" for="input-auto-skip-failures">
-            <input type="checkbox" id="input-auto-skip-failures" />
-            <span class="toggle-switch-track" aria-hidden="true">
-              <span class="toggle-switch-thumb"></span>
-            </span>
-          </label>
-          <div class="timing-field timing-field-labeled timing-field-right fallback-thread-interval">
-            <span class="auto-delay-caption">线程间隔</span>
-            <div class="auto-delay-controls">
-              <input type="number" id="input-auto-skip-failures-thread-interval-minutes" class="data-input auto-delay-input" value="0"
-                min="0" max="1440" step="1" title="兜底模式下，两轮线程之间的等待分钟数" />
-              <span class="data-unit">分钟</span>
-            </div>
-          </div>
-        </div>
-      </div>
-      <div class="data-row">
         <span class="data-label">延迟</span>
         <div class="data-inline auto-delay-inline">
           <div class="auto-delay-side auto-delay-side-left">
@@ -289,15 +270,41 @@
         </div>
       </div>
       <div class="data-row">
+        <span class="data-label">自动重试</span>
+        <div class="data-inline fallback-inline">
+          <label class="toggle-switch" for="input-auto-skip-failures">
+            <input type="checkbox" id="input-auto-skip-failures" />
+            <span class="toggle-switch-track" aria-hidden="true">
+              <span class="toggle-switch-thumb"></span>
+            </span>
+          </label>
+          <div class="timing-field timing-field-labeled timing-field-right fallback-thread-interval">
+            <span class="auto-delay-caption">线程间隔</span>
+            <div class="auto-delay-controls">
+              <input type="number" id="input-auto-skip-failures-thread-interval-minutes" class="data-input auto-delay-input" value="0"
+                min="0" max="1440" step="1" title="兜底模式下，两轮线程之间的等待分钟数" />
+              <span class="data-unit">分钟</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="data-row">
         <span class="data-label">本地留档</span>
-        <div class="data-inline">
+        <div class="data-inline auto-delay-inline">
           <label class="toggle-switch" for="input-account-run-history-text-enabled">
             <input type="checkbox" id="input-account-run-history-text-enabled" />
             <span class="toggle-switch-track" aria-hidden="true">
               <span class="toggle-switch-thumb"></span>
             </span>
           </label>
-          <span class="data-value">同步写入账号运行历史 txt</span>
+          <div class="timing-field timing-field-right setting-inline-right">
+            <span class="auto-delay-caption">验证码重发</span>
+            <div class="auto-delay-controls">
+              <input type="number" id="input-verification-resend-count" class="data-input auto-delay-input" value="4"
+                min="0" max="20" step="1" title="自动点击重新发送验证码的次数" />
+              <span class="data-unit">次</span>
+            </div>
+          </div>
         </div>
       </div>
       <div class="data-row" id="row-account-run-history-helper-base-url" style="display:none;">

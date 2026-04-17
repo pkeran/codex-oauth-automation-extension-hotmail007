@@ -153,9 +153,9 @@ const AUTO_STEP_DELAY_MIN_ALLOWED_SECONDS = 0;
 const AUTO_STEP_DELAY_MAX_ALLOWED_SECONDS = 600;
 const VERIFICATION_RESEND_COUNT_MIN = 0;
 const VERIFICATION_RESEND_COUNT_MAX = 20;
-const DEFAULT_SIGNUP_VERIFICATION_RESEND_COUNT = 5;
-const DEFAULT_LOGIN_VERIFICATION_RESEND_COUNT = 4;
+const DEFAULT_VERIFICATION_RESEND_COUNT = 4;
 const LEGACY_AUTO_STEP_DELAY_KEYS = ['autoStepRandomDelayMinSeconds', 'autoStepRandomDelayMaxSeconds'];
+const LEGACY_VERIFICATION_RESEND_COUNT_KEYS = ['signupVerificationResendCount', 'loginVerificationResendCount'];
 const DEFAULT_LOCAL_CPA_STEP9_MODE = 'submit';
 const DEFAULT_CPA_CALLBACK_MODE = 'step9';
 const MAIL_2925_MODE_PROVIDE = 'provide';
@@ -222,8 +222,7 @@ const PERSISTED_SETTING_DEFAULTS = {
   autoRunDelayEnabled: false,
   autoRunDelayMinutes: 30,
   autoStepDelaySeconds: null,
-  signupVerificationResendCount: DEFAULT_SIGNUP_VERIFICATION_RESEND_COUNT,
-  loginVerificationResendCount: DEFAULT_LOGIN_VERIFICATION_RESEND_COUNT,
+  verificationResendCount: DEFAULT_VERIFICATION_RESEND_COUNT,
   mailProvider: '163',
   mail2925Mode: DEFAULT_MAIL_2925_MODE,
   emailGenerator: 'duck',
@@ -804,10 +803,8 @@ function normalizePersistentSettingValue(key, value) {
       return normalizeAutoRunDelayMinutes(value);
     case 'autoStepDelaySeconds':
       return normalizeAutoStepDelaySeconds(value, PERSISTED_SETTING_DEFAULTS.autoStepDelaySeconds);
-    case 'signupVerificationResendCount':
-      return normalizeVerificationResendCount(value, DEFAULT_SIGNUP_VERIFICATION_RESEND_COUNT);
-    case 'loginVerificationResendCount':
-      return normalizeVerificationResendCount(value, DEFAULT_LOGIN_VERIFICATION_RESEND_COUNT);
+    case 'verificationResendCount':
+      return normalizeVerificationResendCount(value, DEFAULT_VERIFICATION_RESEND_COUNT);
     case 'mailProvider':
       return normalizeMailProvider(value);
     case 'mail2925Mode':
@@ -870,6 +867,14 @@ function buildPersistentSettingsPayload(input = {}, options = {}) {
       normalizedInput.autoStepDelaySeconds = legacyAutoStepDelaySeconds;
     }
   }
+  if (normalizedInput.verificationResendCount === undefined) {
+    const legacyVerificationResendCount = normalizedInput.signupVerificationResendCount !== undefined
+      ? normalizedInput.signupVerificationResendCount
+      : normalizedInput.loginVerificationResendCount;
+    if (legacyVerificationResendCount !== undefined) {
+      normalizedInput.verificationResendCount = legacyVerificationResendCount;
+    }
+  }
 
   const payload = {};
   let matchedKeyCount = 0;
@@ -905,7 +910,11 @@ function buildPersistentSettingsPayload(input = {}, options = {}) {
 }
 
 async function getPersistedSettings() {
-  const stored = await chrome.storage.local.get([...PERSISTED_SETTING_KEYS, ...LEGACY_AUTO_STEP_DELAY_KEYS]);
+  const stored = await chrome.storage.local.get([
+    ...PERSISTED_SETTING_KEYS,
+    ...LEGACY_AUTO_STEP_DELAY_KEYS,
+    ...LEGACY_VERIFICATION_RESEND_COUNT_KEYS,
+  ]);
   return buildPersistentSettingsPayload(stored, { fillDefaults: true });
 }
 

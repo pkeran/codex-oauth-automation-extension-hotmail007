@@ -164,6 +164,7 @@ const inputAutoSkipFailuresThreadIntervalMinutes = document.getElementById('inpu
 const inputAutoDelayEnabled = document.getElementById('input-auto-delay-enabled');
 const inputAutoDelayMinutes = document.getElementById('input-auto-delay-minutes');
 const inputAutoStepDelaySeconds = document.getElementById('input-auto-step-delay-seconds');
+const inputVerificationResendCount = document.getElementById('input-verification-resend-count');
 const inputAccountRunHistoryTextEnabled = document.getElementById('input-account-run-history-text-enabled');
 const rowAccountRunHistoryHelperBaseUrl = document.getElementById('row-account-run-history-helper-base-url');
 const inputAccountRunHistoryHelperBaseUrl = document.getElementById('input-account-run-history-helper-base-url');
@@ -193,6 +194,9 @@ const AUTO_FALLBACK_THREAD_INTERVAL_DEFAULT_MINUTES = 0;
 const AUTO_RUN_MAX_RETRIES_PER_ROUND = 3;
 const AUTO_STEP_DELAY_MIN_SECONDS = 0;
 const AUTO_STEP_DELAY_MAX_SECONDS = 600;
+const VERIFICATION_RESEND_COUNT_MIN = 0;
+const VERIFICATION_RESEND_COUNT_MAX = 20;
+const DEFAULT_VERIFICATION_RESEND_COUNT = 4;
 const DEFAULT_LOCAL_CPA_STEP9_MODE = 'submit';
 const DEFAULT_CPA_CALLBACK_MODE = 'step9';
 const MAIL_2925_MODE_PROVIDE = 'provide';
@@ -976,6 +980,23 @@ function normalizeAutoStepDelaySeconds(value) {
   return Math.min(AUTO_STEP_DELAY_MAX_SECONDS, Math.max(AUTO_STEP_DELAY_MIN_SECONDS, Math.floor(numeric)));
 }
 
+function normalizeVerificationResendCount(value, fallback) {
+  const rawValue = String(value ?? '').trim();
+  if (!rawValue) {
+    return fallback;
+  }
+
+  const numeric = Number(rawValue);
+  if (!Number.isFinite(numeric)) {
+    return fallback;
+  }
+
+  return Math.min(
+    VERIFICATION_RESEND_COUNT_MAX,
+    Math.max(VERIFICATION_RESEND_COUNT_MIN, Math.floor(numeric))
+  );
+}
+
 function formatAutoStepDelayInputValue(value) {
   const normalized = normalizeAutoStepDelaySeconds(value);
   return normalized === null ? '' : String(normalized);
@@ -1310,6 +1331,10 @@ function collectSettingsPayload() {
     autoRunDelayEnabled: inputAutoDelayEnabled.checked,
     autoRunDelayMinutes: normalizeAutoDelayMinutes(inputAutoDelayMinutes.value),
     autoStepDelaySeconds: normalizeAutoStepDelaySeconds(inputAutoStepDelaySeconds.value),
+    verificationResendCount: normalizeVerificationResendCount(
+      inputVerificationResendCount?.value,
+      DEFAULT_VERIFICATION_RESEND_COUNT
+    ),
   };
 }
 
@@ -1729,6 +1754,14 @@ function applySettingsState(state) {
   inputAutoDelayEnabled.checked = Boolean(state?.autoRunDelayEnabled);
   inputAutoDelayMinutes.value = String(normalizeAutoDelayMinutes(state?.autoRunDelayMinutes));
   inputAutoStepDelaySeconds.value = formatAutoStepDelayInputValue(state?.autoStepDelaySeconds);
+  if (inputVerificationResendCount) {
+    const restoredVerificationResendCount = state?.verificationResendCount !== undefined
+      ? state.verificationResendCount
+      : (state?.signupVerificationResendCount ?? state?.loginVerificationResendCount);
+    inputVerificationResendCount.value = String(
+      normalizeVerificationResendCount(restoredVerificationResendCount, DEFAULT_VERIFICATION_RESEND_COUNT)
+    );
+  }
   if (state?.autoRunTotalRuns) {
     inputRunCount.value = String(state.autoRunTotalRuns);
   }
@@ -3992,6 +4025,20 @@ inputAutoStepDelaySeconds.addEventListener('blur', () => {
   saveSettings({ silent: true }).catch(() => { });
 });
 
+inputVerificationResendCount?.addEventListener('input', () => {
+  markSettingsDirty(true);
+  scheduleSettingsAutoSave();
+});
+inputVerificationResendCount?.addEventListener('blur', () => {
+  inputVerificationResendCount.value = String(
+    normalizeVerificationResendCount(
+      inputVerificationResendCount.value,
+      DEFAULT_VERIFICATION_RESEND_COUNT
+    )
+  );
+  saveSettings({ silent: true }).catch(() => { });
+});
+
 // ============================================================
 // Listen for Background broadcasts
 // ============================================================
@@ -4191,6 +4238,24 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       }
       if (message.payload.autoStepDelaySeconds !== undefined) {
         inputAutoStepDelaySeconds.value = formatAutoStepDelayInputValue(message.payload.autoStepDelaySeconds);
+      }
+      if (
+        (
+          message.payload.verificationResendCount !== undefined
+          || message.payload.signupVerificationResendCount !== undefined
+          || message.payload.loginVerificationResendCount !== undefined
+        )
+        && inputVerificationResendCount
+      ) {
+        const nextVerificationResendCount = message.payload.verificationResendCount !== undefined
+          ? message.payload.verificationResendCount
+          : (message.payload.signupVerificationResendCount ?? message.payload.loginVerificationResendCount);
+        inputVerificationResendCount.value = String(
+          normalizeVerificationResendCount(
+            nextVerificationResendCount,
+            DEFAULT_VERIFICATION_RESEND_COUNT
+          )
+        );
       }
       break;
     }

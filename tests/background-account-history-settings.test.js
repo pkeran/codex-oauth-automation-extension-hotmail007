@@ -52,6 +52,7 @@ test('background account history settings are normalized independently from hotm
   const bundle = [
     extractFunction('normalizeHotmailLocalBaseUrl'),
     extractFunction('normalizeAccountRunHistoryHelperBaseUrl'),
+    extractFunction('normalizeVerificationResendCount'),
     extractFunction('normalizePersistentSettingValue'),
   ].join('\n');
 
@@ -59,8 +60,11 @@ test('background account history settings are normalized independently from hotm
 const DEFAULT_HOTMAIL_LOCAL_BASE_URL = 'http://127.0.0.1:17373';
 const DEFAULT_ACCOUNT_RUN_HISTORY_HELPER_BASE_URL = DEFAULT_HOTMAIL_LOCAL_BASE_URL;
 const DEFAULT_HOTMAIL_REMOTE_BASE_URL = '';
+const DEFAULT_VERIFICATION_RESEND_COUNT = 4;
 const HOTMAIL_SERVICE_MODE_REMOTE = 'remote';
 const HOTMAIL_SERVICE_MODE_LOCAL = 'local';
+const VERIFICATION_RESEND_COUNT_MIN = 0;
+const VERIFICATION_RESEND_COUNT_MAX = 20;
 const PERSISTED_SETTING_DEFAULTS = {
   autoStepDelaySeconds: null,
   mailProvider: '163',
@@ -95,6 +99,8 @@ return {
   `)();
 
   assert.equal(api.normalizePersistentSettingValue('accountRunHistoryTextEnabled', 1), true);
+  assert.equal(api.normalizePersistentSettingValue('verificationResendCount', '7'), 7);
+  assert.equal(api.normalizePersistentSettingValue('verificationResendCount', '-1'), 0);
   assert.equal(
     api.normalizePersistentSettingValue('accountRunHistoryHelperBaseUrl', 'http://127.0.0.1:17373/append-account-log'),
     'http://127.0.0.1:17373'

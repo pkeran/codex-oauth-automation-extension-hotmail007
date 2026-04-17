@@ -1,4 +1,4 @@
-(function attachBackgroundVerificationFlow(root, factory) {
+﻿(function attachBackgroundVerificationFlow(root, factory) {
   root.MultiPageBackgroundVerificationFlow = factory();
 })(typeof self !== 'undefined' ? self : globalThis, function createBackgroundVerificationFlowModule() {
   function createVerificationFlowHelpers(deps = {}) {
@@ -34,6 +34,52 @@
 
     function getVerificationCodeLabel(step) {
       return step === 4 ? '注册' : '登录';
+    }
+
+    function getVerificationResendStateKey() {
+      return 'verificationResendCount';
+    }
+
+    function normalizeVerificationResendCount(value, fallback = 0) {
+      const numeric = Number(value);
+      if (!Number.isFinite(numeric)) {
+        return Math.max(0, Math.floor(Number(fallback) || 0));
+      }
+
+      return Math.min(20, Math.max(0, Math.floor(numeric)));
+    }
+
+    function getLegacyVerificationResendCountDefault(step, options = {}) {
+      const requestFreshCodeFirst = Boolean(options.requestFreshCodeFirst);
+      const legacyMaxRounds = Math.max(1, Math.floor(Number(VERIFICATION_POLL_MAX_ROUNDS) || 1));
+      if (step === 4 && requestFreshCodeFirst) {
+        return legacyMaxRounds;
+      }
+      return Math.max(0, legacyMaxRounds - 1);
+    }
+
+    function getConfiguredVerificationResendCount(step, state, options = {}) {
+      const stateKey = getVerificationResendStateKey(step);
+      const configuredValue = state?.[stateKey] !== undefined
+        ? state[stateKey]
+        : (state?.signupVerificationResendCount ?? state?.loginVerificationResendCount);
+      return normalizeVerificationResendCount(
+        configuredValue,
+        getLegacyVerificationResendCountDefault(step, options)
+      );
+    }
+
+    function resolveMaxResendRequests(pollOverrides = {}) {
+      if (pollOverrides.maxResendRequests !== undefined) {
+        return normalizeVerificationResendCount(pollOverrides.maxResendRequests, 0);
+      }
+
+      const legacyMaxRounds = Number(pollOverrides.maxRounds);
+      if (Number.isFinite(legacyMaxRounds)) {
+        return Math.max(0, Math.floor(legacyMaxRounds) - 1);
+      }
+
+      return Math.max(0, Math.floor(Number(VERIFICATION_POLL_MAX_ROUNDS) || 1) - 1);
     }
 
     async function confirmCustomVerificationStepBypass(step) {
@@ -144,6 +190,7 @@
 
       const {
         maxRounds: _ignoredMaxRounds,
+        maxResendRequests: _ignoredMaxResendRequests,
         resendIntervalMs: _ignoredResendIntervalMs,
         lastResendAt: _ignoredLastResendAt,
         onResendRequestedAt: _ignoredOnResendRequestedAt,
@@ -154,14 +201,18 @@
         : null;
       let lastError = null;
       let filterAfterTimestamp = payloadOverrides.filterAfterTimestamp ?? getVerificationPollPayload(step, state).filterAfterTimestamp;
-      const maxRounds = pollOverrides.maxRounds || VERIFICATION_POLL_MAX_ROUNDS;
+      const maxResendRequests = resolveMaxResendRequests(pollOverrides);
+      const totalRounds = maxResendRequests + 1;
+      const maxRounds = totalRounds;
       const resendIntervalMs = Math.max(0, Number(pollOverrides.resendIntervalMs) || 0);
       let lastResendAt = Number(pollOverrides.lastResendAt) || 0;
+      let usedResendRequests = 0;
 
-      for (let round = 1; round <= maxRounds; round++) {
+      for (let round = 1; round <= totalRounds; round++) {
         throwIfStopped();
         if (round > 1) {
           lastResendAt = await requestVerificationCodeResend(step);
+          usedResendRequests += 1;
           if (onResendRequestedAt) {
             const nextFilterAfterTimestamp = await onResendRequestedAt(lastResendAt);
             if (nextFilterAfterTimestamp !== undefined) {
@@ -215,6 +266,7 @@
             return {
               ...result,
               lastResendAt,
+              remainingResendRequests: Math.max(0, maxResendRequests - usedResendRequests),
             };
           } catch (err) {
             if (isStopError(err)) {
@@ -246,7 +298,12 @@
     }
 
     async function pollFreshVerificationCode(step, state, mail, pollOverrides = {}) {
-      const { onResendRequestedAt, ...cleanPollOverrides } = pollOverrides;
+      const {
+        onResendRequestedAt,
+        maxRounds: _ignoredMaxRounds,
+        maxResendRequests: _ignoredMaxResendRequests,
+        ...cleanPollOverrides
+      } = pollOverrides;
 
       if (mail.provider === HOTMAIL_PROVIDER) {
         const hotmailPollConfig = getHotmailVerificationPollConfig(step);
@@ -259,13 +316,13 @@
       if (mail.provider === LUCKMAIL_PROVIDER) {
         return pollLuckmailVerificationCode(step, state, {
           ...getVerificationPollPayload(step, state),
-          ...pollOverrides,
+          ...cleanPollOverrides,
         });
       }
       if (mail.provider === CLOUDFLARE_TEMP_EMAIL_PROVIDER) {
         return pollCloudflareTempEmailVerificationCode(step, state, {
           ...getVerificationPollPayload(step, state),
-          ...pollOverrides,
+          ...cleanPollOverrides,
         });
       }
 
@@ -284,12 +341,15 @@
 
       let lastError = null;
       let filterAfterTimestamp = cleanPollOverrides.filterAfterTimestamp ?? getVerificationPollPayload(step, state).filterAfterTimestamp;
-      const maxRounds = pollOverrides.maxRounds || VERIFICATION_POLL_MAX_ROUNDS;
+      const maxResendRequests = resolveMaxResendRequests(pollOverrides);
+      const maxRounds = maxResendRequests + 1;
+      let usedResendRequests = 0;
 
       for (let round = 1; round <= maxRounds; round++) {
         throwIfStopped();
         if (round > 1) {
           const requestedAt = await requestVerificationCodeResend(step);
+          usedResendRequests += 1;
           if (typeof onResendRequestedAt === 'function') {
             const nextFilterAfterTimestamp = await onResendRequestedAt(requestedAt);
             if (nextFilterAfterTimestamp !== undefined) {
@@ -331,7 +391,10 @@
             throw new Error(`步骤 ${step}：再次收到了相同的${getVerificationCodeLabel(step)}验证码：${result.code}`);
           }
 
-          return result;
+          return {
+            ...result,
+            remainingResendRequests: Math.max(0, maxResendRequests - usedResendRequests),
+          };
         } catch (err) {
           if (isStopError(err)) {
             throw err;
@@ -386,6 +449,12 @@
       const requestFreshCodeFirst = options.requestFreshCodeFirst !== undefined
         ? Boolean(options.requestFreshCodeFirst)
         : (hotmailPollConfig?.requestFreshCodeFirst ?? false);
+      let remainingAutomaticResendCount = options.maxResendRequests !== undefined
+        ? normalizeVerificationResendCount(
+          options.maxResendRequests,
+          getLegacyVerificationResendCountDefault(step, { requestFreshCodeFirst })
+        )
+        : getConfiguredVerificationResendCount(step, state, { requestFreshCodeFirst });
       const maxSubmitAttempts = 3;
       const resendIntervalMs = Math.max(0, Number(options.resendIntervalMs) || 0);
       let lastResendAt = Number(options.lastResendAt) || 0;
@@ -410,104 +479,120 @@
       };
 
       if (requestFreshCodeFirst) {
-        try {
-          lastResendAt = await requestVerificationCodeResend(step);
-          await updateFilterAfterTimestampForVerificationStep(lastResendAt);
-          await addLog(`步骤 ${step}：已先请求一封新的${getVerificationCodeLabel(step)}验证码，再开始轮询邮箱。`, 'warn');
-        } catch (err) {
-          if (isStopError(err)) {
-            throw err;
+        if (remainingAutomaticResendCount <= 0) {
+          await addLog(`步骤 ${step}：当前自动重新发送验证码次数为 0，将直接使用当前时间窗口轮询邮箱。`, 'info');
+        } else {
+          try {
+            lastResendAt = await requestVerificationCodeResend(step);
+            remainingAutomaticResendCount -= 1;
+            await updateFilterAfterTimestampForVerificationStep(lastResendAt);
+            await addLog(`步骤 ${step}：已先请求一封新的${getVerificationCodeLabel(step)}验证码，再开始轮询邮箱。`, 'warn');
+          } catch (err) {
+            if (isStopError(err)) {
+              throw err;
+            }
+            await addLog(`步骤 ${step}：首次重新获取验证码失败：${err.message}，将继续使用当前时间窗口轮询。`, 'warn');
           }
-          await addLog(`步骤 ${step}：首次重新获取验证码失败：${err.message}，将继续使用当前时间窗口轮询。`, 'warn');
         }
       }
 
       if (mail.provider === HOTMAIL_PROVIDER) {
-        const initialDelayMs = Number(options.initialDelayMs ?? hotmailPollConfig.initialDelayMs) || 0;
-        if (initialDelayMs > 0) {
-          await addLog(`步骤 ${step}：等待 ${Math.round(initialDelayMs / 1000)} 秒，让 Hotmail 验证码邮件先到达...`, 'info');
-          await sleepWithStop(initialDelayMs);
-        }
-      }
-
-      for (let attempt = 1; attempt <= maxSubmitAttempts; attempt++) {
-        const pollOptions = {
-          excludeCodes: [...rejectedCodes],
-          resendIntervalMs,
-          lastResendAt,
-          onResendRequestedAt: updateFilterAfterTimestampForVerificationStep,
-        };
-        if (nextFilterAfterTimestamp !== null && nextFilterAfterTimestamp !== undefined) {
-          pollOptions.filterAfterTimestamp = nextFilterAfterTimestamp;
-        }
-        const result = await pollFreshVerificationCode(step, state, mail, pollOptions);
-        lastResendAt = Number(result?.lastResendAt) || lastResendAt;
-
-        throwIfStopped();
-        await addLog(`步骤 ${step}：已获取${getVerificationCodeLabel(step)}验证码：${result.code}`);
-        if (beforeSubmit) {
-          await beforeSubmit(result, {
-            attempt,
-            rejectedCodes: new Set(rejectedCodes),
-            filterAfterTimestamp: nextFilterAfterTimestamp ?? undefined,
-            lastResendAt,
-          });
-        }
-        throwIfStopped();
-        const submitResult = await submitVerificationCode(step, result.code);
-
-        if (submitResult.invalidCode) {
-          rejectedCodes.add(result.code);
-          await addLog(`步骤 ${step}：验证码被页面拒绝：${submitResult.errorText || result.code}`, 'warn');
-
-          if (attempt >= maxSubmitAttempts) {
-            throw new Error(`步骤 ${step}：验证码连续失败，已达到 ${maxSubmitAttempts} 次重试上限。`);
+          const initialDelayMs = Number(options.initialDelayMs ?? hotmailPollConfig.initialDelayMs) || 0;
+          if (initialDelayMs > 0) {
+            await addLog(`步骤 ${step}：等待 ${Math.round(initialDelayMs / 1000)} 秒，让 Hotmail 验证码邮件先到达...`, 'info');
+            await sleepWithStop(initialDelayMs);
           }
+        }
 
-          const remainingBeforeResendMs = resendIntervalMs > 0 && lastResendAt > 0
-            ? Math.max(0, resendIntervalMs - (Date.now() - lastResendAt))
-            : 0;
-          if (remainingBeforeResendMs > 0) {
-            await addLog(
-              `步骤 ${step}：提交失败后距离下次重新发送验证码还差 ${Math.ceil(remainingBeforeResendMs / 1000)} 秒，先继续刷新邮箱（${attempt + 1}/${maxSubmitAttempts}）...`,
-              'warn'
-            );
+        for (let attempt = 1; attempt <= maxSubmitAttempts; attempt++) {
+          const pollOptions = {
+            excludeCodes: [...rejectedCodes],
+            maxResendRequests: remainingAutomaticResendCount,
+            resendIntervalMs,
+            lastResendAt,
+            onResendRequestedAt: updateFilterAfterTimestampForVerificationStep,
+          };
+          if (nextFilterAfterTimestamp !== null && nextFilterAfterTimestamp !== undefined) {
+            pollOptions.filterAfterTimestamp = nextFilterAfterTimestamp;
+          }
+          const result = await pollFreshVerificationCode(step, state, mail, pollOptions);
+          lastResendAt = Number(result?.lastResendAt) || lastResendAt;
+          remainingAutomaticResendCount = normalizeVerificationResendCount(
+            result?.remainingResendRequests,
+            remainingAutomaticResendCount
+          );
+
+          throwIfStopped();
+          await addLog(`步骤 ${step}：已获取${getVerificationCodeLabel(step)}验证码：${result.code}`);
+          if (beforeSubmit) {
+            await beforeSubmit(result, {
+              attempt,
+              rejectedCodes: new Set(rejectedCodes),
+              filterAfterTimestamp: nextFilterAfterTimestamp ?? undefined,
+              lastResendAt,
+            });
+          }
+          throwIfStopped();
+          const submitResult = await submitVerificationCode(step, result.code);
+
+          if (submitResult.invalidCode) {
+            rejectedCodes.add(result.code);
+            await addLog(`步骤 ${step}：验证码被页面拒绝：${submitResult.errorText || result.code}`, 'warn');
+
+            if (attempt >= maxSubmitAttempts) {
+              throw new Error(`步骤 ${step}：验证码连续失败，已达到 ${maxSubmitAttempts} 次重试上限。`);
+            }
+
+            const remainingBeforeResendMs = resendIntervalMs > 0 && lastResendAt > 0
+              ? Math.max(0, resendIntervalMs - (Date.now() - lastResendAt))
+              : 0;
+            if (remainingBeforeResendMs > 0) {
+              await addLog(
+                `步骤 ${step}：提交失败后距离下次重新发送验证码还差 ${Math.ceil(remainingBeforeResendMs / 1000)} 秒，先继续刷新邮箱（${attempt + 1}/${maxSubmitAttempts}）...`,
+                'warn'
+              );
+              continue;
+            }
+
+            if (remainingAutomaticResendCount <= 0) {
+              await addLog(`步骤 ${step}：已达到自动重新发送验证码次数上限，将直接使用当前时间窗口继续重试。`, 'warn');
+              continue;
+            }
+
+            lastResendAt = await requestVerificationCodeResend(step);
+            remainingAutomaticResendCount -= 1;
+            await updateFilterAfterTimestampForVerificationStep(lastResendAt);
+            await addLog(`步骤 ${step}：提交失败后已请求新验证码（${attempt + 1}/${maxSubmitAttempts}）...`, 'warn');
             continue;
           }
 
-          lastResendAt = await requestVerificationCodeResend(step);
-          await updateFilterAfterTimestampForVerificationStep(lastResendAt);
-          await addLog(`步骤 ${step}：提交失败后已请求新验证码（${attempt + 1}/${maxSubmitAttempts}）...`, 'warn');
-          continue;
+          await setState({
+            lastEmailTimestamp: result.emailTimestamp,
+            [stateKey]: result.code,
+          });
+
+          await completeStepFromBackground(step, {
+            emailTimestamp: result.emailTimestamp,
+            code: result.code,
+          });
+          return;
         }
-
-        await setState({
-          lastEmailTimestamp: result.emailTimestamp,
-          [stateKey]: result.code,
-        });
-
-        await completeStepFromBackground(step, {
-          emailTimestamp: result.emailTimestamp,
-          code: result.code,
-        });
-        return;
       }
+
+      return {
+        confirmCustomVerificationStepBypass,
+        getVerificationCodeLabel,
+        getVerificationCodeStateKey,
+        getVerificationPollPayload,
+        pollFreshVerificationCode,
+        pollFreshVerificationCodeWithResendInterval,
+        requestVerificationCodeResend,
+        resolveVerificationStep,
+        submitVerificationCode,
+      };
     }
 
     return {
-      confirmCustomVerificationStepBypass,
-      getVerificationCodeLabel,
-      getVerificationCodeStateKey,
-      getVerificationPollPayload,
-      pollFreshVerificationCode,
-      pollFreshVerificationCodeWithResendInterval,
-      requestVerificationCodeResend,
-      resolveVerificationStep,
-      submitVerificationCode,
+      createVerificationFlowHelpers,
     };
-  }
-
-  return {
-    createVerificationFlowHelpers,
-  };
-});
+  });
