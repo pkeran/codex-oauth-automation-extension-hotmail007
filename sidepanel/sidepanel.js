@@ -1879,7 +1879,7 @@ function renderUpdateReleaseList(releases = []) {
 
     const version = document.createElement('span');
     version.className = 'update-release-version';
-    version.textContent = `v${release.version}`;
+    version.textContent = release.displayVersion || `Pro${release.version}`;
     titleRow.appendChild(version);
 
     if (release.title) {
@@ -1933,7 +1933,7 @@ function renderReleaseSnapshot(snapshot) {
 
   extensionUpdateStatus.classList.remove('is-update-available', 'is-check-failed', 'is-version-label');
 
-  const localVersionText = snapshot?.localVersion ? `v${snapshot.localVersion}` : '';
+  const localVersionText = snapshot?.localVersion || '';
   const logUrl = snapshot?.logUrl || snapshot?.releasesPageUrl || sidepanelUpdateService?.releasesPageUrl || '';
 
   if (btnReleaseLog) {
@@ -1955,13 +1955,13 @@ function renderReleaseSnapshot(snapshot) {
         updateSection.hidden = false;
       }
       if (updateCardVersion) {
-        updateCardVersion.textContent = `最新版本 v${snapshot.latestVersion}`;
+        updateCardVersion.textContent = `最新版本 ${snapshot.latestVersion}`;
       }
       if (updateCardSummary) {
         const updateCount = Array.isArray(snapshot.newerReleases) ? snapshot.newerReleases.length : 0;
         updateCardSummary.textContent = updateCount > 1
           ? `当前 ${localVersionText}，共有 ${updateCount} 个新版本可更新。`
-          : `当前 ${localVersionText}，可更新到 v${snapshot.latestVersion}。`;
+          : `当前 ${localVersionText}，可更新到 ${snapshot.latestVersion}。`;
       }
       renderUpdateReleaseList(snapshot.newerReleases || []);
       if (btnOpenRelease) {
@@ -1973,14 +1973,14 @@ function renderReleaseSnapshot(snapshot) {
     }
 
     case 'latest': {
-      extensionUpdateStatus.textContent = localVersionText || 'v0.0.0';
+      extensionUpdateStatus.textContent = localVersionText || 'Pro0.0';
       extensionUpdateStatus.classList.add('is-version-label');
       resetUpdateCard();
       break;
     }
 
     case 'empty': {
-      extensionUpdateStatus.textContent = localVersionText || 'v0.0.0';
+      extensionUpdateStatus.textContent = localVersionText || 'Pro0.0';
       extensionUpdateStatus.classList.add('is-version-label');
       resetUpdateCard();
       break;
@@ -1988,7 +1988,7 @@ function renderReleaseSnapshot(snapshot) {
 
     case 'error':
     default: {
-      extensionUpdateStatus.textContent = localVersionText || 'v0.0.0';
+      extensionUpdateStatus.textContent = localVersionText || 'Pro0.0';
       extensionUpdateStatus.classList.add('is-version-label', 'is-check-failed');
       extensionVersionMeta.textContent = snapshot?.errorMessage || 'GitHub Releases 检查失败';
       extensionVersionMeta.hidden = false;
@@ -2009,8 +2009,10 @@ async function initializeReleaseInfo() {
     return;
   }
 
-  const localVersion = sidepanelUpdateService?.stripVersionPrefix?.(chrome.runtime.getManifest()?.version || '') || '';
-  extensionUpdateStatus.textContent = localVersion ? `v${localVersion}` : 'v0.0.0';
+  const localVersion = sidepanelUpdateService?.getLocalVersionLabel?.(chrome.runtime.getManifest())
+    || chrome.runtime.getManifest()?.version_name
+    || (chrome.runtime.getManifest()?.version ? `v${chrome.runtime.getManifest().version}` : '');
+  extensionUpdateStatus.textContent = localVersion || 'Pro0.0';
   extensionUpdateStatus.classList.remove('is-update-available', 'is-check-failed');
   extensionUpdateStatus.classList.add('is-version-label');
   extensionVersionMeta.hidden = true;

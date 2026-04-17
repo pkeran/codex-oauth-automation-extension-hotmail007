@@ -8,26 +8,78 @@
   const FETCH_TIMEOUT_MS = 8000;
   const MAX_RELEASES = 10;
   const MAX_NOTES_PER_RELEASE = 5;
+  const VERSION_FAMILY_PRO = 'pro';
+  const VERSION_FAMILY_LEGACY = 'legacy';
+
+  function getVersionFamily(version, fallbackFamily = VERSION_FAMILY_LEGACY) {
+    const trimmed = String(version || '').trim();
+    if (/^pro/i.test(trimmed)) {
+      return VERSION_FAMILY_PRO;
+    }
+    if (/^v/i.test(trimmed)) {
+      return VERSION_FAMILY_LEGACY;
+    }
+    return fallbackFamily;
+  }
 
   function stripVersionPrefix(version) {
-    return String(version || '').trim().replace(/^v/i, '');
+    return String(version || '').trim().replace(/^(?:pro|v)\s*/i, '');
   }
 
-  function parseVersionParts(version) {
+  function extractVersionCore(version) {
     const core = stripVersionPrefix(version).split('-')[0];
+    return /^\d+(?:\.\d+){1,3}$/.test(core) ? core : '';
+  }
+
+  function formatDisplayVersion(version, fallbackFamily = VERSION_FAMILY_LEGACY) {
+    const core = extractVersionCore(version);
     if (!core) {
-      return [0];
+      return '';
     }
 
-    return core.split('.').map((part) => {
-      const numeric = Number.parseInt(part, 10);
-      return Number.isFinite(numeric) ? numeric : 0;
-    });
+    const family = getVersionFamily(version, fallbackFamily);
+    return `${family === VERSION_FAMILY_PRO ? 'Pro' : 'v'}${core}`;
   }
 
-  function compareVersions(left, right) {
-    const leftParts = parseVersionParts(left);
-    const rightParts = parseVersionParts(right);
+  function parseVersionMeta(version, fallbackFamily = VERSION_FAMILY_LEGACY) {
+    const family = getVersionFamily(version, fallbackFamily);
+    const core = extractVersionCore(version);
+    return {
+      family,
+      core,
+      displayVersion: core ? `${family === VERSION_FAMILY_PRO ? 'Pro' : 'v'}${core}` : '',
+      parts: core
+        ? core.split('.').map((part) => {
+          const numeric = Number.parseInt(part, 10);
+          return Number.isFinite(numeric) ? numeric : 0;
+        })
+        : [0],
+    };
+  }
+
+  function getVersionFamilyRank(family) {
+    return family === VERSION_FAMILY_PRO ? 2 : 1;
+  }
+
+  function parseVersionParts(version, fallbackFamily = VERSION_FAMILY_LEGACY) {
+    return parseVersionMeta(version, fallbackFamily).parts;
+  }
+
+  function compareVersions(left, right, fallbackFamily = VERSION_FAMILY_LEGACY) {
+    const leftMeta = parseVersionMeta(left, fallbackFamily);
+    const rightMeta = parseVersionMeta(right, fallbackFamily);
+    const leftFamilyRank = getVersionFamilyRank(leftMeta.family);
+    const rightFamilyRank = getVersionFamilyRank(rightMeta.family);
+
+    if (leftFamilyRank > rightFamilyRank) {
+      return 1;
+    }
+    if (leftFamilyRank < rightFamilyRank) {
+      return -1;
+    }
+
+    const leftParts = leftMeta.parts;
+    const rightParts = rightMeta.parts;
     const maxLength = Math.max(leftParts.length, rightParts.length, 3);
 
     for (let index = 0; index < maxLength; index += 1) {
@@ -100,26 +152,31 @@
     ];
 
     for (const candidate of candidates) {
-      const normalized = stripVersionPrefix(candidate);
-      if (normalized) {
-        return normalized;
+      const meta = parseVersionMeta(candidate);
+      if (meta.core) {
+        return meta;
       }
     }
 
-    return '';
+    return null;
   }
 
   function sanitizeRelease(release) {
-    const version = normalizeReleaseVersion(release);
-    if (!version) {
+    const versionMeta = normalizeReleaseVersion(release);
+    if (!versionMeta?.core) {
       return null;
     }
 
     const rawTitle = sanitizeInlineMarkdown(release?.name || '');
-    const normalizedTitle = stripVersionPrefix(rawTitle) === version ? '' : rawTitle;
+    const titleMeta = parseVersionMeta(rawTitle, versionMeta.family);
+    const normalizedTitle = titleMeta.core && titleMeta.displayVersion === versionMeta.displayVersion
+      ? ''
+      : rawTitle;
 
     return {
-      version,
+      version: versionMeta.core,
+      displayVersion: versionMeta.displayVersion,
+      family: versionMeta.family,
       title: normalizedTitle,
       url: String(release?.html_url || RELEASES_PAGE_URL),
       publishedAt: String(release?.published_at || release?.created_at || ''),
@@ -228,11 +285,11 @@
       };
     }
 
-    const newerReleases = releases.filter((release) => compareVersions(release.version, localVersion) > 0);
+    const newerReleases = releases.filter((release) => compareVersions(release.displayVersion, localVersion) > 0);
     return {
       status: newerReleases.length > 0 ? 'update-available' : 'latest',
       localVersion,
-      latestVersion: latestRelease.version,
+      latestVersion: latestRelease.displayVersion,
       latestRelease,
       newerReleases,
       logUrl: latestRelease.url || RELEASES_PAGE_URL,
@@ -241,8 +298,18 @@
     };
   }
 
+  function getLocalVersionLabel(manifest = chrome.runtime.getManifest()) {
+    const versionName = formatDisplayVersion(manifest?.version_name, VERSION_FAMILY_PRO);
+    if (versionName) {
+      return versionName;
+    }
+
+    const versionCore = extractVersionCore(manifest?.version || '');
+    return versionCore ? formatDisplayVersion(`v${versionCore}`, VERSION_FAMILY_LEGACY) : '';
+  }
+
   async function getReleaseSnapshot(options = {}) {
-    const localVersion = stripVersionPrefix(chrome.runtime.getManifest()?.version || '0.0.0');
+    const localVersion = getLocalVersionLabel(chrome.runtime.getManifest()) || 'v0.0.0';
 
     try {
       const releases = await loadReleases(options);
@@ -280,7 +347,9 @@
 
   window.SidepanelUpdateService = {
     compareVersions,
+    formatDisplayVersion,
     formatReleaseDate,
+    getLocalVersionLabel,
     getReleaseSnapshot,
     releasesPageUrl: RELEASES_PAGE_URL,
     stripVersionPrefix,
