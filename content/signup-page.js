@@ -537,15 +537,27 @@ async function step3_fillEmailPassword(payload) {
   // Report complete BEFORE submit, because submit causes page navigation
   // which kills the content script connection
   const signupVerificationRequestedAt = submitBtn ? Date.now() : null;
-  reportComplete(3, { email, signupVerificationRequestedAt });
+  const completionPayload = {
+    email,
+    signupVerificationRequestedAt,
+    deferredSubmit: Boolean(submitBtn),
+  };
+  reportComplete(3, completionPayload);
 
-  // Submit the form (page will navigate away after this)
-  await sleep(500);
   if (submitBtn) {
-    await humanPause(500, 1300);
-    simulateClick(submitBtn);
-    log('步骤 3：表单已提交');
+    window.setTimeout(async () => {
+      try {
+        await sleep(500);
+        await humanPause(500, 1300);
+        simulateClick(submitBtn);
+        log('步骤 3：表单已提交');
+      } catch (error) {
+        console.error('[MultiPage:signup-page] deferred step 3 submit failed:', error?.message || error);
+      }
+    }, 120);
   }
+
+  return completionPayload;
 }
 
 // ============================================================

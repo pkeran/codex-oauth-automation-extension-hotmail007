@@ -113,6 +113,9 @@
       await addLog(`步骤 ${step}：已请求新的${getVerificationCodeLabel(step)}验证码。`, 'warn');
 
       const requestedAt = Date.now();
+      if (step === 4) {
+        await setState({ signupVerificationRequestedAt: requestedAt });
+      }
       if (step === 7) {
         await setState({ loginVerificationRequestedAt: requestedAt });
       }
@@ -387,15 +390,17 @@
       const resendIntervalMs = Math.max(0, Number(options.resendIntervalMs) || 0);
       let lastResendAt = Number(options.lastResendAt) || 0;
 
-      const updateFilterAfterTimestampForStep7 = async (requestedAt) => {
-        if (step !== 7 || !requestedAt) {
+      const updateFilterAfterTimestampForVerificationStep = async (requestedAt) => {
+        if ((step !== 4 && step !== 7) || !requestedAt) {
           return nextFilterAfterTimestamp;
         }
 
         if (mail.provider === HOTMAIL_PROVIDER) {
-          nextFilterAfterTimestamp = getHotmailVerificationRequestTimestamp(7, {
+          nextFilterAfterTimestamp = getHotmailVerificationRequestTimestamp(step, {
             ...state,
-            loginVerificationRequestedAt: requestedAt,
+            ...(step === 4
+              ? { signupVerificationRequestedAt: requestedAt }
+              : { loginVerificationRequestedAt: requestedAt }),
           });
         } else {
           nextFilterAfterTimestamp = Math.max(0, Number(requestedAt) - 60000);
@@ -407,7 +412,7 @@
       if (requestFreshCodeFirst) {
         try {
           lastResendAt = await requestVerificationCodeResend(step);
-          await updateFilterAfterTimestampForStep7(lastResendAt);
+          await updateFilterAfterTimestampForVerificationStep(lastResendAt);
           await addLog(`步骤 ${step}：已先请求一封新的${getVerificationCodeLabel(step)}验证码，再开始轮询邮箱。`, 'warn');
         } catch (err) {
           if (isStopError(err)) {
@@ -426,13 +431,16 @@
       }
 
       for (let attempt = 1; attempt <= maxSubmitAttempts; attempt++) {
-        const result = await pollFreshVerificationCode(step, state, mail, {
+        const pollOptions = {
           excludeCodes: [...rejectedCodes],
-          filterAfterTimestamp: nextFilterAfterTimestamp ?? undefined,
           resendIntervalMs,
           lastResendAt,
-          onResendRequestedAt: updateFilterAfterTimestampForStep7,
-        });
+          onResendRequestedAt: updateFilterAfterTimestampForVerificationStep,
+        };
+        if (nextFilterAfterTimestamp !== null && nextFilterAfterTimestamp !== undefined) {
+          pollOptions.filterAfterTimestamp = nextFilterAfterTimestamp;
+        }
+        const result = await pollFreshVerificationCode(step, state, mail, pollOptions);
         lastResendAt = Number(result?.lastResendAt) || lastResendAt;
 
         throwIfStopped();
@@ -468,7 +476,7 @@
           }
 
           lastResendAt = await requestVerificationCodeResend(step);
-          await updateFilterAfterTimestampForStep7(lastResendAt);
+          await updateFilterAfterTimestampForVerificationStep(lastResendAt);
           await addLog(`步骤 ${step}：提交失败后已请求新验证码（${attempt + 1}/${maxSubmitAttempts}）...`, 'warn');
           continue;
         }

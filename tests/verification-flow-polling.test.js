@@ -108,3 +108,127 @@ test('verification flow runs beforeSubmit hook before filling the code', async (
     ['complete', '654321'],
   ]);
 });
+
+test('verification flow keeps Hotmail request timestamp filtering on the first poll', async () => {
+  const pollPayloads = [];
+
+  const helpers = api.createVerificationFlowHelpers({
+    addLog: async () => {},
+    chrome: { tabs: { update: async () => {} } },
+    CLOUDFLARE_TEMP_EMAIL_PROVIDER: 'cloudflare-temp-email',
+    completeStepFromBackground: async () => {},
+    confirmCustomVerificationStepBypassRequest: async () => ({ confirmed: true }),
+    getHotmailVerificationPollConfig: () => ({}),
+    getHotmailVerificationRequestTimestamp: () => 87654,
+    getState: async () => ({}),
+    getTabId: async () => 1,
+    HOTMAIL_PROVIDER: 'hotmail-api',
+    isStopError: () => false,
+    LUCKMAIL_PROVIDER: 'luckmail-api',
+    MAIL_2925_VERIFICATION_INTERVAL_MS: 15000,
+    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 15,
+    pollCloudflareTempEmailVerificationCode: async () => ({}),
+    pollHotmailVerificationCode: async (_step, _state, payload) => {
+      pollPayloads.push(payload);
+      return { code: '654321', emailTimestamp: 123 };
+    },
+    pollLuckmailVerificationCode: async () => ({}),
+    sendToContentScript: async (_source, message) => {
+      if (message.type === 'FILL_CODE') {
+        return {};
+      }
+      return {};
+    },
+    sendToMailContentScriptResilient: async () => ({}),
+    setState: async () => {},
+    setStepStatus: async () => {},
+    sleepWithStop: async () => {},
+    throwIfStopped: () => {},
+    VERIFICATION_POLL_MAX_ROUNDS: 5,
+  });
+
+  await helpers.resolveVerificationStep(
+    7,
+    {
+      email: 'user@example.com',
+      loginVerificationRequestedAt: 100000,
+      lastLoginCode: null,
+    },
+    { provider: 'hotmail-api', label: 'Hotmail' },
+    {}
+  );
+
+  assert.equal(pollPayloads.length, 1);
+  assert.equal(pollPayloads[0].filterAfterTimestamp, 87654);
+});
+
+test('verification flow refreshes Hotmail signup filter timestamp after step 4 resend', async () => {
+  const pollPayloads = [];
+  const realDateNow = Date.now;
+  Date.now = () => 200000;
+
+  let submitCount = 0;
+
+  const helpers = api.createVerificationFlowHelpers({
+    addLog: async () => {},
+    chrome: { tabs: { update: async () => {} } },
+    CLOUDFLARE_TEMP_EMAIL_PROVIDER: 'cloudflare-temp-email',
+    completeStepFromBackground: async () => {},
+    confirmCustomVerificationStepBypassRequest: async () => ({ confirmed: true }),
+    getHotmailVerificationPollConfig: () => ({}),
+    getHotmailVerificationRequestTimestamp: (_step, state) => Math.max(0, Number(state.signupVerificationRequestedAt || 0) - 15000),
+    getState: async () => ({}),
+    getTabId: async () => 1,
+    HOTMAIL_PROVIDER: 'hotmail-api',
+    isStopError: () => false,
+    LUCKMAIL_PROVIDER: 'luckmail-api',
+    MAIL_2925_VERIFICATION_INTERVAL_MS: 15000,
+    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 15,
+    pollCloudflareTempEmailVerificationCode: async () => ({}),
+    pollHotmailVerificationCode: async (_step, _state, payload) => {
+      pollPayloads.push(payload);
+      return {
+        code: pollPayloads.length === 1 ? '111111' : '222222',
+        emailTimestamp: pollPayloads.length,
+      };
+    },
+    pollLuckmailVerificationCode: async () => ({}),
+    sendToContentScript: async (_source, message) => {
+      if (message.type === 'FILL_CODE') {
+        submitCount += 1;
+        return submitCount === 1
+          ? { invalidCode: true, errorText: '旧验证码' }
+          : {};
+      }
+      if (message.type === 'RESEND_VERIFICATION_CODE') {
+        return {};
+      }
+      return {};
+    },
+    sendToMailContentScriptResilient: async () => ({}),
+    setState: async () => {},
+    setStepStatus: async () => {},
+    sleepWithStop: async () => {},
+    throwIfStopped: () => {},
+    VERIFICATION_POLL_MAX_ROUNDS: 5,
+  });
+
+  try {
+    await helpers.resolveVerificationStep(
+      4,
+      {
+        email: 'user@example.com',
+        signupVerificationRequestedAt: 100000,
+        lastSignupCode: null,
+      },
+      { provider: 'hotmail-api', label: 'Hotmail' },
+      {}
+    );
+  } finally {
+    Date.now = realDateNow;
+  }
+
+  assert.equal(pollPayloads.length, 2);
+  assert.equal(pollPayloads[0].filterAfterTimestamp, 85000);
+  assert.equal(pollPayloads[1].filterAfterTimestamp, 185000);
+});
