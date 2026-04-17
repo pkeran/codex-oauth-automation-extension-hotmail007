@@ -81,6 +81,21 @@
 5. 是否需要成功收尾逻辑
 6. 是否需要 README 与完整链路文档更新
 
+### 3.2.1 共享别名邮箱逻辑补充
+
+当 Gmail / 2925 这类“既影响注册邮箱生成，又影响 sidepanel 表单行为”的 provider 发生变化时，必须优先检查是否应落入共享层，而不是继续把规则分散写在：
+
+- `background.js`
+- `sidepanel/sidepanel.js`
+- 某一个单独 provider 分支里
+
+当前约定：
+
+- Gmail / 2925 的基邮箱解析、兼容性判断、别名生成、UI 文案优先收敛到 `managed-alias-utils.js`
+- `background/generated-email-helpers.js` 只负责调度，不应再次复制 Gmail / 2925 规则
+- `background/signup-flow-helpers.js` 只负责“复用已有邮箱还是重新生成”的流程决策
+- `sidepanel/sidepanel.js` 只负责 UI 接线、校验触发和状态同步
+
 ### 3.3 新增配置项
 
 必须同步检查：
@@ -115,6 +130,15 @@
 
 ```bash
 bun test
+```
+
+补充说明：
+
+- 实际执行命令以仓库当前 `package.json` 为准
+- 本仓库当前全量回归命令为：
+
+```bash
+npm test
 ```
 
 ## 5. 文档更新规范
@@ -169,6 +193,7 @@ bun test
 4. 我有没有补或迁移测试？
 5. 我有没有更新三份根目录文档？
 6. 我新增或修改的文件是否有可见乱码？
+7. 如果改动影响 Gmail / 2925 别名邮箱逻辑，我有没有同步检查 `managed-alias-utils.js`、sidepanel 接线、background 调度、auto-run reset 和回归测试？
 
 ## 9. 完成标准
 
