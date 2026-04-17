@@ -752,9 +752,16 @@ function isOAuthConsentPage() {
 }
 
 function isVerificationPageStillVisible() {
+  if (getCurrentAuthRetryPageState('signup_password') || getCurrentAuthRetryPageState('login')) {
+    return false;
+  }
   if (getVerificationCodeTarget()) return true;
   if (findResendVerificationCodeTrigger({ allowDisabled: true })) return true;
   if (document.querySelector('form[action*="email-verification" i]')) return true;
+
+  if (!isEmailVerificationPage()) {
+    return false;
+  }
 
   return VERIFICATION_PAGE_PATTERN.test(getPageTextSnapshot());
 }
@@ -1314,16 +1321,16 @@ function inspectSignupVerificationState() {
     return { state: 'step5' };
   }
 
-  if (isVerificationPageStillVisible()) {
-    return { state: 'verification' };
-  }
-
   if (isSignupPasswordErrorPage()) {
     const timeoutPage = getSignupPasswordTimeoutErrorPageState();
     return {
       state: 'error',
       retryButton: timeoutPage?.retryButton || null,
     };
+  }
+
+  if (isVerificationPageStillVisible()) {
+    return { state: 'verification' };
   }
 
   if (isSignupEmailAlreadyExistsPage()) {
