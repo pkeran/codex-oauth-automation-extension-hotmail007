@@ -5641,7 +5641,7 @@ const verificationFlowHelpers = self.MultiPageBackgroundVerificationFlow?.create
 const step1Executor = self.MultiPageBackgroundStep1?.createStep1Executor({
   addLog,
   completeStepFromBackground,
-  ensureSignupEntryPageReady,
+  openSignupEntryTab,
 });
 const step2Executor = self.MultiPageBackgroundStep2?.createStep2Executor({
   addLog,
