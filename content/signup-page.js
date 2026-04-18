@@ -974,6 +974,7 @@ async function recoverCurrentAuthRetryPage(payload = {}) {
   const {
     flow = 'auth',
     logLabel = '',
+    maxClickAttempts = 5,
     step = null,
     timeoutMs = 12000,
     waitAfterClickMs = 3000,
@@ -982,6 +983,7 @@ async function recoverCurrentAuthRetryPage(payload = {}) {
   if (authPageRecovery?.recoverAuthRetryPage) {
     return authPageRecovery.recoverAuthRetryPage({
       logLabel,
+      maxClickAttempts,
       pathPatterns,
       step,
       timeoutMs,
@@ -989,9 +991,12 @@ async function recoverCurrentAuthRetryPage(payload = {}) {
     });
   }
 
-  const start = Date.now();
+  const maxIdlePolls = timeoutMs > 0
+    ? Math.max(1, Math.ceil(timeoutMs / Math.max(1, 250)))
+    : Number.POSITIVE_INFINITY;
   let clickCount = 0;
-  while (Date.now() - start < timeoutMs) {
+  let idlePollCount = 0;
+  while (clickCount < maxClickAttempts) {
     throwIfStopped();
     const retryState = getCurrentAuthRetryPageState(flow);
     if (!retryState) {
@@ -1006,6 +1011,7 @@ async function recoverCurrentAuthRetryPage(payload = {}) {
       throw new Error('CF_SECURITY_BLOCKED::您已触发Cloudflare 安全防护系统，已完全停止流程，请不要短时间内多次进行重新发送验证码，连续刷新、反复点击重试会加重风控；请先关闭页面等待 15-30 分钟，让系统的临时限制自动解除。或者更换浏览器');
     }
     if (retryState.retryButton && retryState.retryEnabled) {
+      idlePollCount = 0;
       clickCount += 1;
       log(`${logLabel || `步骤 ${step || '?'}：检测到重试页，正在点击“重试”恢复`}（第 ${clickCount} 次）...`, 'warn');
       await humanPause(300, 800);
@@ -1025,10 +1031,27 @@ async function recoverCurrentAuthRetryPage(payload = {}) {
       continue;
     }
 
+    idlePollCount += 1;
+    if (idlePollCount >= maxIdlePolls) {
+      throw new Error(`${logLabel || `步骤 ${step || '?'}：重试页恢复`}超时：重试按钮长时间不可点击。URL: ${location.href}`);
+    }
+
     await sleep(250);
   }
 
-  throw new Error(`${logLabel || `步骤 ${step || '?'}：重试页恢复`}超时。URL: ${location.href}`);
+  const finalRetryState = getCurrentAuthRetryPageState(flow);
+  if (!finalRetryState) {
+    return {
+      recovered: clickCount > 0,
+      clickCount,
+      url: location.href,
+    };
+  }
+  if (finalRetryState.maxCheckAttemptsBlocked) {
+    throw new Error('CF_SECURITY_BLOCKED::您已触发Cloudflare 安全防护系统，已完全停止流程，请不要短时间内多次进行重新发送验证码，连续刷新、反复点击重试会加重风控；请先关闭页面等待 15-30 分钟，让系统的临时限制自动解除。或者更换浏览器');
+  }
+
+  throw new Error(`${logLabel || `步骤 ${step || '?'}：重试页恢复`}失败：已连续点击“重试” ${maxClickAttempts} 次，页面仍未恢复。URL: ${location.href}`);
 }
 
 function getSignupPasswordTimeoutErrorPageState() {
