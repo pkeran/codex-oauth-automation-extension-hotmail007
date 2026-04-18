@@ -21,6 +21,8 @@ const btnAccountRecordsPrev = document.getElementById('btn-account-records-prev'
 const btnAccountRecordsNext = document.getElementById('btn-account-records-next');
 const btnCloseAccountRecords = document.getElementById('btn-close-account-records');
 const btnClearAccountRecords = document.getElementById('btn-clear-account-records');
+const btnToggleAccountRecordsSelection = document.getElementById('btn-toggle-account-records-selection');
+const btnDeleteSelectedAccountRecords = document.getElementById('btn-delete-selected-account-records');
 const updateSection = document.getElementById('update-section');
 const btnRepoHome = document.getElementById('btn-repo-home');
 const extensionUpdateStatus = document.getElementById('extension-update-status');
@@ -2978,8 +2980,10 @@ const accountRecordsManager = window.SidepanelAccountRecordsManager?.createAccou
     btnAccountRecordsNext,
     btnAccountRecordsPrev,
     btnClearAccountRecords,
+    btnDeleteSelectedAccountRecords,
     btnCloseAccountRecords,
     btnOpenAccountRecords,
+    btnToggleAccountRecordsSelection,
   },
   helpers: {
     escapeHtml,

@@ -575,11 +575,17 @@
           <span id="account-records-meta" class="account-records-panel-meta">暂无邮箱记录</span>
         </div>
         <div class="account-records-panel-actions">
-          <button id="btn-clear-account-records" class="btn btn-ghost btn-xs" type="button">清理记录</button>
           <button id="btn-close-account-records" class="modal-close" type="button" aria-label="关闭">×</button>
         </div>
       </div>
-      <div id="account-records-stats" class="account-records-stats"></div>
+      <div class="account-records-toolbar">
+        <div id="account-records-stats" class="account-records-stats" role="group" aria-label="邮箱记录筛选"></div>
+        <div class="account-records-toolbar-actions">
+          <button id="btn-toggle-account-records-selection" class="btn btn-ghost btn-xs" type="button">多选</button>
+          <button id="btn-delete-selected-account-records" class="btn btn-ghost btn-xs" type="button" hidden disabled>删除选中</button>
+          <button id="btn-clear-account-records" class="btn btn-ghost btn-xs" type="button">清理记录</button>
+        </div>
+      </div>
       <div id="account-records-list" class="account-records-list"></div>
       <div class="account-records-pagination">
         <button id="btn-account-records-prev" class="btn btn-outline btn-xs" type="button">上一页</button>

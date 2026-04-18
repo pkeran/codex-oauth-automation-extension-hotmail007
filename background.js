@@ -5250,6 +5250,16 @@ async function clearAndBroadcastAccountRunHistory(stateOverride = null) {
   return result;
 }
 
+async function deleteAndBroadcastAccountRunHistoryRecords(recordIds = [], stateOverride = null) {
+  if (!accountRunHistoryHelpers?.deleteAccountRunHistoryRecords) {
+    return { deletedCount: 0, remainingCount: 0 };
+  }
+
+  const result = await accountRunHistoryHelpers.deleteAccountRunHistoryRecords(recordIds, stateOverride);
+  await broadcastAccountRunHistoryUpdate();
+  return result;
+}
+
 const autoRunController = self.MultiPageBackgroundAutoRunController?.createAutoRunController({
   addLog,
   appendAccountRunRecord: (...args) => appendAndBroadcastAccountRunRecord(...args),
@@ -5957,6 +5967,7 @@ const messageRouter = self.MultiPageBackgroundMessageRouter?.createMessageRouter
   cancelScheduledAutoRun,
   checkIcloudSession,
   clearAccountRunHistory: (...args) => clearAndBroadcastAccountRunHistory(...args),
+  deleteAccountRunHistoryRecords: (...args) => deleteAndBroadcastAccountRunHistoryRecords(...args),
   clearAutoRunTimerAlarm,
   clearLuckmailRuntimeState,
   clearStopRequest,

@@ -13,6 +13,7 @@
       cancelScheduledAutoRun,
       checkIcloudSession,
       clearAccountRunHistory,
+      deleteAccountRunHistoryRecords,
       clearAutoRunTimerAlarm,
       clearLuckmailRuntimeState,
       clearStopRequest,
@@ -297,6 +298,19 @@
             return { ok: true, clearedCount: 0 };
           }
           const result = await clearAccountRunHistory(state);
+          return { ok: true, ...result };
+        }
+
+        case 'DELETE_ACCOUNT_RUN_HISTORY_RECORDS': {
+          const state = await getState();
+          if (isAutoRunLockedState(state)) {
+            throw new Error('自动流程运行中，当前不能删除邮箱记录。');
+          }
+          if (typeof deleteAccountRunHistoryRecords !== 'function') {
+            return { ok: true, deletedCount: 0, remainingCount: 0 };
+          }
+          const recordIds = Array.isArray(message.payload?.recordIds) ? message.payload.recordIds : [];
+          const result = await deleteAccountRunHistoryRecords(recordIds, state);
           return { ok: true, ...result };
         }
 
