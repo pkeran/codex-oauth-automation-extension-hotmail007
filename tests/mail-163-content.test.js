@@ -146,3 +146,64 @@ return {
   assert.equal(result.code, '480382');
   assert.deepEqual(api.getOpenedMailIds(), ['mail-1']);
 });
+
+test('refreshInbox prefers the top toolbar refresh button even when 163 renders the label as 刷 新', async () => {
+  const bundle = [
+    extractFunction('normalizeText'),
+    extractFunction('refreshInbox'),
+  ].join('\n');
+
+  const api = new Function(`
+const MAIL163_PREFIX = '[MultiPage:mail-163]';
+const clickOrder = [];
+
+const refreshButton = {
+  tagName: 'DIV',
+  textContent: '刷 新',
+};
+
+const refreshLabel = {
+  textContent: '刷 新',
+  closest(selector) {
+    return selector === '.nui-btn' ? refreshButton : null;
+  },
+};
+
+const inboxLink = {
+  tagName: 'SPAN',
+  textContent: '收件箱',
+};
+
+const document = {
+  querySelectorAll(selector) {
+    if (selector === '.nui-btn .nui-btn-text') return [refreshLabel];
+    if (selector === '.ra0') return [];
+    return [];
+  },
+};
+
+function simulateClick(node) {
+  clickOrder.push(node.textContent);
+}
+
+function findInboxLink() {
+  return inboxLink;
+}
+
+async function sleep() {}
+function log() {}
+
+${bundle}
+
+return {
+  refreshInbox,
+  getClickOrder() {
+    return clickOrder.slice();
+  },
+};
+`)();
+
+  await api.refreshInbox();
+
+  assert.deepEqual(api.getClickOrder(), ['刷 新']);
+});

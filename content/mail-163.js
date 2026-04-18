@@ -461,9 +461,18 @@ if (!isTopFrame) {
   async function refreshInbox() {
     const toolbarBtns = document.querySelectorAll('.nui-btn .nui-btn-text');
     for (const btn of toolbarBtns) {
-      if (normalizeText(btn.textContent || '') === '刷新') {
+      // 163 会把“刷 新”拆成带空格的文字，所以这里要先压平空白，
+      // 不然脚本明明看到了顶部刷新按钮，也会误以为没找到。
+      const compactLabel = String([
+        btn.textContent || '',
+        btn.getAttribute?.('aria-label') || '',
+        btn.getAttribute?.('title') || '',
+      ].join('')).replace(/\s+/g, '');
+
+      if (compactLabel === '刷新') {
         simulateClick(btn.closest('.nui-btn') || btn);
-        console.log(MAIL163_PREFIX, 'Clicked refresh button');
+        console.log(MAIL163_PREFIX, 'Clicked top toolbar refresh button');
+        log('[163 邮箱] 已命中顶部工具栏“刷新”按钮');
         await sleep(800);
         return;
       }
@@ -474,6 +483,7 @@ if (!isTopFrame) {
       if (normalizeText(btn.textContent || '').includes('收信')) {
         simulateClick(btn);
         console.log(MAIL163_PREFIX, 'Clicked receive button');
+        log('[163 邮箱] 未找到顶部刷新，改用左侧“收信”按钮');
         await sleep(800);
         return;
       }
@@ -482,6 +492,7 @@ if (!isTopFrame) {
     const inboxLink = findInboxLink();
     if (inboxLink) {
       simulateClick(inboxLink);
+      log('[163 邮箱] 未找到顶部刷新或左侧“收信”，回退到点击“收件箱”');
       await sleep(800);
       return;
     }
