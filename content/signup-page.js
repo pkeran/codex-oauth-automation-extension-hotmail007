@@ -799,6 +799,69 @@ function normalizeInlineText(text) {
   return (text || '').replace(/\s+/g, ' ').trim();
 }
 
+function isStep5AllConsentText(text) {
+  const normalizedText = normalizeInlineText(text).toLowerCase();
+  if (!normalizedText) return false;
+
+  return /i\s+agree\s+to\s+all\s+of\s+the\s+following/i.test(normalizedText)
+    || normalizedText.includes('\u6211\u540c\u610f\u4ee5\u4e0b\u6240\u6709\u5404\u9879')
+    || normalizedText.includes('\u540c\u610f\u4ee5\u4e0b\u6240\u6709\u5404\u9879')
+    || normalizedText.includes('\u6211\u540c\u610f\u6240\u6709')
+    || normalizedText.includes('\u5168\u90e8\u540c\u610f');
+}
+
+function findStep5AllConsentCheckbox() {
+  const namedCandidates = Array.from(document.querySelectorAll('input[name="allCheckboxes"][type="checkbox"]'))
+    .filter((el) => {
+      const checkboxLabel = el.closest?.('label') || null;
+      return isVisibleElement(el) || (checkboxLabel && isVisibleElement(checkboxLabel));
+    });
+
+  const namedMatch = namedCandidates.find((el) => {
+    const checkboxLabel = el.closest?.('label') || null;
+    const checkboxText = normalizeInlineText([
+      checkboxLabel?.textContent || '',
+      el.getAttribute?.('aria-label') || '',
+      el.getAttribute?.('title') || '',
+      el.getAttribute?.('name') || '',
+    ].filter(Boolean).join(' '));
+    return isStep5AllConsentText(checkboxText);
+  });
+  if (namedMatch) {
+    return namedMatch;
+  }
+  if (namedCandidates.length > 0) {
+    return namedCandidates[0];
+  }
+
+  return Array.from(document.querySelectorAll('input[type="checkbox"]'))
+    .find((el) => {
+      const checkboxLabel = el.closest?.('label') || null;
+      if (!isVisibleElement(el) && !(checkboxLabel && isVisibleElement(checkboxLabel))) {
+        return false;
+      }
+      const checkboxText = normalizeInlineText([
+        checkboxLabel?.textContent || '',
+        el.getAttribute?.('aria-label') || '',
+        el.getAttribute?.('title') || '',
+        el.getAttribute?.('name') || '',
+      ].filter(Boolean).join(' '));
+      return isStep5AllConsentText(checkboxText);
+    }) || null;
+}
+
+function isStep5CheckboxChecked(checkbox) {
+  if (!checkbox) return false;
+  if (checkbox.checked === true) return true;
+
+  const ariaChecked = String(
+    checkbox.getAttribute?.('aria-checked')
+    || checkbox.closest?.('[role="checkbox"]')?.getAttribute?.('aria-checked')
+    || ''
+  ).toLowerCase();
+  return ariaChecked === 'true';
+}
+
 function findBirthdayReactAriaSelect(labelText) {
   const normalizedLabel = normalizeInlineText(labelText);
   const roots = document.querySelectorAll('.react-aria-Select');
@@ -2337,16 +2400,10 @@ async function step5_fillNameBirthday(payload) {
     throw new Error('未找到生日或年龄输入项。URL: ' + location.href);
   }
   // 韩国IP判断勾选框""I agree"
-  const allConsentCheckbox = Array.from(document.querySelectorAll('input[name="allCheckboxes"][type="checkbox"]'))
-    .find((el) => {
-      const checkboxLabel = el.closest('label');
-      const labelText = normalizeInlineText(checkboxLabel?.textContent || '');
-      return (!checkboxLabel || isVisibleElement(checkboxLabel))
-        && /I\s+agree\s+to\s+all\s+of\s+the\s+following/i.test(labelText);
-    }) || null;
+  const allConsentCheckbox = findStep5AllConsentCheckbox();
 
   if (allConsentCheckbox) {
-    if (!allConsentCheckbox.checked) {
+    if (!isStep5CheckboxChecked(allConsentCheckbox)) {
       const checkboxLabel = allConsentCheckbox.closest('label');
       await humanPause(500, 1500);
       if (checkboxLabel && isVisibleElement(checkboxLabel)) {
@@ -2356,12 +2413,12 @@ async function step5_fillNameBirthday(payload) {
       }
       await sleep(250);
 
-      if (!allConsentCheckbox.checked) {
+      if (!isStep5CheckboxChecked(allConsentCheckbox)) {
         allConsentCheckbox.click();
         await sleep(250);
       }
 
-      if (!allConsentCheckbox.checked) {
+      if (!isStep5CheckboxChecked(allConsentCheckbox)) {
         throw new Error('未能勾选 “I agree to all of the following” 复选框。');
       }
 
