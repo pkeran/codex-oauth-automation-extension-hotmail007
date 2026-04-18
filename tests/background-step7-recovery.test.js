@@ -13,6 +13,7 @@ test('step 8 submits login verification directly without replaying step 7', asyn
     executeStep7: 0,
     sleep: [],
     resolveOptions: null,
+    setStates: [],
   };
   const realDateNow = Date.now;
   Date.now = () => 123456;
@@ -29,7 +30,7 @@ test('step 8 submits login verification directly without replaying step 7', asyn
     ensureStep8VerificationPageReady: async (options) => {
       calls.ensureReady += 1;
       calls.ensureReadyOptions.push(options || null);
-      return { state: 'verification_page' };
+      return { state: 'verification_page', displayedEmail: 'display.user@example.com' };
     },
     executeStep7: async () => {
       calls.executeStep7 += 1;
@@ -53,7 +54,9 @@ test('step 8 submits login verification directly without replaying step 7', asyn
       calls.resolveOptions = options;
     },
     reuseOrCreateTab: async () => {},
-    setState: async () => {},
+    setState: async (payload) => {
+      calls.setStates.push(payload);
+    },
     setStepStatus: async () => {},
     shouldUseCustomRegistrationEmail: () => false,
     sleepWithStop: async (ms) => {
@@ -82,6 +85,10 @@ test('step 8 submits login verification directly without replaying step 7', asyn
   assert.equal(typeof calls.resolveOptions.getRemainingTimeMs, 'function');
   assert.equal(await calls.resolveOptions.getRemainingTimeMs({ actionLabel: '登录验证码流程' }), 5000);
   assert.equal(calls.resolveOptions.resendIntervalMs, 25000);
+  assert.equal(calls.resolveOptions.targetEmail, 'display.user@example.com');
+  assert.deepStrictEqual(calls.setStates, [
+    { step8VerificationTargetEmail: 'display.user@example.com' },
+  ]);
   assert.deepStrictEqual(calls.ensureReadyOptions, [
     { timeoutMs: 5000 },
   ]);
@@ -136,8 +143,60 @@ test('step 8 disables resend interval for 2925 mailbox polling', async () => {
   });
 
   assert.equal(capturedOptions.resendIntervalMs, 0);
+  assert.equal(capturedOptions.targetEmail, '');
   assert.equal(capturedOptions.beforeSubmit, undefined);
   assert.equal(typeof capturedOptions.getRemainingTimeMs, 'function');
+});
+
+test('step 8 falls back to the run email when the verification page does not expose a displayed email', async () => {
+  let capturedOptions = null;
+
+  const executor = api.createStep8Executor({
+    addLog: async () => {},
+    chrome: {
+      tabs: {
+        update: async () => {},
+      },
+    },
+    CLOUDFLARE_TEMP_EMAIL_PROVIDER: 'cloudflare-temp-email',
+    confirmCustomVerificationStepBypass: async () => {},
+    ensureStep8VerificationPageReady: async () => ({ state: 'verification_page', displayedEmail: '' }),
+    executeStep7: async () => {},
+    getOAuthFlowRemainingMs: async () => 8000,
+    getOAuthFlowStepTimeoutMs: async (defaultTimeoutMs) => Math.min(defaultTimeoutMs, 8000),
+    getMailConfig: () => ({
+      provider: 'qq',
+      label: 'QQ 邮箱',
+      source: 'mail-qq',
+      url: 'https://mail.qq.com',
+      navigateOnReuse: false,
+    }),
+    getState: async () => ({ email: 'user@example.com', password: 'secret' }),
+    getTabId: async (sourceName) => (sourceName === 'signup-page' ? 1 : 2),
+    HOTMAIL_PROVIDER: 'hotmail-api',
+    isTabAlive: async () => true,
+    isVerificationMailPollingError: () => false,
+    LUCKMAIL_PROVIDER: 'luckmail-api',
+    resolveVerificationStep: async (_step, _state, _mail, options) => {
+      capturedOptions = options;
+    },
+    reuseOrCreateTab: async () => {},
+    setState: async () => {},
+    setStepStatus: async () => {},
+    shouldUseCustomRegistrationEmail: () => false,
+    sleepWithStop: async () => {},
+    STANDARD_MAIL_VERIFICATION_RESEND_INTERVAL_MS: 25000,
+    STEP7_MAIL_POLLING_RECOVERY_MAX_ATTEMPTS: 8,
+    throwIfStopped: () => {},
+  });
+
+  await executor.executeStep8({
+    email: 'user@example.com',
+    password: 'secret',
+    oauthUrl: 'https://oauth.example/latest',
+  });
+
+  assert.equal(capturedOptions.targetEmail, 'user@example.com');
 });
 
 test('step 8 does not rerun step 7 when verification submit lands on add-phone', async () => {

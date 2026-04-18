@@ -113,7 +113,7 @@
       const is2925Provider = state?.mailProvider === '2925';
       if (step === 4) {
         return {
-          filterAfterTimestamp: getHotmailVerificationRequestTimestamp(4, state),
+          filterAfterTimestamp: is2925Provider ? 0 : getHotmailVerificationRequestTimestamp(4, state),
           senderFilters: ['openai', 'noreply', 'verify', 'auth', 'duckduckgo', 'forward'],
           subjectFilters: ['verify', 'verification', 'code', '验证码', 'confirm'],
           targetEmail: state.email,
@@ -124,10 +124,10 @@
       }
 
       return {
-        filterAfterTimestamp: getHotmailVerificationRequestTimestamp(8, state),
+        filterAfterTimestamp: is2925Provider ? 0 : getHotmailVerificationRequestTimestamp(8, state),
         senderFilters: ['openai', 'noreply', 'verify', 'auth', 'chatgpt', 'duckduckgo', 'forward'],
         subjectFilters: ['verify', 'verification', 'code', '验证码', 'confirm', 'login'],
-        targetEmail: state.email,
+        targetEmail: String(state?.step8VerificationTargetEmail || '').trim() || state.email,
         maxAttempts: is2925Provider ? MAIL_2925_VERIFICATION_MAX_ATTEMPTS : 5,
         intervalMs: is2925Provider ? MAIL_2925_VERIFICATION_INTERVAL_MS : 3000,
         ...overrides,
@@ -234,6 +234,33 @@
       }
 
       return requestedAt;
+    }
+
+    function triggerPostSuccessMailboxCleanup(step, mail) {
+      if (mail?.provider !== '2925') {
+        return;
+      }
+
+      Promise.resolve().then(async () => {
+        try {
+          await sendToMailContentScriptResilient(
+            mail,
+            {
+              type: 'DELETE_ALL_EMAILS',
+              step,
+              source: 'background',
+              payload: {},
+            },
+            {
+              timeoutMs: 10000,
+              responseTimeoutMs: 5000,
+              maxRecoveryAttempts: 1,
+            }
+          );
+        } catch (_) {
+          // Best-effort cleanup only.
+        }
+      });
     }
 
     async function pollFreshVerificationCodeWithResendInterval(step, state, mail, pollOverrides = {}) {
@@ -656,6 +683,7 @@
             emailTimestamp: result.emailTimestamp,
             code: result.code,
           });
+          triggerPostSuccessMailboxCleanup(step, mail);
           return;
         }
       }

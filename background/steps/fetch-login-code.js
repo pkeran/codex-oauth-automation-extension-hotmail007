@@ -51,9 +51,14 @@
       });
     }
 
+    function normalizeStep8VerificationTargetEmail(value) {
+      return String(value || '').trim().toLowerCase();
+    }
+
     async function runStep8Attempt(state) {
       const mail = getMailConfig(state);
       if (mail.error) throw new Error(mail.error);
+
       const stepStartedAt = Date.now();
       const authTabId = await getTabId('signup-page');
 
@@ -67,10 +72,25 @@
       }
 
       throwIfStopped();
-      await ensureStep8VerificationPageReady({
+      const pageState = await ensureStep8VerificationPageReady({
         timeoutMs: await getStep8ReadyTimeoutMs('确认登录验证码页已就绪'),
       });
+      const shouldCompareVerificationEmail = mail.provider !== '2925';
+      const displayedVerificationEmail = shouldCompareVerificationEmail
+        ? normalizeStep8VerificationTargetEmail(pageState?.displayedEmail)
+        : '';
+      const fixedTargetEmail = shouldCompareVerificationEmail
+        ? (displayedVerificationEmail || normalizeStep8VerificationTargetEmail(state?.email))
+        : '';
+
+      await setState({
+        step8VerificationTargetEmail: displayedVerificationEmail || '',
+      });
+
       await addLog('步骤 8：登录验证码页面已就绪，开始获取验证码。', 'info');
+      if (shouldCompareVerificationEmail && displayedVerificationEmail) {
+        await addLog(`步骤 8：已固定当前验证码页显示邮箱 ${displayedVerificationEmail} 作为后续匹配目标。`, 'info');
+      }
 
       if (shouldUseCustomRegistrationEmail(state)) {
         await confirmCustomVerificationStepBypass(8);
@@ -78,7 +98,11 @@
       }
 
       throwIfStopped();
-      if (mail.provider === HOTMAIL_PROVIDER || mail.provider === LUCKMAIL_PROVIDER || mail.provider === CLOUDFLARE_TEMP_EMAIL_PROVIDER) {
+      if (
+        mail.provider === HOTMAIL_PROVIDER
+        || mail.provider === LUCKMAIL_PROVIDER
+        || mail.provider === CLOUDFLARE_TEMP_EMAIL_PROVIDER
+      ) {
         await addLog(`步骤 8：正在通过 ${mail.label} 轮询验证码...`);
       } else {
         await addLog(`步骤 8：正在打开${mail.label}...`);
@@ -102,10 +126,14 @@
         }
       }
 
-      await resolveVerificationStep(8, state, mail, {
+      await resolveVerificationStep(8, {
+        ...state,
+        step8VerificationTargetEmail: displayedVerificationEmail || '',
+      }, mail, {
         filterAfterTimestamp: stepStartedAt,
         getRemainingTimeMs: getStep8RemainingTimeResolver(),
         requestFreshCodeFirst: false,
+        targetEmail: fixedTargetEmail,
         resendIntervalMs: (mail.provider === HOTMAIL_PROVIDER || mail.provider === '2925')
           ? 0
           : STANDARD_MAIL_VERIFICATION_RESEND_INTERVAL_MS,

@@ -695,6 +695,12 @@ function getPageTextSnapshot() {
     .trim();
 }
 
+function getLoginVerificationDisplayedEmail() {
+  const pageText = getPageTextSnapshot();
+  const matches = pageText.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/ig) || [];
+  return matches[0] ? String(matches[0]).trim().toLowerCase() : '';
+}
+
 function getOAuthConsentForm() {
   return document.querySelector(OAUTH_CONSENT_FORM_SELECTOR);
 }
@@ -1076,6 +1082,7 @@ function inspectLoginAuthState() {
     state: 'unknown',
     url: location.href,
     path: location.pathname || '',
+    displayedEmail: getLoginVerificationDisplayedEmail(),
     retryButton: retryState?.retryButton || null,
     retryEnabled: Boolean(retryState?.retryEnabled),
     titleMatched: Boolean(retryState?.titleMatched),
@@ -1141,6 +1148,7 @@ function serializeLoginAuthState(snapshot) {
     state: snapshot?.state || 'unknown',
     url: snapshot?.url || location.href,
     path: snapshot?.path || location.pathname || '',
+    displayedEmail: snapshot?.displayedEmail || '',
     retryEnabled: Boolean(snapshot?.retryEnabled),
     titleMatched: Boolean(snapshot?.titleMatched),
     detailMatched: Boolean(snapshot?.detailMatched),
