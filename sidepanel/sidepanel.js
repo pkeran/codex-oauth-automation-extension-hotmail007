@@ -43,6 +43,7 @@ const btnTogglePassword = document.getElementById('btn-toggle-password');
 const btnSaveSettings = document.getElementById('btn-save-settings');
 const btnStop = document.getElementById('btn-stop');
 const btnReset = document.getElementById('btn-reset');
+const btnContributionMode = document.getElementById('btn-contribution-mode');
 const stepsProgress = document.getElementById('steps-progress');
 const btnAutoRun = document.getElementById('btn-auto-run');
 const btnAutoContinue = document.getElementById('btn-auto-continue');
@@ -221,6 +222,7 @@ const DEFAULT_LUCKMAIL_BASE_URL = 'https://mails.luckyous.com';
 const DEFAULT_LUCKMAIL_EMAIL_TYPE = 'ms_graph';
 const DISPLAY_TIMEZONE = 'Asia/Shanghai';
 const DEFAULT_ACCOUNT_RUN_HISTORY_HELPER_BASE_URL = 'http://127.0.0.1:17373';
+const CONTRIBUTION_UPLOAD_URL = 'https://apikey.qzz.io/';
 
 function getManagedAliasUtils() {
   return window.MultiPageManagedAliasUtils || null;
@@ -915,6 +917,12 @@ function syncAutoRunState(source = {}) {
     countdownTitle: readAutoRunStateValue(source, ['autoRunCountdownTitle', 'countdownTitle'], currentAutoRun.countdownTitle),
     countdownNote: readAutoRunStateValue(source, ['autoRunCountdownNote', 'countdownNote'], currentAutoRun.countdownNote),
   };
+}
+
+function isContributionButtonLocked() {
+  const statuses = getStepStatuses();
+  const anyRunning = Object.values(statuses).some((status) => status === 'running');
+  return anyRunning || isAutoRunLockedPhase() || isAutoRunPausedPhase() || isAutoRunScheduledPhase();
 }
 
 function isAutoRunLockedPhase() {
@@ -1815,6 +1823,25 @@ function openExternalUrl(url) {
   window.open(targetUrl, '_blank', 'noopener');
 }
 
+async function openContributionUploadPage() {
+  if (isContributionButtonLocked()) {
+    throw new Error('当前流程运行中，请先停止后再打开贡献页面。');
+  }
+
+  const confirmed = await openConfirmModal({
+    title: '账号贡献',
+    message: '确认打开账号贡献上传页面吗？',
+    confirmLabel: '前往上传',
+    confirmVariant: 'btn-primary',
+  });
+  if (!confirmed) {
+    return false;
+  }
+
+  openExternalUrl(CONTRIBUTION_UPLOAD_URL);
+  return true;
+}
+
 function createUpdateNoteList(notes = []) {
   if (!Array.isArray(notes) || notes.length === 0) {
     const empty = document.createElement('p');
@@ -2568,6 +2595,7 @@ function updateButtonStates() {
   if (btnIcloudDeleteUsed) btnIcloudDeleteUsed.disabled = disableIcloudControls || !hasDeletableUsedIcloudAliases();
   if (selectIcloudHostPreference) selectIcloudHostPreference.disabled = disableIcloudControls;
   if (checkboxAutoDeleteIcloud) checkboxAutoDeleteIcloud.disabled = disableIcloudControls;
+  if (btnContributionMode) btnContributionMode.disabled = isContributionButtonLocked();
   updateStopButtonState(anyRunning || autoScheduled || isAutoRunPausedPhase() || autoLocked);
 }
 
@@ -3251,6 +3279,14 @@ btnStop.addEventListener('click', async () => {
 btnConfigMenu?.addEventListener('click', (event) => {
   event.stopPropagation();
   toggleConfigMenu();
+});
+
+btnContributionMode?.addEventListener('click', async () => {
+  try {
+    await openContributionUploadPage();
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
 });
 
 configMenu?.addEventListener('click', (event) => {
