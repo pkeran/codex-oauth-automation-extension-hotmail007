@@ -48,67 +48,68 @@ function extractFunction(name) {
   return sidepanelSource.slice(start, end);
 }
 
-test('sidepanel html contains contribution button in header', () => {
+test('sidepanel html exposes header repo and releases entry points', () => {
   const html = fs.readFileSync('sidepanel/sidepanel.html', 'utf8');
-  assert.match(html, /id="btn-contribution-mode"/);
-  assert.match(html, />贡献</);
+
+  assert.match(
+    html,
+    /id="btn-repo-home"[\s\S]*title="打开 GitHub 仓库"/
+  );
+  assert.match(
+    html,
+    /id="extension-update-status"[\s\S]*title="打开 GitHub Releases 页面"/
+  );
 });
 
-test('openContributionUploadPage opens upload page in a new tab directly', async () => {
+test('header link helpers resolve repo and releases urls', () => {
   const bundle = [
-    extractFunction('openContributionUploadPage'),
+    extractFunction('getRepositoryHomeUrl'),
+    extractFunction('getReleaseListUrl'),
+    extractFunction('openRepositoryHomePage'),
+    extractFunction('openReleaseListPage'),
   ].join('\n');
 
   const api = new Function(`
-const calls = [];
-const CONTRIBUTION_UPLOAD_URL = 'https://apikey.qzz.io/';
-function isContributionButtonLocked() {
-  return false;
-}
+const opened = [];
+const sidepanelUpdateService = {
+  releasesPageUrl: 'https://github.com/example/project/releases',
+};
+let currentReleaseSnapshot = null;
 function openExternalUrl(url) {
-  calls.push({ type: 'open', url });
+  opened.push(url);
 }
 ${bundle}
 return {
-  openContributionUploadPage,
-  getCalls() {
-    return calls;
+  getRepositoryHomeUrl,
+  getReleaseListUrl,
+  openRepositoryHomePage,
+  openReleaseListPage,
+  setSnapshot(snapshot) {
+    currentReleaseSnapshot = snapshot;
+  },
+  getOpened() {
+    return opened;
   },
 };
 `)();
 
-  const result = await api.openContributionUploadPage();
-  assert.equal(result, true);
-  assert.deepStrictEqual(api.getCalls(), [
-    {
-      type: 'open',
-      url: 'https://apikey.qzz.io/',
-    },
-  ]);
-});
-
-test('openContributionUploadPage blocks while flow is running', async () => {
-  const bundle = [
-    extractFunction('openContributionUploadPage'),
-  ].join('\n');
-
-  const api = new Function(`
-const CONTRIBUTION_UPLOAD_URL = 'https://apikey.qzz.io/';
-function isContributionButtonLocked() {
-  return true;
-}
-async function openConfirmModal() {
-  throw new Error('should not open modal');
-}
-function openExternalUrl() {
-  throw new Error('should not open url');
-}
-${bundle}
-return { openContributionUploadPage };
-`)();
-
-  await assert.rejects(
-    () => api.openContributionUploadPage(),
-    /当前流程运行中/
+  assert.equal(
+    api.getRepositoryHomeUrl(),
+    'https://github.com/example/project'
   );
+  assert.equal(
+    api.getReleaseListUrl(),
+    'https://github.com/example/project/releases'
+  );
+
+  api.setSnapshot({
+    releasesPageUrl: 'https://github.com/example/project/releases',
+  });
+  api.openRepositoryHomePage();
+  api.openReleaseListPage();
+
+  assert.deepEqual(api.getOpened(), [
+    'https://github.com/example/project',
+    'https://github.com/example/project/releases',
+  ]);
 });

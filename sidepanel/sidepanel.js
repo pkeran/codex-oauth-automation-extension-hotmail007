@@ -22,6 +22,7 @@ const btnAccountRecordsNext = document.getElementById('btn-account-records-next'
 const btnCloseAccountRecords = document.getElementById('btn-close-account-records');
 const btnClearAccountRecords = document.getElementById('btn-clear-account-records');
 const updateSection = document.getElementById('update-section');
+const btnRepoHome = document.getElementById('btn-repo-home');
 const extensionUpdateStatus = document.getElementById('extension-update-status');
 const extensionVersionMeta = document.getElementById('extension-version-meta');
 const btnReleaseLog = document.getElementById('btn-release-log');
@@ -1823,19 +1824,45 @@ function openExternalUrl(url) {
   window.open(targetUrl, '_blank', 'noopener');
 }
 
+function getRepositoryHomeUrl() {
+  const serviceRepositoryUrl = String(sidepanelUpdateService?.repositoryUrl || '').trim();
+  if (serviceRepositoryUrl) {
+    return serviceRepositoryUrl;
+  }
+
+  const releasesPageUrl = String(sidepanelUpdateService?.releasesPageUrl || '').trim();
+  if (releasesPageUrl) {
+    return releasesPageUrl.replace(/\/releases\/?$/, '');
+  }
+
+  return 'https://github.com/QLHazyCoder/codex-oauth-automation-extension';
+}
+
+function getReleaseListUrl() {
+  const snapshotReleaseListUrl = String(currentReleaseSnapshot?.releasesPageUrl || '').trim();
+  if (snapshotReleaseListUrl) {
+    return snapshotReleaseListUrl;
+  }
+
+  const serviceReleaseListUrl = String(sidepanelUpdateService?.releasesPageUrl || '').trim();
+  if (serviceReleaseListUrl) {
+    return serviceReleaseListUrl;
+  }
+
+  return `${getRepositoryHomeUrl()}/releases`;
+}
+
+function openRepositoryHomePage() {
+  openExternalUrl(getRepositoryHomeUrl());
+}
+
+function openReleaseListPage() {
+  openExternalUrl(getReleaseListUrl());
+}
+
 async function openContributionUploadPage() {
   if (isContributionButtonLocked()) {
     throw new Error('当前流程运行中，请先停止后再打开贡献页面。');
-  }
-
-  const confirmed = await openConfirmModal({
-    title: '账号贡献',
-    message: '确认打开账号贡献上传页面吗？',
-    confirmLabel: '前往上传',
-    confirmVariant: 'btn-primary',
-  });
-  if (!confirmed) {
-    return false;
   }
 
   openExternalUrl(CONTRIBUTION_UPLOAD_URL);
@@ -3287,6 +3314,14 @@ btnContributionMode?.addEventListener('click', async () => {
   } catch (err) {
     showToast(err.message, 'error');
   }
+});
+
+btnRepoHome?.addEventListener('click', () => {
+  openRepositoryHomePage();
+});
+
+extensionUpdateStatus?.addEventListener('click', () => {
+  openReleaseListPage();
 });
 
 configMenu?.addEventListener('click', (event) => {
