@@ -141,6 +141,7 @@ const SUB2API_STEP1_RESPONSE_TIMEOUT_MS = 90000;
 const SUB2API_STEP9_RESPONSE_TIMEOUT_MS = 120000;
 const DEFAULT_SUB2API_URL = 'https://sub2api.hisence.fun/admin/accounts';
 const DEFAULT_SUB2API_GROUP_NAME = 'codex';
+const DEFAULT_SUB2API_PROXY_NAME = 'shadowrocket';
 const DEFAULT_SUB2API_REDIRECT_URI = 'http://localhost:1455/auth/callback';
 const AUTO_RUN_TIMER_ALARM_NAME = 'auto-run-timer';
 const AUTO_RUN_TIMER_KIND_SCHEDULED_START = 'scheduled_start';
@@ -215,6 +216,7 @@ const PERSISTED_SETTING_DEFAULTS = {
   sub2apiEmail: '',
   sub2apiPassword: '',
   sub2apiGroupName: DEFAULT_SUB2API_GROUP_NAME,
+  sub2apiDefaultProxyName: DEFAULT_SUB2API_PROXY_NAME,
   customPassword: '',
   autoRunSkipFailures: false,
   autoRunFallbackThreadIntervalMinutes: 0,
@@ -287,6 +289,7 @@ const DEFAULT_STATE = {
   sub2apiOAuthState: null, // SUB2API OpenAI Auth state。
   sub2apiGroupId: null, // SUB2API 目标分组 ID。
   sub2apiDraftName: null, // SUB2API 本轮预生成的账号名称。
+  sub2apiProxyId: null, // SUB2API 本轮使用的代理 ID。
   flowStartTime: null, // 当前流程开始时间。
   tabRegistry: {}, // 程序维护的标签页注册表。
   sourceLastUrls: {}, // 各来源页面最近一次打开的地址记录。
@@ -828,6 +831,8 @@ function normalizePersistentSettingValue(key, value) {
       return String(value || '');
     case 'sub2apiGroupName':
       return String(value || '').trim();
+    case 'sub2apiDefaultProxyName':
+      return String(value || '').trim() || DEFAULT_SUB2API_PROXY_NAME;
     case 'customPassword':
       return String(value || '');
     case 'autoRunSkipFailures':
@@ -3839,6 +3844,14 @@ function isVerificationMailPollingError(error) {
   return /未在 .*邮箱中找到新的匹配邮件|未在 Hotmail 收件箱中找到新的匹配验证码|邮箱轮询结束，但未获取到验证码|无法获取新的(?:注册|登录)验证码|页面未能重新就绪|页面通信异常|did not respond in \d+s/i.test(message);
 }
 
+function isAddPhoneAuthFailure(error) {
+  if (typeof loggingStatus !== 'undefined' && loggingStatus?.isAddPhoneAuthFailure) {
+    return loggingStatus.isAddPhoneAuthFailure(error);
+  }
+  const message = getErrorMessage(error);
+  return /https:\/\/auth\.openai\.com\/add-phone(?:[/?#]|$)|\badd-phone\b|添加手机号|手机号码|手机号页|手机号页面|手机号|phone\s+number|telephone/i.test(message);
+}
+
 function getLoginAuthStateLabel(state) {
   if (typeof loggingStatus !== 'undefined' && loggingStatus?.getLoginAuthStateLabel) {
     return loggingStatus.getLoginAuthStateLabel(state);
@@ -5176,6 +5189,7 @@ const autoRunController = self.MultiPageBackgroundAutoRunController?.createAutoR
   getState,
   getStopRequested: () => stopRequested,
   hasSavedProgress,
+  isAddPhoneAuthFailure,
   isRestartCurrentAttemptError,
   isStopError,
   launchAutoRunTimerPlan,
@@ -5783,6 +5797,7 @@ const step7Executor = self.MultiPageBackgroundStep7?.createStep7Executor({
   getLoginAuthStateLabel,
   getOAuthFlowStepTimeoutMs,
   getState,
+  isAddPhoneAuthFailure,
   isStep6RecoverableResult,
   isStep6SuccessResult,
   refreshOAuthUrlBeforeStep6,
@@ -6361,7 +6376,7 @@ async function getPostStep6AutoRestartDecision(step, error) {
     };
   }
 
-  if (isAddPhoneAuthUrl(errorMessage)) {
+  if (isAddPhoneAuthFailure(error) || isAddPhoneAuthUrl(errorMessage)) {
     return {
       shouldRestart: false,
       blockedByAddPhone: true,
@@ -6433,6 +6448,11 @@ async function ensureStep8VerificationPageReady(options = {}) {
   if (pageState.state === 'login_timeout_error_page') {
     const urlPart = pageState.url ? ` URL: ${pageState.url}` : '';
     throw new Error(`STEP8_RESTART_STEP7::步骤 8：当前认证页进入登录超时报错页，请回到步骤 7 重新开始。${urlPart}`.trim());
+  }
+
+  if (pageState.state === 'add_phone_page') {
+    const urlPart = pageState.url ? ` URL: ${pageState.url}` : '';
+    throw new Error(`步骤 8：当前认证页进入手机号页面，当前流程无法继续自动授权。${urlPart}`.trim());
   }
 
   const stateLabel = getLoginAuthStateLabel(pageState.state);
