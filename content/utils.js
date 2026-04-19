@@ -2,13 +2,20 @@
 
 const getActivationStrategy = self.MultiPageActivationUtils?.getActivationStrategy;
 
-const SCRIPT_SOURCE = (() => {
-  if (window.__MULTIPAGE_SOURCE) return window.__MULTIPAGE_SOURCE;
-  const url = location.href;
-  const hostname = location.hostname;
+function detectScriptSource({
+  injectedSource,
+  url = '',
+  hostname = '',
+} = {}) {
+  if (injectedSource) return injectedSource;
   if (url.includes('auth0.openai.com') || url.includes('auth.openai.com') || url.includes('accounts.openai.com')) return 'signup-page';
   if (hostname === 'mail.qq.com' || hostname === 'wx.mail.qq.com') return 'qq-mail';
-  if (hostname === 'mail.163.com' || hostname.endsWith('.mail.163.com') || hostname === 'webmail.vip.163.com') return 'mail-163';
+  if (
+    hostname === 'mail.163.com'
+    || hostname.endsWith('.mail.163.com')
+    || hostname === 'webmail.vip.163.com'
+    || hostname === 'mail.126.com'
+  ) return 'mail-163';
   if (hostname === 'mail.google.com') return 'gmail-mail';
   if (hostname === 'www.icloud.com' || hostname === 'www.icloud.com.cn') return 'icloud-mail';
   if (url.includes('duckduckgo.com/email/settings/autofill')) return 'duck-mail';
@@ -16,6 +23,14 @@ const SCRIPT_SOURCE = (() => {
   if (url.includes("2925.com")) return "mail-2925";
   // VPS panel — detected dynamically since URL is configurable
   return 'vps-panel';
+}
+
+const SCRIPT_SOURCE = (() => {
+  return detectScriptSource({
+    injectedSource: window.__MULTIPAGE_SOURCE,
+    url: location.href,
+    hostname: location.hostname,
+  });
 })();
 
 const LOG_PREFIX = `[MultiPage:${SCRIPT_SOURCE}]`;

@@ -628,6 +628,7 @@ function normalizeMailProvider(value = '') {
     case CLOUDFLARE_TEMP_EMAIL_PROVIDER:
     case '163':
     case '163-vip':
+    case '126':
     case 'qq':
     case 'inbucket':
     case '2925':
@@ -6130,6 +6131,9 @@ function getMailConfig(state) {
   }
   if (provider === '163-vip') {
     return { source: 'mail-163', url: 'https://webmail.vip.163.com/js6/main.jsp?df=mail163_letter#module=mbox.ListModule%7C%7B%22fid%22%3A1%2C%22order%22%3A%22date%22%2C%22desc%22%3Atrue%7D', label: '163 VIP 邮箱' };
+  }
+  if (provider === '126') {
+    return { source: 'mail-163', url: 'https://mail.126.com/js6/main.jsp?df=mail163_letter#module=mbox.ListModule%7C%7B%22fid%22%3A1%2C%22order%22%3A%22date%22%2C%22desc%22%3Atrue%7D', label: '126 邮箱' };
   }
   if (provider === 'inbucket') {
     const host = normalizeInbucketOrigin(state.inbucketHost);
