@@ -322,6 +322,9 @@
     }
 
     function shouldSyncAccountRunHistorySnapshot(state = {}) {
+      if (Boolean(state.contributionMode)) {
+        return false;
+      }
       if (!Boolean(state.accountRunHistoryTextEnabled)) {
         return false;
       }
