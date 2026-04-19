@@ -112,7 +112,15 @@ function getSignupEmailInput() {
   return null;
 }
 
+function getSignupPhoneInput() {
+  return null;
+}
+
 function getSignupPasswordInput() {
+  return null;
+}
+
+function findSignupUseEmailTrigger() {
   return null;
 }
 
