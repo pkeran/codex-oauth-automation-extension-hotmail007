@@ -247,17 +247,6 @@
     }
 
     async function enterContributionMode() {
-      const confirmed = await helpers.openConfirmModal?.({
-        title: '贡献账号',
-        message: '是否确认给作者 QLHazyCoder 提供账号以支持继续维护项目？',
-        confirmLabel: '确定',
-        confirmVariant: 'btn-primary',
-      });
-
-      if (!confirmed) {
-        return;
-      }
-
       await requestContributionMode(true);
       helpers.showToast?.('已进入贡献模式。', 'success', 1800);
     }

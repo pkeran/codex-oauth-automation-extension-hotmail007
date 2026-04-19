@@ -287,7 +287,9 @@ test('contribution mode manager enters mode, starts main auto flow, polls contri
       isModeSwitchBlocked() {
         return blocked;
       },
-      openConfirmModal: async () => true,
+      openConfirmModal: async () => {
+        throw new Error('should not ask for confirmation before entering contribution mode');
+      },
       openExternalUrl(url) {
         openedUrls.push(url);
       },

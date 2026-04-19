@@ -235,7 +235,6 @@ const DEFAULT_LUCKMAIL_BASE_URL = 'https://mails.luckyous.com';
 const DEFAULT_LUCKMAIL_EMAIL_TYPE = 'ms_graph';
 const DISPLAY_TIMEZONE = 'Asia/Shanghai';
 const DEFAULT_ACCOUNT_RUN_HISTORY_HELPER_BASE_URL = 'http://127.0.0.1:17373';
-const CONTRIBUTION_UPLOAD_URL = 'https://apikey.qzz.io/';
 
 function getManagedAliasUtils() {
   return window.MultiPageManagedAliasUtils || null;
@@ -1900,15 +1899,6 @@ function openReleaseListPage() {
   openExternalUrl(getReleaseListUrl());
 }
 
-async function openContributionUploadPage() {
-  if (isContributionButtonLocked()) {
-    throw new Error('当前流程运行中，请先停止后再打开贡献页面。');
-  }
-
-  openExternalUrl(CONTRIBUTION_UPLOAD_URL);
-  return true;
-}
-
 function createUpdateNoteList(notes = []) {
   if (!Array.isArray(notes) || notes.length === 0) {
     const empty = document.createElement('p');
@@ -3408,14 +3398,6 @@ btnStop.addEventListener('click', async () => {
 btnConfigMenu?.addEventListener('click', (event) => {
   event.stopPropagation();
   toggleConfigMenu();
-});
-
-btnContributionMode?.addEventListener('click', async () => {
-  try {
-    await openContributionUploadPage();
-  } catch (err) {
-    showToast(err.message, 'error');
-  }
 });
 
 btnRepoHome?.addEventListener('click', () => {
