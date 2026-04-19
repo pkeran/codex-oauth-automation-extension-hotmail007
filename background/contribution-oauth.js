@@ -9,6 +9,7 @@
 
   const RUNTIME_DEFAULTS = {
     contributionMode: false,
+    contributionModeExpected: false,
     contributionSessionId: '',
     contributionAuthUrl: '',
     contributionAuthState: '',

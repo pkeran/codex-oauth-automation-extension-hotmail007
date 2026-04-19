@@ -91,6 +91,7 @@ test('buildContributionModeState preserves active contribution runtime while for
 const DEFAULT_STATE = { panelMode: 'cpa' };
 const CONTRIBUTION_RUNTIME_DEFAULTS = {
   contributionMode: false,
+  contributionModeExpected: false,
   contributionSessionId: '',
   contributionAuthUrl: '',
   contributionAuthState: '',
@@ -121,6 +122,7 @@ return { buildContributionModeState };
     }),
     {
       contributionMode: true,
+      contributionModeExpected: true,
       contributionSessionId: 'session-001',
       contributionAuthUrl: 'https://auth.example.com',
       contributionAuthState: '',
@@ -150,6 +152,7 @@ return { buildContributionModeState };
     }),
     {
       contributionMode: false,
+      contributionModeExpected: false,
       contributionSessionId: '',
       contributionAuthUrl: '',
       contributionAuthState: '',
@@ -226,6 +229,50 @@ test('message router handles contribution mode, start flow, and status polling m
     { type: 'toggle', enabled: true },
     { type: 'start', options: { nickname: '阿青' } },
     { type: 'poll', options: { reason: 'test_poll' } },
+  ]);
+});
+
+test('message router re-syncs contribution mode before AUTO_RUN when sidepanel payload marks contributionMode=true', async () => {
+  const source = fs.readFileSync('background/message-router.js', 'utf8');
+  const globalScope = {};
+  const api = new Function('self', `${source}; return self.MultiPageBackgroundMessageRouter;`)(globalScope);
+
+  const calls = [];
+  const router = api.createMessageRouter({
+    clearStopRequest: () => {},
+    getPendingAutoRunTimerPlan: () => null,
+    getState: async () => ({
+      contributionMode: false,
+      stepStatuses: {},
+    }),
+    normalizeRunCount: (value) => Number(value) || 1,
+    setContributionMode: async (enabled) => {
+      calls.push({ type: 'toggle', enabled });
+      return { contributionMode: true };
+    },
+    setState: async (updates) => {
+      calls.push({ type: 'setState', updates });
+    },
+    startAutoRunLoop: (totalRuns, options) => {
+      calls.push({ type: 'startAutoRunLoop', totalRuns, options });
+    },
+  });
+
+  const response = await router.handleMessage({
+    type: 'AUTO_RUN',
+    payload: {
+      totalRuns: 2,
+      autoRunSkipFailures: true,
+      mode: 'restart',
+      contributionMode: true,
+    },
+  });
+
+  assert.equal(response.ok, true);
+  assert.deepStrictEqual(calls, [
+    { type: 'toggle', enabled: true },
+    { type: 'setState', updates: { autoRunSkipFailures: true } },
+    { type: 'startAutoRunLoop', totalRuns: 2, options: { autoRunSkipFailures: true, mode: 'restart' } },
   ]);
 });
 
@@ -411,6 +458,7 @@ return { refreshOAuthUrlBeforeStep6 };
 
   assert.equal(oauthUrl, 'https://auth.example.com/oauth?state=oauth-state-001');
   assert.deepStrictEqual(calls, [
+    { type: 'log', message: '步骤 7：contributionMode=true，正在通过公开贡献接口申请 OAuth 链接...' },
     { type: 'log', message: '步骤 7：贡献模式正在申请贡献登录地址...' },
     {
       type: 'contribution',
@@ -438,4 +486,31 @@ return { refreshOAuthUrlBeforeStep6 };
   delete globalThis.getPanelModeLabel;
   delete globalThis.requestOAuthUrlFromPanel;
   delete globalThis.LOG_PREFIX;
+});
+
+test('executeStep10 blocks silent fallback when contributionModeExpected=true but contributionMode=false', async () => {
+  const bundle = extractFunction(backgroundSource, 'executeStep10');
+
+  const api = new Function(`
+${bundle}
+return { executeStep10 };
+`)();
+
+  globalThis.executeContributionStep10 = async () => ({ ok: true });
+  globalThis.step10Executor = {
+    async executeStep10() {
+      return { ok: true };
+    },
+  };
+
+  await assert.rejects(
+    () => api.executeStep10({
+      contributionModeExpected: true,
+      contributionMode: false,
+    }),
+    /步骤 10：当前自动流程预期使用贡献模式/
+  );
+
+  delete globalThis.executeContributionStep10;
+  delete globalThis.step10Executor;
 });

@@ -372,6 +372,9 @@
 
         case 'AUTO_RUN': {
           clearStopRequest();
+          if (Boolean(message.payload?.contributionMode) && typeof setContributionMode === 'function') {
+            await setContributionMode(true);
+          }
           const state = await getState();
           if (getPendingAutoRunTimerPlan(state)) {
             throw new Error('已有自动运行倒计时计划，请先取消或立即开始。');
@@ -386,6 +389,9 @@
 
         case 'SCHEDULE_AUTO_RUN': {
           clearStopRequest();
+          if (Boolean(message.payload?.contributionMode) && typeof setContributionMode === 'function') {
+            await setContributionMode(true);
+          }
           const totalRuns = normalizeRunCount(message.payload?.totalRuns || 1);
           return await scheduleAutoRun(totalRuns, {
             delayMinutes: message.payload?.delayMinutes,

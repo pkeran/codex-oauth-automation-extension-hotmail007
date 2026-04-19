@@ -179,7 +179,8 @@ const MICROSOFT_TOKEN_DNR_RULE_ID = 1001;
 const PERSISTENT_ALIAS_STATE_KEYS = ['manualAliasUsage', 'preservedAliases'];
 const ACCOUNT_RUN_HISTORY_STORAGE_KEY = 'accountRunHistory';
 const CONTRIBUTION_RUNTIME_DEFAULTS = self.MultiPageBackgroundContributionOAuth?.RUNTIME_DEFAULTS || {
-  ...CONTRIBUTION_RUNTIME_DEFAULTS,
+  contributionMode: false,
+  contributionModeExpected: false,
   contributionSessionId: '',
   contributionAuthUrl: '',
   contributionAuthState: '',
@@ -1149,6 +1150,7 @@ function buildContributionModeState(enabled, persistedSettings = {}, currentStat
     return {
       ...currentContributionState,
       contributionMode: true,
+      contributionModeExpected: true,
       panelMode: 'cpa',
       customPassword: '',
       accountRunHistoryTextEnabled: false,
@@ -1158,6 +1160,7 @@ function buildContributionModeState(enabled, persistedSettings = {}, currentStat
   return {
     ...CONTRIBUTION_RUNTIME_DEFAULTS,
     contributionMode: false,
+    contributionModeExpected: false,
     panelMode: persistedSettings.panelMode || DEFAULT_STATE.panelMode,
     customPassword: persistedSettings.customPassword || '',
     accountRunHistoryTextEnabled: Boolean(persistedSettings.accountRunHistoryTextEnabled),
@@ -6454,7 +6457,11 @@ async function runPreStep6CookieCleanup() {
 // ============================================================
 
 async function refreshOAuthUrlBeforeStep6(state) {
+  if (state?.contributionModeExpected && !state?.contributionMode) {
+    throw new Error('步骤 7：当前自动流程预期使用贡献模式，但运行态 contributionMode 已丢失，已阻止回退到普通 CPA 面板。请重新进入贡献模式后再点击自动。');
+  }
   if (state?.contributionMode && contributionOAuthManager?.startContributionFlow) {
+    await addLog('步骤 7：contributionMode=true，正在通过公开贡献接口申请 OAuth 链接...', 'info');
     await addLog('步骤 7：贡献模式正在申请贡献登录地址...');
     const contributionState = await contributionOAuthManager.startContributionFlow({
       nickname: state.email,
@@ -6469,6 +6476,7 @@ async function refreshOAuthUrlBeforeStep6(state) {
     return oauthUrl;
   }
   await addLog(`步骤 7：正在刷新登录用的 ${getPanelModeLabel(state)} OAuth 链接...`);
+  await addLog(`步骤 7：contributionMode=${Boolean(state?.contributionMode)}，当前将回退到 ${getPanelModeLabel(state)} 面板刷新 OAuth。`, 'warn');
   console.log(LOG_PREFIX, '[refreshOAuthUrlBeforeStep6] requesting fresh OAuth directly from panel');
   const refreshResult = await requestOAuthUrlFromPanel(state, { logLabel: '步骤 7' });
   await handleStepData(1, refreshResult);
@@ -7145,6 +7153,9 @@ async function executeContributionStep10(state) {
 }
 
 async function executeStep10(state) {
+  if (state?.contributionModeExpected && !state?.contributionMode) {
+    throw new Error('步骤 10：当前自动流程预期使用贡献模式，但运行态 contributionMode 已丢失，已阻止回退到普通 CPA / SUB2API 提交。请重新进入贡献模式后再点击自动。');
+  }
   if (state?.contributionMode) {
     return executeContributionStep10(state);
   }

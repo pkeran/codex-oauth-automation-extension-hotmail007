@@ -3423,6 +3423,7 @@ async function startAutoRunFromCurrentSettings() {
       totalRuns,
       delayMinutes,
       autoRunSkipFailures,
+      contributionMode: Boolean(latestState?.contributionMode),
       mode,
     },
   });
