@@ -4064,6 +4064,79 @@ function getRunningSteps(statuses = {}) {
     .sort((a, b) => a - b);
 }
 
+function inferStoppedRecordStep(state = {}) {
+  const statuses = { ...DEFAULT_STATE.stepStatuses, ...(state?.stepStatuses || {}) };
+  const stepIds = Object.keys(statuses)
+    .map((step) => Number(step))
+    .filter(Number.isFinite)
+    .sort((left, right) => left - right);
+
+  const runningSteps = stepIds.filter((step) => statuses[step] === 'running');
+  if (runningSteps.length) {
+    return runningSteps[0];
+  }
+
+  const hasProgress = stepIds.some((step) => statuses[step] !== 'pending');
+  if (!hasProgress) {
+    return null;
+  }
+
+  for (const step of stepIds) {
+    const status = statuses[step] || 'pending';
+    if (!(status === 'completed' || status === 'manual_completed' || status === 'skipped')) {
+      return step;
+    }
+  }
+
+  return null;
+}
+
+function resolveAccountRunRecordStatusForStop(status, state = {}) {
+  const normalizedStatus = String(status || '').trim().toLowerCase();
+  if (normalizedStatus === 'stopped') {
+    const inferredStep = inferStoppedRecordStep(state);
+    if (Number.isInteger(inferredStep) && inferredStep > 0) {
+      return `step${inferredStep}_stopped`;
+    }
+  }
+  return status;
+}
+
+function extractStoppedStepFromRecordStatus(status = '') {
+  const match = String(status || '').trim().toLowerCase().match(/^step(\d+)_stopped$/);
+  if (!match) {
+    return null;
+  }
+  const step = Number(match[1]);
+  return Number.isInteger(step) && step > 0 ? step : null;
+}
+
+function resolveAccountRunRecordReasonForStop(status, reason = '') {
+  const text = String(reason || '').trim();
+  const stoppedStep = extractStoppedStepFromRecordStatus(status);
+
+  if (!stoppedStep) {
+    if (!text || text === STOP_ERROR_MESSAGE || /^流程已被用户停止。?$/.test(text)) {
+      return '流程已停止。';
+    }
+    return text;
+  }
+
+  if (!text || text === STOP_ERROR_MESSAGE || /^流程已被用户停止。?$/.test(text)) {
+    return `步骤 ${stoppedStep} 已被用户停止。`;
+  }
+
+  if (/流程尚未完成/.test(text) || /已使用邮箱/.test(text)) {
+    return `步骤 ${stoppedStep} 已停止：邮箱已设置，流程尚未完成。`;
+  }
+
+  if (/步骤\s*\d+\s*已(?:被用户)?停止/.test(text)) {
+    return text.replace(/步骤\s*\d+/, `步骤 ${stoppedStep}`);
+  }
+
+  return text;
+}
+
 function getAutoRunStatusPayload(phase, payload = {}) {
   const normalizedPayload = {
     ...payload,
@@ -4932,6 +5005,8 @@ async function markRunningStepsStopped() {
 async function requestStop(options = {}) {
   const { logMessage = '已收到停止请求，正在取消当前操作...' } = options;
   const state = await getState();
+  const runningSteps = getRunningSteps(state.stepStatuses);
+  const inferredStopStep = inferStoppedRecordStep(state);
   const timerPlan = getPendingAutoRunTimerPlan(state);
 
   if (timerPlan?.kind === AUTO_RUN_TIMER_KIND_SCHEDULED_START && !autoRunActive) {
@@ -4978,6 +5053,10 @@ async function requestStop(options = {}) {
 
   await addLog(logMessage, 'warn');
   await broadcastStopToContentScripts();
+
+  if (!runningSteps.length && Number.isInteger(inferredStopStep) && inferredStopStep > 0) {
+    await appendAndBroadcastAccountRunRecord('stopped', state, STOP_ERROR_MESSAGE);
+  }
 
   for (const waiter of stepWaiters.values()) {
     waiter.reject(new Error(STOP_ERROR_MESSAGE));
@@ -5208,7 +5287,10 @@ async function appendAndBroadcastAccountRunRecord(status, stateOverride = null, 
     return null;
   }
 
-  const record = await accountRunHistoryHelpers.appendAccountRunRecord(status, stateOverride, reason);
+  const state = stateOverride || await getState();
+  const resolvedStatus = resolveAccountRunRecordStatusForStop(status, state);
+  const resolvedReason = resolveAccountRunRecordReasonForStop(resolvedStatus, reason);
+  const record = await accountRunHistoryHelpers.appendAccountRunRecord(resolvedStatus, state, resolvedReason);
   if (!record) {
     return null;
   }
