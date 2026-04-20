@@ -420,8 +420,7 @@
               throw err;
             }
             if (mail?.provider === '2925' && typeof isMail2925LimitReachedError === 'function' && isMail2925LimitReachedError(err)) {
-              const latestState = await getState();
-              if (latestState?.mail2925UseAccountPool && typeof handleMail2925LimitReachedError === 'function') {
+              if (typeof handleMail2925LimitReachedError === 'function') {
                 throw await handleMail2925LimitReachedError(step, err);
               }
               throw err;
@@ -564,8 +563,7 @@
             throw err;
           }
           if (mail?.provider === '2925' && typeof isMail2925LimitReachedError === 'function' && isMail2925LimitReachedError(err)) {
-            const latestState = await getState();
-            if (latestState?.mail2925UseAccountPool && typeof handleMail2925LimitReachedError === 'function') {
+            if (typeof handleMail2925LimitReachedError === 'function') {
               throw await handleMail2925LimitReachedError(step, err);
             }
             throw err;

@@ -5392,6 +5392,7 @@ const mail2925SessionManager = self.MultiPageBackgroundMail2925Session?.createMa
   normalizeMail2925Account,
   normalizeMail2925Accounts,
   pickMail2925AccountForRun,
+  requestStop,
   reuseOrCreateTab,
   sendToMailContentScriptResilient,
   setPersistentSettings,
@@ -5451,6 +5452,14 @@ function isMail2925ThreadTerminatedError(error) {
   }
   const message = String(typeof error === 'string' ? error : error?.message || '');
   return /^MAIL2925_THREAD_TERMINATED::/.test(message);
+}
+
+function isMail2925PoolExhaustedPauseError(error) {
+  if (typeof mail2925SessionManager !== 'undefined' && mail2925SessionManager?.isMail2925PoolExhaustedPauseError) {
+    return mail2925SessionManager.isMail2925PoolExhaustedPauseError(error);
+  }
+  const message = String(typeof error === 'string' ? error : error?.message || '');
+  return /^MAIL2925_POOL_EXHAUSTED_PAUSE::/.test(message);
 }
 
 const generatedEmailHelpers = self.MultiPageGeneratedEmailHelpers?.createGeneratedEmailHelpers({

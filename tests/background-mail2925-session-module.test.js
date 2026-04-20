@@ -92,3 +92,70 @@ test('handleMail2925LimitReachedError disables current account and switches to t
   assert.equal(currentAccount.lastError, '子邮箱已达上限邮箱');
   assert.ok(currentAccount.disabledUntil > Date.now());
 });
+
+test('handleMail2925LimitReachedError requests stop when no next mail2925 account is available', async () => {
+  const source = fs.readFileSync('background/mail-2925-session.js', 'utf8');
+  const globalScope = {};
+  const api = new Function('self', `${source}; return self.MultiPageBackgroundMail2925Session;`)(globalScope);
+
+  let currentState = {
+    mail2925Accounts: mail2925Utils.normalizeMail2925Accounts([
+      { id: 'only', email: 'only@2925.com', password: 'p1', enabled: true, lastUsedAt: 10 },
+    ]),
+    currentMail2925AccountId: 'only',
+  };
+  const events = {
+    stopCalls: [],
+  };
+
+  const manager = api.createMail2925SessionManager({
+    addLog: async () => {},
+    broadcastDataUpdate: () => {},
+    chrome: {
+      cookies: {
+        getAll: async () => [],
+        remove: async () => ({ ok: true }),
+      },
+      browsingData: {
+        removeCookies: async () => {},
+      },
+    },
+    findMail2925Account: mail2925Utils.findMail2925Account,
+    getMail2925AccountStatus: mail2925Utils.getMail2925AccountStatus,
+    getState: async () => currentState,
+    isMail2925AccountAvailable: mail2925Utils.isMail2925AccountAvailable,
+    MAIL2925_LIMIT_COOLDOWN_MS: mail2925Utils.MAIL2925_LIMIT_COOLDOWN_MS,
+    normalizeMail2925Account: mail2925Utils.normalizeMail2925Account,
+    normalizeMail2925Accounts: mail2925Utils.normalizeMail2925Accounts,
+    pickMail2925AccountForRun: mail2925Utils.pickMail2925AccountForRun,
+    requestStop: async (options = {}) => {
+      events.stopCalls.push(options);
+    },
+    reuseOrCreateTab: async () => 1,
+    sendToMailContentScriptResilient: async () => ({ loggedIn: true }),
+    setPersistentSettings: async (payload) => {
+      currentState = {
+        ...currentState,
+        ...payload,
+      };
+    },
+    setState: async (updates) => {
+      currentState = {
+        ...currentState,
+        ...updates,
+      };
+    },
+    throwIfStopped: () => {},
+    upsertMail2925AccountInList: mail2925Utils.upsertMail2925AccountInList,
+  });
+
+  const error = await manager.handleMail2925LimitReachedError(
+    4,
+    new Error('MAIL2925_LIMIT_REACHED::子邮箱已达上限邮箱')
+  );
+
+  assert.equal(error.message, '流程已被用户停止。');
+  assert.equal(currentState.currentMail2925AccountId, null);
+  assert.equal(events.stopCalls.length, 1);
+  assert.match(events.stopCalls[0].logMessage, /没有可切换的下一个账号/);
+});

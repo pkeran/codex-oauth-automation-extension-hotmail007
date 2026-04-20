@@ -14,6 +14,7 @@
       normalizeMail2925Accounts,
       pickMail2925AccountForRun,
       getState,
+      requestStop,
       reuseOrCreateTab,
       sendToMailContentScriptResilient,
       setPersistentSettings,
@@ -403,7 +404,12 @@
       const state = await getState();
       const currentAccount = getCurrentMail2925Account(state);
       if (!currentAccount) {
-        return buildMail2925ThreadTerminatedError(`步骤 ${step}：2925 检测到“${reason}”，但当前没有可识别的账号，已结束本次尝试。`);
+        if (typeof requestStop === 'function') {
+          await requestStop({
+            logMessage: `步骤 ${step}：2925 检测到“${reason}”，且当前没有可识别账号，已按手动停止逻辑暂停流程。`,
+          });
+        }
+        return new Error('流程已被用户停止。');
       }
 
       const disabledUntil = Date.now() + Math.max(1, Number(MAIL2925_LIMIT_COOLDOWN_MS) || (24 * 60 * 60 * 1000));
@@ -426,9 +432,12 @@
       if (!nextAccount) {
         await setState({ currentMail2925AccountId: null });
         broadcastDataUpdate({ currentMail2925AccountId: null });
-        return buildMail2925ThreadTerminatedError(
-          `步骤 ${step}：2925 账号 ${currentAccount.email} 已因“${reason}”禁用 24 小时，且当前没有可切换的下一个账号，本次尝试结束。`
-        );
+        if (typeof requestStop === 'function') {
+          await requestStop({
+            logMessage: `步骤 ${step}：2925 账号 ${currentAccount.email} 已因“${reason}”禁用 24 小时，且当前没有可切换的下一个账号，已按手动停止逻辑暂停流程。`,
+          });
+        }
+        return new Error('流程已被用户停止。');
       }
 
       await setCurrentMail2925Account(nextAccount.id);

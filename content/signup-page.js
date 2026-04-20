@@ -346,6 +346,36 @@ function inspectSignupEntryState() {
   };
 }
 
+function getSignupEntryStateSummary(snapshot = inspectSignupEntryState()) {
+  const summary = {
+    state: snapshot?.state || 'unknown',
+    url: snapshot?.url || location.href,
+    hasEmailInput: Boolean(snapshot?.emailInput || getSignupEmailInput()),
+    hasPasswordInput: Boolean(snapshot?.passwordInput || getSignupPasswordInput()),
+  };
+
+  if (snapshot?.displayedEmail) {
+    summary.displayedEmail = snapshot.displayedEmail;
+  }
+
+  if (snapshot?.signupTrigger) {
+    summary.signupTrigger = {
+      tag: (snapshot.signupTrigger.tagName || '').toLowerCase(),
+      text: getActionText(snapshot.signupTrigger).slice(0, 80),
+    };
+  }
+
+  if (snapshot?.continueButton) {
+    summary.continueButton = {
+      tag: (snapshot.continueButton.tagName || '').toLowerCase(),
+      text: getActionText(snapshot.continueButton).slice(0, 80),
+      enabled: isActionEnabled(snapshot.continueButton),
+    };
+  }
+
+  return summary;
+}
+
 function getSignupEntryDiagnostics() {
   const actionCandidates = document.querySelectorAll(
     'a, button, [role="button"], [role="link"], input[type="button"], input[type="submit"]'
@@ -400,13 +430,23 @@ async function waitForSignupEntryState(options = {}) {
   const {
     timeout = 15000,
     autoOpenEntry = false,
+    step = 2,
+    logDiagnostics = false,
   } = options;
   const start = Date.now();
   let lastTriggerClickAt = 0;
+  let clickAttempts = 0;
+  let lastState = '';
+  let slowSnapshotLogged = false;
 
   while (Date.now() - start < timeout) {
     throwIfStopped();
     const snapshot = inspectSignupEntryState();
+
+    if (logDiagnostics && snapshot.state !== lastState) {
+      lastState = snapshot.state;
+      log(`步骤 ${step}：注册入口状态切换为 ${snapshot.state}，状态快照：${JSON.stringify(getSignupEntryStateSummary(snapshot))}`);
+    }
 
     if (snapshot.state === 'password_page' || snapshot.state === 'email_entry') {
       return snapshot;
@@ -419,16 +459,29 @@ async function waitForSignupEntryState(options = {}) {
 
       if (Date.now() - lastTriggerClickAt >= 1500) {
         lastTriggerClickAt = Date.now();
+        clickAttempts += 1;
+        if (logDiagnostics) {
+          log(`步骤 ${step}：正在点击官网注册入口（第 ${clickAttempts} 次）："${getActionText(snapshot.signupTrigger).slice(0, 80)}"`);
+        }
         log('步骤 2：正在点击官网注册入口...');
         await humanPause(350, 900);
         simulateClick(snapshot.signupTrigger);
       }
     }
 
+    if (logDiagnostics && !slowSnapshotLogged && Date.now() - start >= 5000) {
+      slowSnapshotLogged = true;
+      log(`步骤 ${step}：等待注册入口超过 5 秒，页面诊断快照：${JSON.stringify(getSignupEntryDiagnostics())}`, 'warn');
+    }
+
     await sleep(250);
   }
 
-  return inspectSignupEntryState();
+  const finalSnapshot = inspectSignupEntryState();
+  if (logDiagnostics) {
+    log(`步骤 ${step}：等待注册入口状态超时，最终状态快照：${JSON.stringify(getSignupEntryStateSummary(finalSnapshot))}`, 'warn');
+  }
+  return finalSnapshot;
 }
 
 async function ensureSignupEntryReady(timeout = 15000) {
@@ -471,6 +524,8 @@ async function fillSignupEmailAndContinue(email, step) {
   const snapshot = await waitForSignupEntryState({
     timeout: 20000,
     autoOpenEntry: true,
+    step,
+    logDiagnostics: step === 2,
   });
 
   if (snapshot.state === 'password_page') {
@@ -485,6 +540,9 @@ async function fillSignupEmailAndContinue(email, step) {
   }
 
   if (snapshot.state !== 'email_entry' || !snapshot.emailInput) {
+    if (step === 2) {
+      log(`步骤 ${step}：未进入邮箱输入页，最终页面诊断快照：${JSON.stringify(getSignupEntryDiagnostics())}`, 'warn');
+    }
     throw new Error(`步骤 ${step}：未找到可用的邮箱输入入口。URL: ${location.href}`);
   }
 
