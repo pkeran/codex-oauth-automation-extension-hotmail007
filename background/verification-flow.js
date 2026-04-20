@@ -164,9 +164,10 @@
       const nextPayload = { ...payload };
       const intervalMs = Math.max(1, Number(nextPayload.intervalMs) || 3000);
       const baseMaxAttempts = Math.max(1, Number(nextPayload.maxAttempts) || 1);
+      const disableTimeBudgetCap = Boolean(options.disableTimeBudgetCap);
       const remainingMs = await getRemainingTimeBudgetMs(step, options, actionLabel);
 
-      if (remainingMs !== null) {
+      if (!disableTimeBudgetCap && remainingMs !== null) {
         nextPayload.maxAttempts = Math.max(
           1,
           Math.min(baseMaxAttempts, Math.floor(Math.max(0, remainingMs - 1000) / intervalMs) + 1)
@@ -174,7 +175,7 @@
       }
 
       const defaultResponseTimeoutMs = Math.max(45000, nextPayload.maxAttempts * intervalMs + 25000);
-      const responseTimeoutMs = remainingMs === null
+      const responseTimeoutMs = disableTimeBudgetCap || remainingMs === null
         ? defaultResponseTimeoutMs
         : Math.max(1000, Math.min(defaultResponseTimeoutMs, remainingMs));
 
@@ -564,7 +565,7 @@
           getLegacyVerificationResendCountDefault(step, { requestFreshCodeFirst })
         )
         : getConfiguredVerificationResendCount(step, state, { requestFreshCodeFirst });
-      const maxSubmitAttempts = 7;
+      const maxSubmitAttempts = 15;
       const resendIntervalMs = Math.max(0, Number(options.resendIntervalMs) || 0);
       let lastResendAt = Number(options.lastResendAt) || 0;
 
@@ -609,6 +610,7 @@
         for (let attempt = 1; attempt <= maxSubmitAttempts; attempt++) {
           const pollOptions = {
             excludeCodes: [...rejectedCodes],
+            disableTimeBudgetCap: Boolean(options.disableTimeBudgetCap),
             getRemainingTimeMs: options.getRemainingTimeMs,
             maxResendRequests: remainingAutomaticResendCount,
             resendIntervalMs,

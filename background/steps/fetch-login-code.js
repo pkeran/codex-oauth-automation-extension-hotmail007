@@ -60,6 +60,7 @@
       if (mail.error) throw new Error(mail.error);
 
       const stepStartedAt = Date.now();
+      const verificationSessionKey = `8:${stepStartedAt}`;
       const authTabId = await getTabId('signup-page');
 
       if (authTabId) {
@@ -130,7 +131,9 @@
         ...state,
         step8VerificationTargetEmail: displayedVerificationEmail || '',
       }, mail, {
-        filterAfterTimestamp: stepStartedAt,
+        filterAfterTimestamp: mail.provider === '2925' ? 0 : stepStartedAt,
+        sessionKey: verificationSessionKey,
+        disableTimeBudgetCap: mail.provider === '2925',
         getRemainingTimeMs: getStep8RemainingTimeResolver(state?.oauthUrl || ''),
         requestFreshCodeFirst: false,
         targetEmail: fixedTargetEmail,
