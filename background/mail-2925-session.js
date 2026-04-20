@@ -14,6 +14,7 @@
       normalizeMail2925Accounts,
       pickMail2925AccountForRun,
       getState,
+      isAutoRunLockedState,
       requestStop,
       reuseOrCreateTab,
       sendToMailContentScriptResilient,
@@ -58,6 +59,25 @@
 
     function buildMail2925ThreadTerminatedError(message) {
       return new Error(`${MAIL2925_THREAD_TERMINATED_ERROR_PREFIX}${String(message || '').trim()}`);
+    }
+
+    async function stopAutoRunForMail2925LoginFailure(errorMessage = '') {
+      if (typeof requestStop !== 'function') {
+        return false;
+      }
+
+      const state = await getState();
+      const autoRunning = typeof isAutoRunLockedState === 'function'
+        ? isAutoRunLockedState(state)
+        : Boolean(state?.autoRunning);
+      if (!autoRunning) {
+        return false;
+      }
+
+      await requestStop({
+        logMessage: errorMessage || '2925 登录失败，已按手动停止逻辑暂停自动流程。',
+      });
+      return true;
     }
 
     function isMail2925LimitReachedError(error) {
@@ -352,7 +372,9 @@
         injectSource: MAIL2925_INJECT_SOURCE,
       });
 
-      const result = await sendToMailContentScriptResilient(
+      let result;
+      try {
+        result = await sendToMailContentScriptResilient(
         getMail2925MailConfig(),
         {
           type: 'ENSURE_MAIL2925_SESSION',
@@ -365,13 +387,38 @@
           },
         },
         {
-          timeoutMs: forceRelogin ? 90000 : 45000,
-          responseTimeoutMs: forceRelogin ? 90000 : 45000,
+          timeoutMs: forceRelogin ? 30000 : 25000,
+          responseTimeoutMs: forceRelogin ? 30000 : 25000,
           maxRecoveryAttempts: 2,
         }
       );
+      } catch (err) {
+        const stopped = await stopAutoRunForMail2925LoginFailure(
+          `2925：${actionLabel}失败（${getErrorMessage(err) || '20 秒内未进入收件箱'}），已按手动停止逻辑暂停自动流程。`
+        );
+        if (stopped) {
+          throw new Error('流程已被用户停止。');
+        }
+        throw err;
+      }
+
+      if (!result?.loggedIn) {
+        const stopped = await stopAutoRunForMail2925LoginFailure(
+          `2925：${actionLabel}失败（20 秒内未进入收件箱），已按手动停止逻辑暂停自动流程。`
+        );
+        if (stopped) {
+          throw new Error('流程已被用户停止。');
+        }
+        throw new Error(`2925：${actionLabel}失败，当前页面仍未进入收件箱。`);
+      }
 
       if (result?.error) {
+        const stopped = await stopAutoRunForMail2925LoginFailure(
+          `2925：${actionLabel}失败（${result.error}），已按手动停止逻辑暂停自动流程。`
+        );
+        if (stopped) {
+          throw new Error('流程已被用户停止。');
+        }
         throw new Error(result.error);
       }
       if (result?.limitReached) {

@@ -5387,6 +5387,7 @@ const mail2925SessionManager = self.MultiPageBackgroundMail2925Session?.createMa
   findMail2925Account,
   getMail2925AccountStatus,
   getState,
+  isAutoRunLockedState,
   isMail2925AccountAvailable: self.Mail2925Utils?.isMail2925AccountAvailable,
   MAIL2925_LIMIT_COOLDOWN_MS,
   normalizeMail2925Account,

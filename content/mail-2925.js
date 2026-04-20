@@ -193,6 +193,12 @@ const MAIL2925_AGREEMENT_PATTERNS = [
   /服务协议/,
   /隐私政策/,
 ];
+const MAIL2925_REMEMBER_LOGIN_PATTERNS = [
+  /30天内免登录/,
+  /免登录/,
+  /记住登录/,
+  /保持登录/,
+];
 
 function normalizeNodeText(value) {
   return String(value || '').replace(/\s+/g, ' ').trim();
@@ -405,29 +411,76 @@ function findAgreementContainer() {
   return null;
 }
 
-function findAgreementCheckbox() {
-  const agreementContainer = findAgreementContainer();
-  if (agreementContainer) {
-    const checkbox = agreementContainer.querySelector('input[type="checkbox"], [role="checkbox"], .ivu-checkbox, .el-checkbox');
-    if (checkbox) {
-      return resolveActionTarget(checkbox);
-    }
-    const nearbyCheckbox = agreementContainer.parentElement?.querySelector?.('input[type="checkbox"], [role="checkbox"], .ivu-checkbox, .el-checkbox');
-    if (nearbyCheckbox) {
-      return resolveActionTarget(nearbyCheckbox);
+function isAgreementText(text = '') {
+  const normalizedText = normalizeNodeText(text);
+  if (!normalizedText || MAIL2925_REMEMBER_LOGIN_PATTERNS.some((pattern) => pattern.test(normalizedText))) {
+    return false;
+  }
+
+  return /我已阅读并同意/.test(normalizedText)
+    || (/服务协议/.test(normalizedText) && /隐私政策/.test(normalizedText));
+}
+
+function getCheckboxContextText(target) {
+  if (!target) {
+    return '';
+  }
+
+  const textParts = [];
+  const candidates = [
+    target,
+    target.closest?.('label'),
+    target.parentElement,
+    target.parentElement?.parentElement,
+    target.nextElementSibling,
+    target.previousElementSibling,
+    target.closest?.('label, div, span, p, li, form'),
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    const text = normalizeNodeText(candidate.innerText || candidate.textContent || '');
+    if (text) {
+      textParts.push(text);
     }
   }
 
+  return normalizeNodeText(textParts.join(' '));
+}
+
+function findAgreementCheckbox() {
   const genericCheckboxes = document.querySelectorAll('input[type="checkbox"], [role="checkbox"], .ivu-checkbox, .el-checkbox');
   for (const checkbox of genericCheckboxes) {
     const target = resolveActionTarget(checkbox);
     if (!isVisibleNode(target)) {
       continue;
     }
-    const wrapper = target.closest('label, div, span') || target.parentElement || target;
-    const text = normalizeNodeText(wrapper?.innerText || wrapper?.textContent || '');
-    if (/我已阅读并同意/.test(text) || /服务协议/.test(text) || /隐私政策/.test(text)) {
+
+    const contextText = getCheckboxContextText(target);
+    if (MAIL2925_REMEMBER_LOGIN_PATTERNS.some((pattern) => pattern.test(contextText))) {
+      continue;
+    }
+    if (isAgreementText(contextText)) {
       return target;
+    }
+  }
+
+  const agreementContainer = findAgreementContainer();
+  if (agreementContainer) {
+    const checkbox = agreementContainer.querySelector('input[type="checkbox"], [role="checkbox"], .ivu-checkbox, .el-checkbox');
+    if (checkbox) {
+      const target = resolveActionTarget(checkbox);
+      const contextText = getCheckboxContextText(target);
+      if (!MAIL2925_REMEMBER_LOGIN_PATTERNS.some((pattern) => pattern.test(contextText))) {
+        return target;
+      }
+    }
+    const nearbyCheckbox = agreementContainer.parentElement?.querySelector?.('input[type="checkbox"], [role="checkbox"], .ivu-checkbox, .el-checkbox');
+    if (nearbyCheckbox) {
+      const target = resolveActionTarget(nearbyCheckbox);
+      const contextText = getCheckboxContextText(target);
+      if (!MAIL2925_REMEMBER_LOGIN_PATTERNS.some((pattern) => pattern.test(contextText))) {
+        return target;
+      }
     }
   }
 
@@ -435,16 +488,25 @@ function findAgreementCheckbox() {
 }
 
 async function ensureAgreementChecked() {
-  const agreementCheckbox = findAgreementCheckbox();
-  if (!agreementCheckbox) {
+  const checkboxes = Array.from(document.querySelectorAll('input[type="checkbox"], [role="checkbox"], .ivu-checkbox, .el-checkbox'))
+    .map((checkbox) => resolveActionTarget(checkbox))
+    .filter((target, index, list) => target && isVisibleNode(target) && list.indexOf(target) === index);
+
+  if (!checkboxes.length) {
     return false;
   }
-  if (isCheckboxChecked(agreementCheckbox)) {
-    return true;
+
+  let changed = false;
+  for (const checkbox of checkboxes) {
+    if (isCheckboxChecked(checkbox)) {
+      continue;
+    }
+    simulateClick(checkbox);
+    changed = true;
+    await sleep(120);
   }
-  simulateClick(agreementCheckbox);
-  await sleep(150);
-  return isCheckboxChecked(agreementCheckbox);
+
+  return changed || checkboxes.every((checkbox) => isCheckboxChecked(checkbox));
 }
 
 function detectMail2925ViewState() {
@@ -832,7 +894,7 @@ async function ensureMail2925Session(payload = {}) {
   await sleep(200);
   simulateClick(loginButton);
 
-  const finalState = await waitForMail2925View('mailbox', 60000);
+  const finalState = await waitForMail2925View('mailbox', 20000);
   if (finalState.view !== 'mailbox') {
     throw new Error('2925：提交账号密码后未进入收件箱。');
   }
