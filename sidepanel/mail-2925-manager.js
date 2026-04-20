@@ -15,6 +15,7 @@
 
     let actionInFlight = false;
     let listExpanded = false;
+    let editingAccountId = '';
 
     function getMail2925Accounts(currentState = state.getLatestState()) {
       return helpers.getMail2925Accounts(currentState);
@@ -93,7 +94,7 @@
       }
     }
 
-    function applyMail2925AccountMutation(account, options = {}) {
+    function applyMail2925AccountMutation(account) {
       if (!account?.id) return;
       const latestState = state.getLatestState();
       const currentId = getCurrentMail2925AccountId(latestState);
@@ -115,6 +116,32 @@
     function clearMail2925Form() {
       if (dom.inputMail2925Email) dom.inputMail2925Email.value = '';
       if (dom.inputMail2925Password) dom.inputMail2925Password.value = '';
+    }
+
+    function syncEditUi() {
+      if (dom.btnAddMail2925Account) {
+        dom.btnAddMail2925Account.textContent = editingAccountId ? '保存修改' : '添加账号';
+      }
+      if (dom.btnCancelMail2925Edit) {
+        dom.btnCancelMail2925Edit.style.display = editingAccountId ? '' : 'none';
+      }
+    }
+
+    function startEditingAccount(account) {
+      if (!account?.id) return;
+      editingAccountId = account.id;
+      if (dom.inputMail2925Email) dom.inputMail2925Email.value = String(account.email || '').trim();
+      if (dom.inputMail2925Password) dom.inputMail2925Password.value = String(account.password || '');
+      syncEditUi();
+    }
+
+    function stopEditingAccount(options = {}) {
+      const { clearForm = true } = options;
+      editingAccountId = '';
+      if (clearForm) {
+        clearMail2925Form();
+      }
+      syncEditUi();
     }
 
     function renderMail2925Accounts() {
@@ -160,6 +187,7 @@
             <div class="hotmail-account-actions">
               <button class="btn btn-outline btn-sm" type="button" data-account-action="select" data-account-id="${helpers.escapeHtml(account.id)}">使用此账号</button>
               <button class="btn btn-primary btn-sm" type="button" data-account-action="login" data-account-id="${helpers.escapeHtml(account.id)}">登录</button>
+              <button class="btn btn-outline btn-sm" type="button" data-account-action="edit" data-account-id="${helpers.escapeHtml(account.id)}">编辑</button>
               <button class="btn btn-outline btn-sm" type="button" data-account-action="toggle-enabled" data-account-id="${helpers.escapeHtml(account.id)}">${account.enabled === false ? '启用' : '禁用'}</button>
               ${coolingDown ? `<button class="btn btn-outline btn-sm" type="button" data-account-action="clear-cooldown" data-account-id="${helpers.escapeHtml(account.id)}">清冷却</button>` : ''}
               <button class="btn btn-ghost btn-sm" type="button" data-account-action="delete" data-account-id="${helpers.escapeHtml(account.id)}">删除</button>
@@ -185,6 +213,7 @@
         return;
       }
 
+      const updatingExisting = Boolean(editingAccountId);
       actionInFlight = true;
       if (dom.btnAddMail2925Account) {
         dom.btnAddMail2925Account.disabled = true;
@@ -195,6 +224,7 @@
           type: 'UPSERT_MAIL2925_ACCOUNT',
           source: 'sidepanel',
           payload: {
+            ...(editingAccountId ? { id: editingAccountId } : {}),
             email,
             password,
           },
@@ -204,8 +234,14 @@
         }
 
         applyMail2925AccountMutation(response.account);
-        clearMail2925Form();
-        helpers.showToast(`已保存 2925 账号 ${email}`, 'success', 1800);
+        stopEditingAccount();
+        helpers.showToast(
+          updatingExisting
+            ? `已更新 2925 账号 ${email}`
+            : `已保存 2925 账号 ${email}`,
+          'success',
+          1800
+        );
       } catch (err) {
         helpers.showToast(`保存 2925 账号失败：${err.message}`, 'error');
       } finally {
@@ -296,6 +332,7 @@
         mail2925Accounts: [],
         currentMail2925AccountId: null,
       });
+      stopEditingAccount();
       refreshManagedAliasBaseEmail();
       renderMail2925Accounts();
       helpers.showToast(`已删除全部 ${response.deletedCount || 0} 个 2925 账号`, 'success', 2200);
@@ -353,6 +390,13 @@
           refreshManagedAliasBaseEmail();
           renderMail2925Accounts();
           helpers.showToast(`已使用 ${response.account.email} 登录 2925 邮箱`, 'success', 2200);
+          return;
+        }
+
+        if (action === 'edit') {
+          if (!targetAccount) throw new Error('未找到目标 2925 账号。');
+          startEditingAccount(targetAccount);
+          helpers.showToast(`已载入 ${targetAccount.email}，修改后点“保存修改”即可`, 'info', 1800);
           return;
         }
 
@@ -415,6 +459,9 @@
             nextState.currentMail2925AccountId = null;
           }
           state.syncLatestState(nextState);
+          if (editingAccountId === accountId) {
+            stopEditingAccount();
+          }
           refreshManagedAliasBaseEmail();
           renderMail2925Accounts();
           helpers.showToast('2925 账号已删除', 'success', 1800);
@@ -446,8 +493,12 @@
       });
 
       dom.btnAddMail2925Account?.addEventListener('click', handleAddMail2925Account);
+      dom.btnCancelMail2925Edit?.addEventListener('click', () => {
+        stopEditingAccount();
+      });
       dom.btnImportMail2925Accounts?.addEventListener('click', handleImportMail2925Accounts);
       dom.mail2925AccountsList?.addEventListener('click', handleAccountListClick);
+      syncEditUi();
     }
 
     return {

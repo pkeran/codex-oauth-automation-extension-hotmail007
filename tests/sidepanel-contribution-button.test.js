@@ -8,6 +8,7 @@ test('sidepanel html keeps a single contribution mode button in header', () => {
 
   assert.equal(matches.length, 1);
   assert.match(html, /id="btn-contribution-mode"[^>]*title="进入贡献模式"/);
+  assert.match(html, />贡献\/使用<\/button>/);
 });
 
 test('sidepanel source no longer keeps the legacy upload-page handler on the header contribution button', () => {
