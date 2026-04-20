@@ -6619,7 +6619,7 @@ async function refreshOAuthUrlBeforeStep6(state) {
   if (state?.contributionMode && contributionOAuthManager?.startContributionFlow) {
     await addLog('步骤 7：contributionMode=true，走公开贡献接口，正在申请 OAuth 登录地址...', 'info');
     const contributionState = await contributionOAuthManager.startContributionFlow({
-      nickname: state.email,
+      nickname: state.contributionNickname || '',
       openAuthTab: false,
       stateOverride: state,
     });
