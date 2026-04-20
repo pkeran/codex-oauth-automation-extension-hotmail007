@@ -612,6 +612,7 @@ const STEP5_SUBMIT_ERROR_PATTERN = /无法根据该信息创建帐户|请重试|
 const AUTH_TIMEOUT_ERROR_TITLE_PATTERN = /糟糕，出错了|something\s+went\s+wrong|oops/i;
 const AUTH_TIMEOUT_ERROR_DETAIL_PATTERN = /operation\s+timed\s+out|timed\s+out|请求超时|操作超时/i;
 const AUTH_ROUTE_ERROR_PATTERN = /405\s+method\s+not\s+allowed|route\s+error.*405/i;
+const SIGNUP_USER_ALREADY_EXISTS_ERROR_PREFIX = 'SIGNUP_USER_ALREADY_EXISTS::';
 const SIGNUP_EMAIL_EXISTS_PATTERN = /与此电子邮件地址相关联的帐户已存在|account\s+associated\s+with\s+this\s+email\s+address\s+already\s+exists|email\s+address.*already\s+exists/i;
 
 const authPageRecovery = self.MultiPageAuthPageRecovery?.createAuthPageRecovery?.({
@@ -661,6 +662,12 @@ function getVerificationErrorText() {
   }
 
   return messages.find((text) => INVALID_VERIFICATION_CODE_PATTERN.test(text)) || '';
+}
+
+function createSignupUserAlreadyExistsError() {
+  return new Error(
+    `${SIGNUP_USER_ALREADY_EXISTS_ERROR_PREFIX}步骤 4：检测到 user_already_exists，说明当前用户已存在，当前轮将直接停止。`
+  );
 }
 
 function isStep5Ready() {
@@ -981,8 +988,9 @@ function getAuthTimeoutErrorPageState(options = {}) {
   const detailMatched = AUTH_TIMEOUT_ERROR_DETAIL_PATTERN.test(text);
   const routeErrorMatched = AUTH_ROUTE_ERROR_PATTERN.test(text);
   const maxCheckAttemptsBlocked = /max_check_attempts/i.test(text);
+  const userAlreadyExistsBlocked = /user_already_exists/i.test(text);
 
-  if (!titleMatched && !detailMatched && !routeErrorMatched && !maxCheckAttemptsBlocked) {
+  if (!titleMatched && !detailMatched && !routeErrorMatched && !maxCheckAttemptsBlocked && !userAlreadyExistsBlocked) {
     return null;
   }
 
@@ -995,6 +1003,7 @@ function getAuthTimeoutErrorPageState(options = {}) {
     detailMatched,
     routeErrorMatched,
     maxCheckAttemptsBlocked,
+    userAlreadyExistsBlocked,
   };
 }
 
@@ -1073,6 +1082,9 @@ async function recoverCurrentAuthRetryPage(payload = {}) {
     if (retryState.maxCheckAttemptsBlocked) {
       throw new Error('CF_SECURITY_BLOCKED::您已触发Cloudflare 安全防护系统，已完全停止流程，请不要短时间内多次进行重新发送验证码，连续刷新、反复点击重试会加重风控；请先关闭页面等待 15-30 分钟，让系统的临时限制自动解除。或者更换浏览器');
     }
+    if (retryState.userAlreadyExistsBlocked) {
+      throw createSignupUserAlreadyExistsError();
+    }
     if (retryState.retryButton && retryState.retryEnabled) {
       idlePollCount = 0;
       clickCount += 1;
@@ -1112,6 +1124,9 @@ async function recoverCurrentAuthRetryPage(payload = {}) {
   }
   if (finalRetryState.maxCheckAttemptsBlocked) {
     throw new Error('CF_SECURITY_BLOCKED::您已触发Cloudflare 安全防护系统，已完全停止流程，请不要短时间内多次进行重新发送验证码，连续刷新、反复点击重试会加重风控；请先关闭页面等待 15-30 分钟，让系统的临时限制自动解除。或者更换浏览器');
+  }
+  if (finalRetryState.userAlreadyExistsBlocked) {
+    throw createSignupUserAlreadyExistsError();
   }
 
   throw new Error(`${logLabel || `步骤 ${step || '?'}：重试页恢复`}失败：已连续点击“重试” ${maxClickAttempts} 次，页面仍未恢复。URL: ${location.href}`);
@@ -1430,6 +1445,7 @@ function inspectSignupVerificationState() {
     return {
       state: 'error',
       retryButton: timeoutPage?.retryButton || null,
+      userAlreadyExistsBlocked: Boolean(timeoutPage?.userAlreadyExistsBlocked),
     };
   }
 
@@ -1503,6 +1519,9 @@ async function prepareSignupVerificationFlow(payload = {}, timeout = 30000) {
     recoveryRound += 1;
 
     if (snapshot.state === 'error') {
+      if (snapshot.userAlreadyExistsBlocked) {
+        throw createSignupUserAlreadyExistsError();
+      }
       await recoverCurrentAuthRetryPage({
         flow: 'signup',
         logLabel: `${prepareLogLabel}：检测到注册认证重试页，正在点击“重试”恢复（第 ${recoveryRound}/${maxRecoveryRounds} 次）`,
@@ -1549,6 +1568,13 @@ async function waitForVerificationSubmitOutcome(step, timeout) {
   while (Date.now() - start < resolvedTimeout) {
     throwIfStopped();
 
+    if (step === 4) {
+      const signupRetryState = getCurrentAuthRetryPageState('signup');
+      if (signupRetryState?.userAlreadyExistsBlocked) {
+        throw createSignupUserAlreadyExistsError();
+      }
+    }
+
     const errorText = getVerificationErrorText();
     if (errorText) {
       return { invalidCode: true, errorText };
@@ -1567,6 +1593,13 @@ async function waitForVerificationSubmitOutcome(step, timeout) {
     }
 
     await sleep(150);
+  }
+
+  if (step === 4) {
+    const signupRetryState = getCurrentAuthRetryPageState('signup');
+    if (signupRetryState?.userAlreadyExistsBlocked) {
+      throw createSignupUserAlreadyExistsError();
+    }
   }
 
   if (isVerificationPageStillVisible()) {

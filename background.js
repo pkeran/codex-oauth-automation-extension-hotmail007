@@ -4018,6 +4018,14 @@ function isRestartCurrentAttemptError(error) {
   return /当前邮箱已存在，需要重新开始新一轮/.test(message);
 }
 
+function isSignupUserAlreadyExistsFailure(error) {
+  if (typeof loggingStatus !== 'undefined' && loggingStatus?.isSignupUserAlreadyExistsFailure) {
+    return loggingStatus.isSignupUserAlreadyExistsFailure(error);
+  }
+  const message = getErrorMessage(error);
+  return /SIGNUP_USER_ALREADY_EXISTS::|user_already_exists/i.test(message);
+}
+
 function isStep9RecoverableAuthError(error) {
   const message = String(typeof error === 'string' ? error : error?.message || '');
   return /STEP9_OAUTH_RETRY::/i.test(message)
@@ -5511,6 +5519,7 @@ const autoRunController = self.MultiPageBackgroundAutoRunController?.createAutoR
   hasSavedProgress,
   isAddPhoneAuthFailure,
   isRestartCurrentAttemptError,
+  isSignupUserAlreadyExistsFailure,
   isStopError,
   launchAutoRunTimerPlan,
   normalizeAutoRunFallbackThreadIntervalMinutes,
@@ -5818,6 +5827,9 @@ async function runAutoSequenceFromStep(startStep, context = {}) {
       }
 
       if (step === 4) {
+        if (isSignupUserAlreadyExistsFailure(err)) {
+          throw err;
+        }
         step4RestartCount += 1;
         const preservedState = await getState();
         const preservedEmail = String(preservedState.email || '').trim();
