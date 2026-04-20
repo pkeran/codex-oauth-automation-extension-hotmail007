@@ -253,39 +253,17 @@ async function resendVerificationCode(step, timeout = 45000) {
 
 function is405MethodNotAllowedPage() {
   const pageText = document.body?.textContent || '';
-  return /405\s+Method\s+Not\s+Allowed/i.test(pageText)
-    || /Route\s+Error.*405/i.test(pageText);
+  return AUTH_ROUTE_ERROR_PATTERN.test(pageText);
 }
 
 async function handle405ResendError(step, remainingTimeout = 30000) {
-  const start = Date.now();
-  let retryCount = 0;
-
-  while (Date.now() - start < remainingTimeout) {
-    throwIfStopped();
-
-    if (!is405MethodNotAllowedPage()) {
-      // Page recovered — back to verification page
-      log(`步骤 ${step}：405 错误已恢复，页面已返回验证码页面。`);
-      return;
-    }
-
-    const retryBtn = getAuthRetryButton();
-    if (retryBtn) {
-      retryCount++;
-      log(`步骤 ${step}：检测到 405 错误页面，正在点击"Try again"（第 ${retryCount} 次）...`, 'warn');
-      await humanPause(300, 800);
-      simulateClick(retryBtn);
-
-      // Wait 3 seconds before checking again
-      await sleep(3000);
-      continue;
-    }
-
-    await sleep(500);
-  }
-
-  throw new Error(`步骤 ${step}：405 错误恢复超时，无法返回验证码页面。URL: ${location.href}`);
+  await recoverCurrentAuthRetryPage({
+    logLabel: `步骤 ${step}：检测到 405 错误页面，正在点击“重试”恢复`,
+    pathPatterns: [],
+    step,
+    timeoutMs: Math.max(1000, remainingTimeout),
+  });
+  log(`步骤 ${step}：405 错误已恢复，页面已返回验证码页面。`);
 }
 
 // ============================================================
@@ -633,6 +611,7 @@ const ADD_PHONE_PAGE_PATTERN = /add[\s-]*phone|添加手机号|手机号码|手�
 const STEP5_SUBMIT_ERROR_PATTERN = /无法根据该信息创建帐户|请重试|unable\s+to\s+create\s+(?:your\s+)?account|couldn'?t\s+create\s+(?:your\s+)?account|something\s+went\s+wrong|invalid\s+(?:birthday|birth|date)|生日|出生日期/i;
 const AUTH_TIMEOUT_ERROR_TITLE_PATTERN = /糟糕，出错了|something\s+went\s+wrong|oops/i;
 const AUTH_TIMEOUT_ERROR_DETAIL_PATTERN = /operation\s+timed\s+out|timed\s+out|请求超时|操作超时/i;
+const AUTH_ROUTE_ERROR_PATTERN = /405\s+method\s+not\s+allowed|route\s+error.*405/i;
 const SIGNUP_EMAIL_EXISTS_PATTERN = /与此电子邮件地址相关联的帐户已存在|account\s+associated\s+with\s+this\s+email\s+address\s+already\s+exists|email\s+address.*already\s+exists/i;
 
 const authPageRecovery = self.MultiPageAuthPageRecovery?.createAuthPageRecovery?.({
@@ -643,6 +622,7 @@ const authPageRecovery = self.MultiPageAuthPageRecovery?.createAuthPageRecovery?
   isActionEnabled,
   isVisibleElement,
   log,
+  routeErrorPattern: AUTH_ROUTE_ERROR_PATTERN,
   simulateClick,
   sleep,
   throwIfStopped,
@@ -999,9 +979,10 @@ function getAuthTimeoutErrorPageState(options = {}) {
   const titleMatched = AUTH_TIMEOUT_ERROR_TITLE_PATTERN.test(text)
     || AUTH_TIMEOUT_ERROR_TITLE_PATTERN.test(document.title || '');
   const detailMatched = AUTH_TIMEOUT_ERROR_DETAIL_PATTERN.test(text);
+  const routeErrorMatched = AUTH_ROUTE_ERROR_PATTERN.test(text);
   const maxCheckAttemptsBlocked = /max_check_attempts/i.test(text);
 
-  if (!titleMatched && !detailMatched && !maxCheckAttemptsBlocked) {
+  if (!titleMatched && !detailMatched && !routeErrorMatched && !maxCheckAttemptsBlocked) {
     return null;
   }
 
@@ -1012,16 +993,32 @@ function getAuthTimeoutErrorPageState(options = {}) {
     retryEnabled: isActionEnabled(retryButton),
     titleMatched,
     detailMatched,
+    routeErrorMatched,
     maxCheckAttemptsBlocked,
   };
 }
 
+function getSignupAuthRetryPathPatterns() {
+  return [
+    /\/create-account\/password(?:[/?#]|$)/i,
+    /\/email-verification(?:[/?#]|$)/i,
+  ];
+}
+
+function getLoginAuthRetryPathPatterns() {
+  return [
+    /\/log-in(?:[/?#]|$)/i,
+    /\/email-verification(?:[/?#]|$)/i,
+  ];
+}
+
 function getAuthRetryPathPatternsForFlow(flow = 'auth') {
   switch (flow) {
+    case 'signup':
     case 'signup_password':
-      return [/\/create-account\/password(?:[/?#]|$)/i];
+      return getSignupAuthRetryPathPatterns();
     case 'login':
-      return [/\/log-in(?:[/?#]|$)/i];
+      return getLoginAuthRetryPathPatterns();
     default:
       return [];
   }
@@ -1038,16 +1035,19 @@ async function recoverCurrentAuthRetryPage(payload = {}) {
     flow = 'auth',
     logLabel = '',
     maxClickAttempts = 5,
+    pathPatterns = null,
     step = null,
     timeoutMs = 12000,
     waitAfterClickMs = 3000,
   } = payload;
-  const pathPatterns = getAuthRetryPathPatternsForFlow(flow);
+  const resolvedPathPatterns = Array.isArray(pathPatterns)
+    ? pathPatterns
+    : getAuthRetryPathPatternsForFlow(flow);
   if (authPageRecovery?.recoverAuthRetryPage) {
     return authPageRecovery.recoverAuthRetryPage({
       logLabel,
       maxClickAttempts,
-      pathPatterns,
+      pathPatterns: resolvedPathPatterns,
       step,
       timeoutMs,
       waitAfterClickMs,
@@ -1061,7 +1061,7 @@ async function recoverCurrentAuthRetryPage(payload = {}) {
   let idlePollCount = 0;
   while (clickCount < maxClickAttempts) {
     throwIfStopped();
-    const retryState = getCurrentAuthRetryPageState(flow);
+    const retryState = getAuthTimeoutErrorPageState({ pathPatterns: resolvedPathPatterns });
     if (!retryState) {
       return {
         recovered: clickCount > 0,
@@ -1082,7 +1082,7 @@ async function recoverCurrentAuthRetryPage(payload = {}) {
       const settleStart = Date.now();
       while (Date.now() - settleStart < waitAfterClickMs) {
         throwIfStopped();
-        if (!getCurrentAuthRetryPageState(flow)) {
+        if (!getAuthTimeoutErrorPageState({ pathPatterns: resolvedPathPatterns })) {
           return {
             recovered: true,
             clickCount,
@@ -1102,7 +1102,7 @@ async function recoverCurrentAuthRetryPage(payload = {}) {
     await sleep(250);
   }
 
-  const finalRetryState = getCurrentAuthRetryPageState(flow);
+  const finalRetryState = getAuthTimeoutErrorPageState({ pathPatterns: resolvedPathPatterns });
   if (!finalRetryState) {
     return {
       recovered: clickCount > 0,
@@ -1119,7 +1119,7 @@ async function recoverCurrentAuthRetryPage(payload = {}) {
 
 function getSignupPasswordTimeoutErrorPageState() {
   return getAuthTimeoutErrorPageState({
-    pathPatterns: [/\/create-account\/password(?:[/?#]|$)/i],
+    pathPatterns: getSignupAuthRetryPathPatterns(),
   });
 }
 
@@ -1504,8 +1504,8 @@ async function prepareSignupVerificationFlow(payload = {}, timeout = 30000) {
 
     if (snapshot.state === 'error') {
       await recoverCurrentAuthRetryPage({
-        flow: 'signup_password',
-        logLabel: `${prepareLogLabel}：检测到密码页超时报错，正在点击“重试”恢复（第 ${recoveryRound}/${maxRecoveryRounds} 次）`,
+        flow: 'signup',
+        logLabel: `${prepareLogLabel}：检测到注册认证重试页，正在点击“重试”恢复（第 ${recoveryRound}/${maxRecoveryRounds} 次）`,
         step: 4,
         timeoutMs: 12000,
       });
