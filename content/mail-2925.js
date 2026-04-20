@@ -99,8 +99,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === 'DELETE_ALL_EMAILS') {
-    Promise.resolve(deleteAllMailboxEmails(message.step)).catch(() => {});
-    sendResponse({ ok: true });
+    Promise.resolve(deleteAllMailboxEmails(message.step)).then((deleted) => {
+      sendResponse({ ok: true, deleted });
+    }).catch((err) => {
+      sendResponse({ ok: false, error: err?.message || String(err || '删除邮件失败') });
+    });
     return true;
   }
 
@@ -478,6 +481,10 @@ async function openMailAndDeleteAfterRead(item, step) {
 async function deleteAllMailboxEmails(step) {
   try {
     await returnToInbox();
+    const initialItems = findMailItems();
+    if (initialItems.length === 0) {
+      return true;
+    }
 
     const selectAllControl = findSelectAllControl();
     if (!selectAllControl) {
@@ -495,8 +502,15 @@ async function deleteAllMailboxEmails(step) {
     }
 
     simulateClick(deleteButton);
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      await sleep(250);
+      if (findMailItems().length === 0) {
+        return true;
+      }
+    }
+
     await sleepRandom(200, 500);
-    return true;
+    return findMailItems().length === 0;
   } catch (err) {
     console.warn(MAIL2925_PREFIX, `Step ${step}: delete-all cleanup failed:`, err?.message || err);
     return false;

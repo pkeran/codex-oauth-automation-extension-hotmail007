@@ -237,6 +237,58 @@
       return requestedAt;
     }
 
+    function shouldPreclear2925Mailbox(step, mail) {
+      return mail?.provider === '2925' && (step === 4 || step === 8);
+    }
+
+    async function clear2925MailboxBeforePolling(step, mail, options = {}) {
+      if (!shouldPreclear2925Mailbox(step, mail)) {
+        return;
+      }
+
+      throwIfStopped();
+      await addLog(`步骤 ${step}：开始刷新 2925 邮箱前先清空全部邮件，避免读取旧验证码邮件。`, 'warn');
+
+      try {
+        const responseTimeoutMs = await getResponseTimeoutMsForStep(
+          step,
+          options,
+          15000,
+          '清空 2925 邮箱历史邮件'
+        );
+        const result = await sendToMailContentScriptResilient(
+          mail,
+          {
+            type: 'DELETE_ALL_EMAILS',
+            step,
+            source: 'background',
+            payload: {},
+          },
+          {
+            timeoutMs: responseTimeoutMs,
+            responseTimeoutMs,
+            maxRecoveryAttempts: 2,
+          }
+        );
+
+        if (result?.error) {
+          throw new Error(result.error);
+        }
+
+        if (result?.deleted === false) {
+          await addLog(`步骤 ${step}：未能确认 2925 邮箱已清空，将继续刷新等待新邮件。`, 'warn');
+          return;
+        }
+
+        await addLog(`步骤 ${step}：2925 邮箱已预先清空，开始刷新等待新邮件。`, 'info');
+      } catch (err) {
+        if (isStopError(err)) {
+          throw err;
+        }
+        await addLog(`步骤 ${step}：预清空 2925 邮箱失败，将继续刷新等待新邮件：${err.message}`, 'warn');
+      }
+    }
+
     function triggerPostSuccessMailboxCleanup(step, mail) {
       if (mail?.provider !== '2925') {
         return;
@@ -572,6 +624,8 @@
       const updateFilterAfterTimestampForVerificationStep = async (_requestedAt) => {
         return nextFilterAfterTimestamp;
       };
+
+      await clear2925MailboxBeforePolling(step, mail, options);
 
       if (requestFreshCodeFirst) {
         if (remainingAutomaticResendCount <= 0) {

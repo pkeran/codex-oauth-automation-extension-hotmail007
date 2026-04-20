@@ -431,10 +431,15 @@ test('deleteAllMailboxEmails selects all messages and clicks delete', async () =
 const calls = [];
 const selectAllControl = { kind: 'select-all' };
 const deleteButton = { kind: 'delete' };
+let mailboxCleared = false;
 
 async function returnToInbox() {
   calls.push('inbox');
   return true;
+}
+
+function findMailItems() {
+  return mailboxCleared ? [] : [{ id: 'mail-1' }];
 }
 
 function findSelectAllControl() {
@@ -456,11 +461,13 @@ function simulateClick(node) {
   }
   if (node === deleteButton) {
     calls.push('delete');
+    mailboxCleared = true;
     return;
   }
   throw new Error('unexpected node');
 }
 
+async function sleep() {}
 async function sleepRandom() {}
 
 const console = { warn() {} };
