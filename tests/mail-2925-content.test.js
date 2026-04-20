@@ -4,6 +4,10 @@ const fs = require('node:fs');
 
 const source = fs.readFileSync('content/mail-2925.js', 'utf8');
 
+test('ensureMail2925Session waits at most 20 seconds for mailbox after clicking login', () => {
+  assert.match(source, /waitForMail2925View\('mailbox',\s*20000\)/);
+});
+
 function extractFunction(name) {
   const markers = [`async function ${name}(`, `function ${name}(`];
   const start = markers
@@ -487,4 +491,188 @@ return {
 
   assert.equal(result, true);
   assert.deepEqual(api.getCalls(), ['inbox', 'select-all', 'delete']);
+});
+
+test('findAgreementCheckbox skips 30-day login checkbox and picks agreement checkbox', async () => {
+  const bundle = [
+    extractFunction('normalizeNodeText'),
+    extractFunction('isVisibleNode'),
+    extractFunction('resolveActionTarget'),
+    extractFunction('findAgreementContainer'),
+    extractFunction('isAgreementText'),
+    extractFunction('getCheckboxContextText'),
+    extractFunction('findAgreementCheckbox'),
+  ].join('\n');
+
+  const api = new Function(`
+const MAIL2925_REMEMBER_LOGIN_PATTERNS = [
+  /30天内免登录/,
+  /免登录/,
+  /记住登录/,
+  /保持登录/,
+];
+const MAIL2925_AGREEMENT_PATTERNS = [
+  /我已阅读并同意/,
+  /服务协议/,
+  /隐私政策/,
+];
+
+const rememberCheckbox = {
+  kind: 'remember-checkbox',
+  disabled: false,
+  readOnly: false,
+  hidden: false,
+  classList: { contains() { return false; } },
+  getBoundingClientRect() { return { width: 14, height: 14 }; },
+  closest(selector) {
+    if (selector === 'button, [role="button"], a, label, .el-checkbox, .el-checkbox__input') return this;
+    if (selector === 'label') return rememberLabel;
+    if (selector === 'label, div, span, p, li, form') return rememberLabel;
+    return null;
+  },
+};
+const agreementCheckbox = {
+  kind: 'agreement-checkbox',
+  disabled: false,
+  readOnly: false,
+  hidden: false,
+  classList: { contains() { return false; } },
+  getBoundingClientRect() { return { width: 14, height: 14 }; },
+  closest(selector) {
+    if (selector === 'button, [role="button"], a, label, .el-checkbox, .el-checkbox__input') return this;
+    if (selector === 'label') return agreementLabel;
+    if (selector === 'label, div, span, p, li, form') return agreementLabel;
+    return null;
+  },
+};
+const rememberLabel = {
+  innerText: '30天内免登录',
+  textContent: '30天内免登录',
+  hidden: false,
+  getBoundingClientRect() { return { width: 100, height: 20 }; },
+  parentElement: null,
+};
+const agreementLabel = {
+  innerText: '我已阅读并同意 《服务协议》 和 《隐私政策》',
+  textContent: '我已阅读并同意 《服务协议》 和 《隐私政策》',
+  hidden: false,
+  getBoundingClientRect() { return { width: 220, height: 24 }; },
+  parentElement: null,
+  querySelector(selector) {
+    return selector.includes('checkbox') ? agreementCheckbox : null;
+  },
+};
+rememberCheckbox.parentElement = rememberLabel;
+agreementCheckbox.parentElement = agreementLabel;
+
+const document = {
+  querySelectorAll(selector) {
+    if (selector === 'label, div, span, p, form') {
+      return [rememberLabel, agreementLabel];
+    }
+    if (selector === 'input[type="checkbox"], [role="checkbox"], .ivu-checkbox, .el-checkbox') {
+      return [rememberCheckbox, agreementCheckbox];
+    }
+    return [];
+  },
+};
+
+const window = {
+  getComputedStyle() {
+    return { display: 'block', visibility: 'visible' };
+  },
+};
+
+${bundle}
+
+return {
+  findAgreementCheckbox,
+  rememberCheckbox,
+  agreementCheckbox,
+};
+`)();
+
+  assert.equal(api.findAgreementCheckbox(), api.agreementCheckbox);
+});
+
+test('ensureAgreementChecked clicks all visible login checkboxes', async () => {
+  const bundle = [
+    extractFunction('isVisibleNode'),
+    extractFunction('resolveActionTarget'),
+    extractFunction('isCheckboxChecked'),
+    extractFunction('ensureAgreementChecked'),
+  ].join('\n');
+
+  const api = new Function(`
+const rememberCheckbox = {
+  disabled: false,
+  readOnly: false,
+  hidden: false,
+  checked: false,
+  classList: { contains() { return false; } },
+  getBoundingClientRect() { return { width: 14, height: 14 }; },
+  click() { this.checked = true; },
+  closest(selector) {
+    if (selector === 'button, [role="button"], a, label, .el-checkbox, .el-checkbox__input') return this;
+    return null;
+  },
+  querySelector() { return null; },
+  getAttribute(name) {
+    if (name === 'aria-checked') return this.checked ? 'true' : 'false';
+    return '';
+  },
+};
+const agreementCheckbox = {
+  disabled: false,
+  readOnly: false,
+  hidden: false,
+  checked: false,
+  classList: { contains() { return false; } },
+  getBoundingClientRect() { return { width: 14, height: 14 }; },
+  click() { this.checked = true; },
+  closest(selector) {
+    if (selector === 'button, [role="button"], a, label, .el-checkbox, .el-checkbox__input') return this;
+    return null;
+  },
+  querySelector() { return null; },
+  getAttribute(name) {
+    if (name === 'aria-checked') return this.checked ? 'true' : 'false';
+    return '';
+  },
+};
+
+const document = {
+  querySelectorAll(selector) {
+    if (selector === 'input[type="checkbox"], [role="checkbox"], .ivu-checkbox, .el-checkbox') {
+      return [rememberCheckbox, agreementCheckbox];
+    }
+    return [];
+  },
+};
+
+const window = {
+  getComputedStyle() {
+    return { display: 'block', visibility: 'visible' };
+  },
+};
+
+async function sleep() {}
+function simulateClick(node) {
+  node.click();
+}
+
+${bundle}
+
+return {
+  rememberCheckbox,
+  agreementCheckbox,
+  ensureAgreementChecked,
+};
+`)();
+
+  const result = await api.ensureAgreementChecked();
+
+  assert.equal(result, true);
+  assert.equal(api.rememberCheckbox.checked, true);
+  assert.equal(api.agreementCheckbox.checked, true);
 });
