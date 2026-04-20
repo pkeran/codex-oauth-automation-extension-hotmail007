@@ -35,6 +35,8 @@ const btnOpenRelease = document.getElementById('btn-open-release');
 const settingsCard = document.getElementById('settings-card');
 const contributionModePanel = document.getElementById('contribution-mode-panel');
 const contributionModeText = document.getElementById('contribution-mode-text');
+const inputContributionNickname = document.getElementById('input-contribution-nickname');
+const inputContributionQq = document.getElementById('input-contribution-qq');
 const contributionOauthStatus = document.getElementById('contribution-oauth-status');
 const contributionCallbackStatus = document.getElementById('contribution-callback-status');
 const contributionModeSummary = document.getElementById('contribution-mode-summary');
@@ -1763,6 +1765,12 @@ function applySettingsState(state) {
   if (inputAccountRunHistoryHelperBaseUrl) {
     inputAccountRunHistoryHelperBaseUrl.value = normalizeAccountRunHistoryHelperBaseUrlValue(state?.accountRunHistoryHelperBaseUrl);
   }
+  if (inputContributionNickname) {
+    inputContributionNickname.value = state?.contributionNickname || '';
+  }
+  if (inputContributionQq) {
+    inputContributionQq.value = state?.contributionQq || '';
+  }
   setManagedAliasBaseEmailInputForProvider(restoredMailProvider, state);
   inputInbucketHost.value = state?.inbucketHost || '';
   inputInbucketMailbox.value = state?.inbucketMailbox || '';
@@ -3041,6 +3049,8 @@ const contributionModeManager = window.SidepanelContributionMode?.createContribu
   dom: {
     btnConfigMenu,
     btnContributionMode,
+    inputContributionNickname,
+    inputContributionQq,
     contributionCallbackStatus,
     btnExitContributionMode,
     btnOpenAccountRecords,
@@ -3068,6 +3078,10 @@ const contributionModeManager = window.SidepanelContributionMode?.createContribu
     closeAccountRecordsPanel,
     closeConfigMenu,
     getContributionNickname: () => latestState?.email || '',
+    getContributionProfile: () => ({
+      nickname: String(inputContributionNickname?.value || '').trim(),
+      qq: String(inputContributionQq?.value || '').trim(),
+    }),
     isModeSwitchBlocked: isContributionModeSwitchBlocked,
     openConfirmModal,
     openExternalUrl,
@@ -3446,6 +3460,8 @@ async function startAutoRunFromCurrentSettings() {
   const totalRuns = getRunCountValue();
   let mode = 'restart';
   const autoRunSkipFailures = inputAutoSkipFailures.checked;
+  const contributionNickname = String(inputContributionNickname?.value || '').trim();
+  const contributionQq = String(inputContributionQq?.value || '').trim();
   const fallbackThreadIntervalMinutes = normalizeAutoRunThreadIntervalMinutes(
     inputAutoSkipFailuresThreadIntervalMinutes.value
   );
@@ -3488,6 +3504,8 @@ async function startAutoRunFromCurrentSettings() {
       delayMinutes,
       autoRunSkipFailures,
       contributionMode: Boolean(latestState?.contributionMode),
+      contributionNickname,
+      contributionQq,
       mode,
     },
   });

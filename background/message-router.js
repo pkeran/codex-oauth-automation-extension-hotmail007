@@ -319,7 +319,28 @@
             ok: true,
             state: await startContributionFlow({
               nickname: message.payload?.nickname,
+              qq: message.payload?.qq,
             }),
+          };
+        }
+
+        case 'SET_CONTRIBUTION_PROFILE': {
+          const state = await getState();
+          if (!state?.contributionMode) {
+            throw new Error('请先进入贡献模式。');
+          }
+          const nickname = String(message.payload?.nickname || '').trim();
+          const qq = String(message.payload?.qq || '').trim();
+          if (qq && !/^\d{1,20}$/.test(qq)) {
+            throw new Error('QQ 只能填写数字，且长度不能超过 20 位。');
+          }
+          await setState({
+            contributionNickname: nickname,
+            contributionQq: qq,
+          });
+          return {
+            ok: true,
+            state: await getState(),
           };
         }
 
@@ -388,6 +409,14 @@
           clearStopRequest();
           if (Boolean(message.payload?.contributionMode) && typeof setContributionMode === 'function') {
             await setContributionMode(true);
+            if (typeof setState === 'function') {
+              const contributionNickname = String(message.payload?.contributionNickname || '').trim();
+              const contributionQq = String(message.payload?.contributionQq || '').trim();
+              await setState({
+                contributionNickname,
+                contributionQq,
+              });
+            }
           }
           const state = await getState();
           if (getPendingAutoRunTimerPlan(state)) {
@@ -405,6 +434,14 @@
           clearStopRequest();
           if (Boolean(message.payload?.contributionMode) && typeof setContributionMode === 'function') {
             await setContributionMode(true);
+            if (typeof setState === 'function') {
+              const contributionNickname = String(message.payload?.contributionNickname || '').trim();
+              const contributionQq = String(message.payload?.contributionQq || '').trim();
+              await setState({
+                contributionNickname,
+                contributionQq,
+              });
+            }
           }
           const totalRuns = normalizeRunCount(message.payload?.totalRuns || 1);
           return await scheduleAutoRun(totalRuns, {

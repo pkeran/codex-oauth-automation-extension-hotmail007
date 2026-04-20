@@ -111,6 +111,8 @@ test('sidepanel html contains contribution mode runtime UI and loads the module 
   assert.match(html, /id="btn-start-contribution"/);
   assert.match(html, /id="btn-open-contribution-upload"/);
   assert.match(html, /id="btn-exit-contribution-mode"/);
+  assert.match(html, /id="input-contribution-nickname"/);
+  assert.match(html, /id="input-contribution-qq"/);
   assert.notEqual(moduleIndex, -1);
   assert.notEqual(sidepanelIndex, -1);
   assert.ok(moduleIndex < sidepanelIndex);
@@ -246,6 +248,8 @@ test('contribution mode manager enters mode, starts main auto flow, polls contri
     btnOpenAccountRecords: createElement(),
     btnOpenContributionUpload: createElement(),
     btnStartContribution: createElement(),
+    inputContributionNickname: createElement({ value: '贡献者昵称' }),
+    inputContributionQq: createElement({ value: '123456' }),
     contributionCallbackStatus: createElement(),
     contributionModePanel: createElement({ hidden: true }),
     contributionModeSummary: createElement(),
@@ -283,6 +287,12 @@ test('contribution mode manager enters mode, starts main auto flow, polls contri
       },
       getContributionNickname() {
         return latestState.email;
+      },
+      getContributionProfile() {
+        return {
+          nickname: dom.inputContributionNickname.value,
+          qq: dom.inputContributionQq.value,
+        };
       },
       isModeSwitchBlocked() {
         return blocked;
@@ -332,6 +342,8 @@ test('contribution mode manager enters mode, starts main auto flow, polls contri
               ? {
                 contributionMode: true,
                 panelMode: 'cpa',
+                contributionNickname: '',
+                contributionQq: '',
                 contributionSessionId: '',
                 contributionAuthUrl: '',
                 contributionAuthState: '',
@@ -344,6 +356,8 @@ test('contribution mode manager enters mode, starts main auto flow, polls contri
               : {
                 contributionMode: false,
                 panelMode: 'cpa',
+                contributionNickname: '',
+                contributionQq: '',
                 contributionSessionId: '',
                 contributionAuthUrl: '',
                 contributionAuthState: '',
@@ -366,6 +380,14 @@ test('contribution mode manager enters mode, starts main auto flow, polls contri
               contributionCallbackMessage: '已提交回调',
             },
           };
+        }
+        if (message.type === 'SET_CONTRIBUTION_PROFILE') {
+          latestState = {
+            ...latestState,
+            contributionNickname: message.payload.nickname,
+            contributionQq: message.payload.qq,
+          };
+          return { state: latestState };
         }
         return {};
       },
@@ -399,11 +421,16 @@ test('contribution mode manager enters mode, starts main auto flow, polls contri
   assert.ok(updateConfigMenuCount >= 1);
   assert.equal(timers.length, 0);
 
+  dom.inputContributionNickname.value = '贡献者昵称';
+  dom.inputContributionQq.value = '123456';
+
   await dom.btnStartContribution.listeners.click();
   assert.equal(contributionAutoRunStartCount, 1);
   assert.equal(appliedState.contributionSessionId, '');
   assert.equal(latestState.contributionSessionId, 'session-002');
   assert.equal(latestState.contributionStatus, 'started');
+  const contributionProfileMessage = sentMessages.find((message) => message.type === 'SET_CONTRIBUTION_PROFILE');
+  assert.deepStrictEqual(contributionProfileMessage?.payload, { nickname: '贡献者昵称', qq: '123456' });
   assert.equal(timers.length > 0, true);
 
   await manager.pollOnce({ reason: 'test_poll' });
@@ -423,7 +450,7 @@ test('contribution mode manager enters mode, starts main auto flow, polls contri
   assert.equal(dom.rowVpsUrl.classList.contains('is-contribution-hidden'), false);
   assert.deepStrictEqual(
     sentMessages.map((message) => message.type),
-    ['SET_CONTRIBUTION_MODE', 'POLL_CONTRIBUTION_STATUS', 'SET_CONTRIBUTION_MODE']
+    ['SET_CONTRIBUTION_MODE', 'SET_CONTRIBUTION_PROFILE', 'POLL_CONTRIBUTION_STATUS', 'SET_CONTRIBUTION_MODE']
   );
   assert.deepStrictEqual(
     toasts.map((item) => item.message),
@@ -434,6 +461,8 @@ test('contribution mode manager enters mode, starts main auto flow, polls contri
   latestState = {
     contributionMode: true,
     panelMode: 'cpa',
+    contributionNickname: '贡献者昵称',
+    contributionQq: '123456',
     contributionSessionId: 'session-002',
     contributionAuthUrl: 'https://auth.example.com/oauth?state=oauth-state-002',
     contributionStatus: 'waiting',

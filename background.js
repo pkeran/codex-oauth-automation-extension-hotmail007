@@ -179,6 +179,8 @@ const ACCOUNT_RUN_HISTORY_STORAGE_KEY = 'accountRunHistory';
 const CONTRIBUTION_RUNTIME_DEFAULTS = self.MultiPageBackgroundContributionOAuth?.RUNTIME_DEFAULTS || {
   contributionMode: false,
   contributionModeExpected: false,
+  contributionNickname: '',
+  contributionQq: '',
   contributionSessionId: '',
   contributionAuthUrl: '',
   contributionAuthState: '',
