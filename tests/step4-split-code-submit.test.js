@@ -58,6 +58,12 @@ const logs = [];
 const clicks = [];
 const filledValues = [];
 let submitClicked = false;
+const VERIFICATION_CODE_INPUT_SELECTOR = 'input[data-verification-code]';
+const location = { href: 'https://auth.openai.com/email-verification' };
+function KeyboardEvent(type, init = {}) {
+  this.type = type;
+  Object.assign(this, init);
+}
 
 const submitBtn = {
   tagName: 'BUTTON',
@@ -75,13 +81,20 @@ const submitBtn = {
 
 const inputs = Array.from({ length: 6 }, () => ({
   value: '',
+  maxLength: 1,
+  getAttribute(name) {
+    if (name === 'maxlength') return '1';
+    if (name === 'aria-disabled') return 'false';
+    return '';
+  },
   focus() {},
   dispatchEvent() {},
+  closest() { return null; },
 }));
 
 const document = {
   querySelector(selector) {
-    if (selector === 'button[type="submit"], input[type="submit"]') return submitBtn;
+    if (selector === VERIFICATION_CODE_INPUT_SELECTOR) return inputs[0];
     return null;
   },
   querySelectorAll(selector) {
@@ -97,7 +110,6 @@ function log(message, level = 'info') { logs.push({ message, level }); }
 async function waitForLoginVerificationPageReady() {}
 function is405MethodNotAllowedPage() { return false; }
 async function handle405ResendError() {}
-async function waitForElement() { throw new Error('not found'); }
 function fillInput(el, value) {
   el.value = value;
   filledValues.push(value);
@@ -110,8 +122,11 @@ async function humanPause() {}
 function simulateClick(el) { el.click(); clicks.push(el.textContent); }
 async function waitForVerificationSubmitOutcome() { return { success: true }; }
 
+${extractFunction('getVisibleSplitVerificationInputs')}
+${extractFunction('getVerificationCodeTarget')}
 ${extractFunction('getVerificationSubmitButtonForTarget')}
 ${extractFunction('waitForVerificationSubmitButton')}
+${extractFunction('waitForVerificationCodeTarget')}
 ${extractFunction('waitForSplitVerificationInputsFilled')}
 ${extractFunction('fillVerificationCode')}
 

@@ -57,6 +57,7 @@ const btnSaveSettings = document.getElementById('btn-save-settings');
 const btnStop = document.getElementById('btn-stop');
 const btnReset = document.getElementById('btn-reset');
 const btnContributionMode = document.getElementById('btn-contribution-mode');
+const contributionUpdateLayer = document.getElementById('contribution-update-layer');
 const contributionUpdateHint = document.getElementById('contribution-update-hint');
 const contributionUpdateHintText = document.getElementById('contribution-update-hint-text');
 const btnDismissContributionUpdateHint = document.getElementById('btn-dismiss-contribution-update-hint');
@@ -148,20 +149,23 @@ const inputHotmailRefreshToken = document.getElementById('input-hotmail-refresh-
 const inputHotmailImport = document.getElementById('input-hotmail-import');
 const btnAddHotmailAccount = document.getElementById('btn-add-hotmail-account');
 const btnImportHotmailAccounts = document.getElementById('btn-import-hotmail-accounts');
+const btnToggleHotmailForm = document.getElementById('btn-toggle-hotmail-form');
 const btnHotmailUsageGuide = document.getElementById('btn-hotmail-usage-guide');
 const btnClearUsedHotmailAccounts = document.getElementById('btn-clear-used-hotmail-accounts');
 const btnDeleteAllHotmailAccounts = document.getElementById('btn-delete-all-hotmail-accounts');
 const btnToggleHotmailList = document.getElementById('btn-toggle-hotmail-list');
+const hotmailFormShell = document.getElementById('hotmail-form-shell');
 const hotmailListShell = document.getElementById('hotmail-list-shell');
 const hotmailAccountsList = document.getElementById('hotmail-accounts-list');
 const inputMail2925Email = document.getElementById('input-mail2925-email');
 const inputMail2925Password = document.getElementById('input-mail2925-password');
 const inputMail2925Import = document.getElementById('input-mail2925-import');
 const btnAddMail2925Account = document.getElementById('btn-add-mail2925-account');
-const btnCancelMail2925Edit = document.getElementById('btn-cancel-mail2925-edit');
+const btnToggleMail2925Form = document.getElementById('btn-toggle-mail2925-form');
 const btnImportMail2925Accounts = document.getElementById('btn-import-mail2925-accounts');
 const btnDeleteAllMail2925Accounts = document.getElementById('btn-delete-all-mail2925-accounts');
 const btnToggleMail2925List = document.getElementById('btn-toggle-mail2925-list');
+const mail2925FormShell = document.getElementById('mail2925-form-shell');
 const mail2925ListShell = document.getElementById('mail2925-list-shell');
 const mail2925AccountsList = document.getElementById('mail2925-accounts-list');
 const inputLuckmailApiKey = document.getElementById('input-luckmail-api-key');
@@ -291,24 +295,24 @@ function getManagedAliasProviderUiCopy(provider = selectMailProvider.value) {
   }
   if (String(provider || '').trim().toLowerCase() === GMAIL_PROVIDER) {
     return {
-      baseLabel: 'Gmail 原邮箱',
+      baseLabel: '基邮箱',
       basePlaceholder: '例如 yourname@gmail.com',
       buttonLabel: '生成',
       successVerb: '生成',
       label: 'Gmail +tag 邮箱',
       placeholder: '点击生成 Gmail +tag 邮箱，或手动填写完整邮箱',
-      hint: '先填写 Gmail 原邮箱后点“生成”，也可以直接手动填写完整的 Gmail 邮箱。',
+      hint: '先填写基邮箱后点“生成”，也可以直接手动填写完整的 Gmail 邮箱。',
     };
   }
   if (String(provider || '').trim().toLowerCase() === '2925') {
     return {
-      baseLabel: '2925 基邮箱',
+      baseLabel: '基邮箱',
       basePlaceholder: '例如 yourname@2925.com',
       buttonLabel: '生成',
       successVerb: '生成',
       label: '2925 邮箱',
       placeholder: '点击生成 2925 邮箱，或手动填写完整邮箱',
-      hint: '先填写 2925 基邮箱后点“生成”，也可以直接手动填写完整的 2925 邮箱。',
+      hint: '先填写基邮箱后点“生成”，也可以直接手动填写完整的 2925 邮箱。',
     };
   }
   return null;
@@ -373,7 +377,10 @@ async function syncSelectedMail2925PoolAccount(options = {}) {
     throw new Error(response.error);
   }
 
-  syncLatestState({ currentMail2925AccountId: response.account?.id || accountId });
+  syncLatestState({
+    currentMail2925AccountId: response.account?.id || accountId,
+    ...(response.account?.email ? { mail2925BaseEmail: String(response.account.email).trim() } : {}),
+  });
   setManagedAliasBaseEmailInputForProvider('2925', latestState);
   if (!silent) {
     showToast(`已切换当前 2925 号池邮箱为 ${response.account?.email || accountId}`, 'success', 1800);
@@ -2220,9 +2227,40 @@ function getContributionUpdateHintMessage(snapshot = currentContributionContentS
   return '公告 / 使用教程有更新了，可点上方“贡献/使用”查看。';
 }
 
+function positionContributionUpdateHint() {
+  if (!contributionUpdateLayer || !contributionUpdateHint || !btnContributionMode) {
+    return;
+  }
+  if (contributionUpdateLayer.hidden || contributionUpdateHint.hidden) {
+    return;
+  }
+
+  const buttonRect = btnContributionMode.getBoundingClientRect();
+  const viewportWidth = Math.max(document.documentElement?.clientWidth || 0, window.innerWidth || 0);
+  const viewportHeight = Math.max(document.documentElement?.clientHeight || 0, window.innerHeight || 0);
+  const hintWidth = contributionUpdateHint.offsetWidth || 220;
+  const hintHeight = contributionUpdateHint.offsetHeight || 56;
+  const viewportPadding = 12;
+  const gap = 10;
+
+  const maxLeft = Math.max(viewportPadding, viewportWidth - hintWidth - viewportPadding);
+  const left = Math.min(Math.max(viewportPadding, Math.round(buttonRect.left)), maxLeft);
+  const shouldPlaceAbove = (buttonRect.bottom + gap + hintHeight) > (viewportHeight - viewportPadding)
+    && buttonRect.top > (hintHeight + gap + viewportPadding);
+  const top = shouldPlaceAbove
+    ? Math.max(viewportPadding, Math.round(buttonRect.top - hintHeight - gap))
+    : Math.max(viewportPadding, Math.round(buttonRect.bottom + gap));
+  const buttonCenter = Math.round(buttonRect.left + (buttonRect.width / 2));
+  const arrowOffset = Math.min(Math.max(16, buttonCenter - left), Math.max(16, hintWidth - 16));
+
+  contributionUpdateHint.style.left = `${left}px`;
+  contributionUpdateHint.style.top = `${top}px`;
+  contributionUpdateHint.style.setProperty('--contribution-update-arrow-left', `${arrowOffset}px`);
+}
+
 function shouldShowContributionUpdateHint(snapshot = currentContributionContentSnapshot) {
   const promptVersion = String(snapshot?.promptVersion || '').trim();
-  if (!contributionUpdateHint || !contributionUpdateHintText || !btnContributionMode) {
+  if (!contributionUpdateLayer || !contributionUpdateHint || !contributionUpdateHintText || !btnContributionMode) {
     return false;
   }
   if (!promptVersion) {
@@ -2238,17 +2276,23 @@ function shouldShowContributionUpdateHint(snapshot = currentContributionContentS
 }
 
 function renderContributionUpdateHint(snapshot = currentContributionContentSnapshot) {
-  if (!contributionUpdateHint) {
+  if (!contributionUpdateLayer || !contributionUpdateHint) {
     return;
   }
 
   const visible = shouldShowContributionUpdateHint(snapshot);
+  contributionUpdateLayer.hidden = !visible;
   contributionUpdateHint.hidden = !visible;
   if (!visible || !contributionUpdateHintText) {
     return;
   }
 
   contributionUpdateHintText.textContent = getContributionUpdateHintMessage(snapshot);
+  if (typeof window.requestAnimationFrame === 'function') {
+    window.requestAnimationFrame(() => positionContributionUpdateHint());
+    return;
+  }
+  positionContributionUpdateHint();
 }
 
 function dismissContributionUpdateHint() {
@@ -2425,6 +2469,24 @@ function getCurrentMail2925Account(state = latestState) {
 
 function getCurrentMail2925Email(state = latestState) {
   return String(getCurrentMail2925Account(state)?.email || '').trim();
+}
+
+function syncMail2925BaseEmailFromCurrentAccount(state = latestState, options = {}) {
+  const { persist = false } = options;
+  if (!isMail2925AccountPoolEnabled(state)) {
+    return false;
+  }
+
+  const currentEmail = getCurrentMail2925Email(state);
+  if (!currentEmail || currentEmail === String(state?.mail2925BaseEmail || '').trim()) {
+    return false;
+  }
+
+  syncLatestState({ mail2925BaseEmail: currentEmail });
+  if (persist) {
+    saveSettings({ silent: true }).catch(() => {});
+  }
+  return true;
 }
 
 function getCurrentLuckmailPurchase(state = latestState) {
@@ -3085,7 +3147,9 @@ const hotmailManager = window.SidepanelHotmailManager?.createHotmailManager({
     btnDeleteAllHotmailAccounts,
     btnHotmailUsageGuide,
     btnImportHotmailAccounts,
+    btnToggleHotmailForm,
     btnToggleHotmailList,
+    hotmailFormShell,
     hotmailAccountsList,
     hotmailListShell,
     inputEmail,
@@ -3136,14 +3200,15 @@ const mail2925Manager = window.SidepanelMail2925Manager?.createMail2925Manager({
   },
   dom: {
     btnAddMail2925Account,
-    btnCancelMail2925Edit,
     btnDeleteAllMail2925Accounts,
     btnImportMail2925Accounts,
+    btnToggleMail2925Form,
     btnToggleMail2925List,
     inputMail2925Email,
     inputMail2925Import,
     inputMail2925Password,
     mail2925AccountsList,
+    mail2925FormShell,
     mail2925ListShell,
   },
   helpers: {
@@ -3152,6 +3217,7 @@ const mail2925Manager = window.SidepanelMail2925Manager?.createMail2925Manager({
     getMail2925Accounts,
     openConfirmModal,
     refreshManagedAliasBaseEmail: () => {
+      syncMail2925BaseEmailFromCurrentAccount(latestState, { persist: true });
       setManagedAliasBaseEmailInputForProvider('2925', latestState);
     },
     showToast,
@@ -4691,6 +4757,14 @@ document.addEventListener('keydown', (event) => {
     closeConfigMenu();
   }
 });
+
+window.addEventListener('resize', () => {
+  positionContributionUpdateHint();
+});
+
+document.addEventListener('scroll', () => {
+  positionContributionUpdateHint();
+}, true);
 
 // ============================================================
 // Init

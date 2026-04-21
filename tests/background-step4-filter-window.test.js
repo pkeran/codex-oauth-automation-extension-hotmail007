@@ -8,6 +8,9 @@ const api = new Function('self', `${source}; return self.MultiPageBackgroundStep
 
 test('step 4 passes a fixed 10-minute lookback window to 2925 mailbox polling', async () => {
   let capturedOptions = null;
+  let ensureCalls = 0;
+  const tabUpdates = [];
+  const tabReuses = [];
   const realDateNow = Date.now;
   Date.now = () => 700000;
 
@@ -15,12 +18,16 @@ test('step 4 passes a fixed 10-minute lookback window to 2925 mailbox polling', 
     addLog: async () => {},
     chrome: {
       tabs: {
-        update: async () => {},
+        update: async (tabId, payload) => {
+          tabUpdates.push({ tabId, payload });
+        },
       },
     },
     completeStepFromBackground: async () => {},
     confirmCustomVerificationStepBypass: async () => {},
-    ensureMail2925MailboxSession: async () => {},
+    ensureMail2925MailboxSession: async () => {
+      ensureCalls += 1;
+    },
     getMailConfig: () => ({
       provider: '2925',
       label: '2925 邮箱',
@@ -35,7 +42,9 @@ test('step 4 passes a fixed 10-minute lookback window to 2925 mailbox polling', 
     resolveVerificationStep: async (_step, _state, _mail, options) => {
       capturedOptions = options;
     },
-    reuseOrCreateTab: async () => {},
+    reuseOrCreateTab: async (source, url) => {
+      tabReuses.push({ source, url });
+    },
     sendToContentScriptResilient: async () => ({}),
     shouldUseCustomRegistrationEmail: () => false,
     STANDARD_MAIL_VERIFICATION_RESEND_INTERVAL_MS: 25000,
@@ -46,12 +55,17 @@ test('step 4 passes a fixed 10-minute lookback window to 2925 mailbox polling', 
     await executor.executeStep4({
       email: 'user@example.com',
       password: 'secret',
-      mail2925UseAccountPool: false,
+      mail2925UseAccountPool: true,
     });
   } finally {
     Date.now = realDateNow;
   }
 
+  assert.equal(ensureCalls, 1);
+  assert.deepStrictEqual(tabReuses, []);
+  assert.deepStrictEqual(tabUpdates, [
+    { tabId: 1, payload: { active: true } },
+  ]);
   assert.equal(capturedOptions.filterAfterTimestamp, 100000);
   assert.equal(capturedOptions.resendIntervalMs, 0);
 });

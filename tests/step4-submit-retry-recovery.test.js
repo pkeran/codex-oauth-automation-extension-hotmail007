@@ -101,3 +101,51 @@ return {
   assert.deepStrictEqual(result, { success: true });
   assert.equal(api.snapshot().recoverCalls, 1);
 });
+
+test('waitForVerificationSubmitOutcome does not assume success after repeated signup retry pages', async () => {
+  const api = new Function(`
+let recoverCalls = 0;
+const location = { href: 'https://auth.openai.com/email-verification' };
+
+function throwIfStopped() {}
+function log() {}
+function getVerificationErrorText() { return ''; }
+function isStep5Ready() { return false; }
+function isStep8Ready() { return false; }
+function isAddPhonePageReady() { return false; }
+function isVerificationPageStillVisible() { return false; }
+function createSignupUserAlreadyExistsError() {
+  return new Error('SIGNUP_USER_ALREADY_EXISTS::步骤 4：检测到 user_already_exists，说明当前用户已存在，当前轮将直接停止。');
+}
+function getCurrentAuthRetryPageState(flow) {
+  if (flow === 'signup') {
+    return {
+      retryEnabled: true,
+      userAlreadyExistsBlocked: false,
+    };
+  }
+  return null;
+}
+async function recoverCurrentAuthRetryPage() {
+  recoverCalls += 1;
+}
+async function sleep() {}
+
+${extractFunction('waitForVerificationSubmitOutcome')}
+
+return {
+  run() {
+    return waitForVerificationSubmitOutcome(4, 1000);
+  },
+  snapshot() {
+    return { recoverCalls };
+  },
+};
+`)();
+
+  await assert.rejects(
+    api.run(),
+    /连续进入认证重试页 2 次，页面仍未恢复/
+  );
+  assert.equal(api.snapshot().recoverCalls, 2);
+});

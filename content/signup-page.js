@@ -114,16 +114,24 @@ function isVisibleElement(el) {
     && rect.height > 0;
 }
 
+function getVisibleSplitVerificationInputs() {
+  return Array.from(document.querySelectorAll('input[maxlength="1"]'))
+    .filter(isVisibleElement);
+}
+
 function getVerificationCodeTarget() {
+  const splitInputs = getVisibleSplitVerificationInputs();
   const codeInput = document.querySelector(VERIFICATION_CODE_INPUT_SELECTOR);
   if (codeInput && isVisibleElement(codeInput)) {
+    const maxLength = Number(codeInput.getAttribute?.('maxlength') || codeInput.maxLength || 0);
+    if (maxLength === 1 && splitInputs.length >= 6) {
+      return { type: 'split', elements: splitInputs };
+    }
     return { type: 'single', element: codeInput };
   }
 
-  const singleInputs = Array.from(document.querySelectorAll('input[maxlength="1"]'))
-    .filter(isVisibleElement);
-  if (singleInputs.length >= 6) {
-    return { type: 'split', elements: singleInputs };
+  if (splitInputs.length >= 6) {
+    return { type: 'split', elements: splitInputs };
   }
 
   return null;
@@ -1198,7 +1206,7 @@ function getSignupPasswordTimeoutErrorPageState() {
 
 function getLoginTimeoutErrorPageState() {
   return getAuthTimeoutErrorPageState({
-    pathPatterns: [/\/log-in(?:[/?#]|$)/i],
+    pathPatterns: getLoginAuthRetryPathPatterns(),
   });
 }
 
@@ -1263,17 +1271,17 @@ function inspectLoginAuthState() {
     consentReady,
   };
 
-  if (verificationTarget) {
-    return {
-      ...baseState,
-      state: 'verification_page',
-    };
-  }
-
   if (retryState) {
     return {
       ...baseState,
       state: 'login_timeout_error_page',
+    };
+  }
+
+  if (verificationTarget) {
+    return {
+      ...baseState,
+      state: 'verification_page',
     };
   }
 
@@ -1431,6 +1439,86 @@ async function createStep6LoginTimeoutRecoverableResult(reason, snapshot, messag
 
   return createStep6RecoverableResult(reason, resolvedSnapshot, {
     message,
+  });
+}
+
+async function finalizeStep6VerificationReady(options = {}) {
+  const {
+    logLabel = '步骤 7 收尾',
+    loginVerificationRequestedAt = null,
+    timeout = 12000,
+    via = 'verification_page_ready',
+  } = options;
+  const start = Date.now();
+  const maxRounds = 3;
+  const settleDelayMs = 3000;
+  let round = 0;
+
+  while (Date.now() - start < timeout && round < maxRounds) {
+    throwIfStopped();
+    round += 1;
+    log(`${logLabel}：确认页面是否稳定停留在登录验证码阶段（第 ${round}/${maxRounds} 轮，先等待 3 秒）...`, 'info');
+    await sleep(settleDelayMs);
+
+    const rawSnapshot = inspectLoginAuthState();
+    const snapshot = normalizeStep6Snapshot(rawSnapshot);
+
+    if (snapshot.state === 'verification_page') {
+      log(`${logLabel}：登录验证码页面已稳定就绪。`, 'ok');
+      return createStep6SuccessResult(snapshot, {
+        via,
+        loginVerificationRequestedAt,
+      });
+    }
+
+    if (snapshot.state === 'login_timeout_error_page') {
+      log(`${logLabel}：页面进入登录超时报错页，准备自动恢复后重试步骤 7。`, 'warn');
+      return createStep6LoginTimeoutRecoverableResult(
+        'login_timeout_error_page',
+        snapshot,
+        '登录验证码页面准备就绪前进入登录超时报错页。'
+      );
+    }
+
+    if (snapshot.state === 'password_page' || snapshot.state === 'email_page') {
+      return createStep6RecoverableResult('verification_page_unstable', snapshot, {
+        message: `页面曾进入登录验证码阶段，但又回到了${getLoginAuthStateLabel(snapshot)}，准备重新执行步骤 7。`,
+        loginVerificationRequestedAt,
+      });
+    }
+
+    if (snapshot.state === 'add_phone_page') {
+      throw new Error(`登录验证码页面准备过程中页面进入手机号页面。URL: ${snapshot.url}`);
+    }
+  }
+
+  const rawSnapshot = inspectLoginAuthState();
+  const snapshot = normalizeStep6Snapshot(rawSnapshot);
+  if (snapshot.state === 'verification_page') {
+    log(`${logLabel}：登录验证码页面已稳定就绪。`, 'ok');
+    return createStep6SuccessResult(snapshot, {
+      via,
+      loginVerificationRequestedAt,
+    });
+  }
+  if (snapshot.state === 'login_timeout_error_page') {
+    log(`${logLabel}：页面进入登录超时报错页，准备自动恢复后重试步骤 7。`, 'warn');
+    return createStep6LoginTimeoutRecoverableResult(
+      'login_timeout_error_page',
+      snapshot,
+      '登录验证码页面准备就绪前进入登录超时报错页。'
+    );
+  }
+  if (snapshot.state === 'password_page' || snapshot.state === 'email_page') {
+    return createStep6RecoverableResult('verification_page_unstable', snapshot, {
+      message: `页面曾进入登录验证码阶段，但又回到了${getLoginAuthStateLabel(snapshot)}，准备重新执行步骤 7。`,
+      loginVerificationRequestedAt,
+    });
+  }
+
+  return createStep6RecoverableResult('verification_page_finalize_unknown', snapshot, {
+    message: '登录验证码页面状态在收尾确认阶段未稳定，准备重新执行步骤 7。',
+    loginVerificationRequestedAt,
   });
 }
 
@@ -1633,7 +1721,10 @@ async function waitForVerificationSubmitOutcome(step, timeout) {
     if (retryState?.userAlreadyExistsBlocked) {
       throw createSignupUserAlreadyExistsError();
     }
-    if (retryState && recoveryCount < maxRecoveryCount) {
+    if (retryState) {
+      if (recoveryCount >= maxRecoveryCount) {
+        throw new Error(`步骤 ${step}：验证码提交后连续进入认证重试页 ${maxRecoveryCount} 次，页面仍未恢复。URL: ${location.href}`);
+      }
       recoveryCount += 1;
       log(`步骤 ${step}：验证码提交后进入认证重试页，正在自动恢复（${recoveryCount}/${maxRecoveryCount}）...`, 'warn');
       await recoverCurrentAuthRetryPage({
@@ -1731,6 +1822,26 @@ async function waitForVerificationSubmitButton(codeInput, timeout = 5000) {
   return null;
 }
 
+async function waitForVerificationCodeTarget(timeout = 10000) {
+  const start = Date.now();
+
+  while (Date.now() - start < timeout) {
+    throwIfStopped();
+    if (is405MethodNotAllowedPage()) {
+      throw new Error('当前页面处于 405 错误恢复流程中，暂时无法定位验证码输入框。');
+    }
+
+    const target = getVerificationCodeTarget();
+    if (target) {
+      return target;
+    }
+
+    await sleep(150);
+  }
+
+  throw new Error('未找到验证码输入框。URL: ' + location.href);
+}
+
 async function waitForSplitVerificationInputsFilled(inputs, code, timeout = 2500) {
   const expected = String(code || '').slice(0, 6);
   const start = Date.now();
@@ -1766,6 +1877,7 @@ async function fillVerificationCode(step, payload) {
   // Retry with 405 error recovery if needed
   const maxRetries = 3;
   let codeInput = null;
+  let splitInputs = null;
 
   for (let retry = 0; retry <= maxRetries; retry++) {
     throwIfStopped();
@@ -1778,56 +1890,14 @@ async function fillVerificationCode(step, payload) {
     }
 
     try {
-      codeInput = await waitForElement(VERIFICATION_CODE_INPUT_SELECTOR, 10000);
+      const verificationTarget = await waitForVerificationCodeTarget(10000);
+      if (verificationTarget.type === 'split') {
+        splitInputs = verificationTarget.elements;
+      } else {
+        codeInput = verificationTarget.element;
+      }
       break; // Found it
     } catch {
-      // Check for multiple single-digit inputs (common pattern)
-      const singleInputs = document.querySelectorAll('input[maxlength="1"]');
-      if (singleInputs.length >= 6) {
-        log(`步骤 ${step}：发现分开的单字符验证码输入框，正在逐个填写...`);
-        for (let i = 0; i < 6 && i < singleInputs.length; i++) {
-          const targetInput = singleInputs[i];
-          try {
-            targetInput.focus?.();
-          } catch {}
-          fillInput(singleInputs[i], code[i]);
-          try {
-            targetInput.dispatchEvent(new KeyboardEvent('keyup', { key: code[i], bubbles: true }));
-          } catch {}
-          await sleep(100);
-        }
-        const filled = await waitForSplitVerificationInputsFilled(singleInputs, code, 2500);
-        if (!filled) {
-          const current = Array.from(singleInputs)
-            .slice(0, 6)
-            .map((input) => String(input?.value || '').trim() || '_')
-            .join('');
-          log(`步骤 ${step}：分格验证码输入框未稳定呈现目标值，当前页面值为 ${current}，准备继续观察提交流程。`, 'warn');
-        } else {
-          log(`步骤 ${step}：分格验证码输入框已稳定显示 ${code}。`, 'info');
-        }
-
-        await sleep(800);
-        const splitSubmitBtn = await waitForVerificationSubmitButton(singleInputs[0], 2000).catch(() => null);
-        if (splitSubmitBtn) {
-          await humanPause(450, 1200);
-          simulateClick(splitSubmitBtn);
-          log(`步骤 ${step}：分格验证码已提交`);
-        } else {
-          log(`步骤 ${step}：分格验证码页面未找到可点击提交按钮，继续等待页面自动推进。`, 'info');
-        }
-
-        const outcome = await waitForVerificationSubmitOutcome(step);
-        if (outcome.invalidCode) {
-          log(`步骤 ${step}：验证码被拒绝：${outcome.errorText}`, 'warn');
-        } else if (outcome.addPhonePage) {
-          log(`步骤 ${step}：验证码提交后页面进入手机号页面，当前流程将停止自动授权。`, 'warn');
-        } else {
-          log(`步骤 ${step}：验证码已通过${outcome.assumed ? '（按成功推定）' : ''}。`, 'ok');
-        }
-        return outcome;
-      }
-
       // No input found — check if it's a 405 error and can be recovered
       if (is405MethodNotAllowedPage() && retry < maxRetries) {
         log(`步骤 ${step}：未找到验证码输入框且页面出现 405 错误，正在恢复...`, 'warn');
@@ -1837,6 +1907,51 @@ async function fillVerificationCode(step, payload) {
 
       throw new Error('未找到验证码输入框。URL: ' + location.href);
     }
+  }
+
+  if (splitInputs?.length >= 6) {
+    log(`步骤 ${step}：发现分开的单字符验证码输入框，正在逐个填写...`);
+    for (let i = 0; i < 6 && i < splitInputs.length; i++) {
+      const targetInput = splitInputs[i];
+      try {
+        targetInput.focus?.();
+      } catch {}
+      fillInput(splitInputs[i], code[i]);
+      try {
+        targetInput.dispatchEvent(new KeyboardEvent('keyup', { key: code[i], bubbles: true }));
+      } catch {}
+      await sleep(100);
+    }
+    const filled = await waitForSplitVerificationInputsFilled(splitInputs, code, 2500);
+    if (!filled) {
+      const current = Array.from(splitInputs)
+        .slice(0, 6)
+        .map((input) => String(input?.value || '').trim() || '_')
+        .join('');
+      log(`步骤 ${step}：分格验证码输入框未稳定呈现目标值，当前页面值为 ${current}，准备继续观察提交流程。`, 'warn');
+    } else {
+      log(`步骤 ${step}：分格验证码输入框已稳定显示 ${code}。`, 'info');
+    }
+
+    await sleep(800);
+    const splitSubmitBtn = await waitForVerificationSubmitButton(splitInputs[0], 2000).catch(() => null);
+    if (splitSubmitBtn) {
+      await humanPause(450, 1200);
+      simulateClick(splitSubmitBtn);
+      log(`步骤 ${step}：分格验证码已提交`);
+    } else {
+      log(`步骤 ${step}：分格验证码页面未找到可点击提交按钮，继续等待页面自动推进。`, 'info');
+    }
+
+    const outcome = await waitForVerificationSubmitOutcome(step);
+    if (outcome.invalidCode) {
+      log(`步骤 ${step}：验证码被拒绝：${outcome.errorText}`, 'warn');
+    } else if (outcome.addPhonePage) {
+      log(`步骤 ${step}：验证码提交后页面进入手机号页面，当前流程将停止自动授权。`, 'warn');
+    } else {
+      log(`步骤 ${step}：验证码已通过${outcome.assumed ? '（按成功推定）' : ''}。`, 'ok');
+    }
+    return outcome;
   }
 
   if (!codeInput) {
@@ -2108,7 +2223,15 @@ async function step6SwitchToOneTimeCodeLogin(snapshot) {
   simulateClick(switchTrigger);
   log('步骤 7：已点击一次性验证码登录');
   await sleep(1200);
-  return waitForStep6SwitchTransition(loginVerificationRequestedAt);
+  const result = await waitForStep6SwitchTransition(loginVerificationRequestedAt);
+  if (result?.step6Outcome === 'success') {
+    return finalizeStep6VerificationReady({
+      logLabel: '步骤 7 收尾',
+      loginVerificationRequestedAt: result.loginVerificationRequestedAt || loginVerificationRequestedAt,
+      via: result.via || 'switch_to_one_time_code_login',
+    });
+  }
+  return result;
 }
 
 async function step6LoginFromPasswordPage(payload, snapshot) {
@@ -2139,8 +2262,11 @@ async function step6LoginFromPasswordPage(payload, snapshot) {
 
     const transition = await waitForStep6PasswordSubmitTransition(passwordSubmittedAt);
     if (transition.action === 'done') {
-      log('步骤 7：已进入登录验证码页面。', 'ok');
-      return transition.result;
+      return finalizeStep6VerificationReady({
+        logLabel: '步骤 7 收尾',
+        loginVerificationRequestedAt: transition.result.loginVerificationRequestedAt || passwordSubmittedAt,
+        via: transition.result.via || 'password_submit',
+      });
     }
     if (transition.action === 'recoverable') {
       log(`步骤 7：${transition.result.message || '提交密码后仍未进入登录验证码页面，准备重新执行步骤 7。'}`, 'warn');
@@ -2186,8 +2312,11 @@ async function step6LoginFromEmailPage(payload, snapshot) {
 
   const transition = await waitForStep6EmailSubmitTransition(emailSubmittedAt);
   if (transition.action === 'done') {
-    log('步骤 7：已进入登录验证码页面。', 'ok');
-    return transition.result;
+    return finalizeStep6VerificationReady({
+      logLabel: '步骤 7 收尾',
+      loginVerificationRequestedAt: transition.result.loginVerificationRequestedAt || emailSubmittedAt,
+      via: transition.result.via || 'email_submit',
+    });
   }
   if (transition.action === 'recoverable') {
     log(`步骤 7：${transition.result.message || '提交邮箱后仍未进入目标页面，准备重新执行步骤 7。'}`, 'warn');
@@ -2211,8 +2340,11 @@ async function step6_login(payload) {
   const snapshot = normalizeStep6Snapshot(await waitForKnownLoginAuthState(15000));
 
   if (snapshot.state === 'verification_page') {
-    log('步骤 7：登录验证码页面已就绪。', 'ok');
-    return createStep6SuccessResult(snapshot, { via: 'already_on_verification_page' });
+    return finalizeStep6VerificationReady({
+      logLabel: '步骤 7 收尾',
+      loginVerificationRequestedAt: null,
+      via: 'already_on_verification_page',
+    });
   }
 
   if (snapshot.state === 'login_timeout_error_page') {
