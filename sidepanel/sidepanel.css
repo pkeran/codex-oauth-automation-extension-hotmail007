@@ -243,6 +243,76 @@ header {
   color: var(--orange);
 }
 
+.contribution-entry {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  position: relative;
+}
+
+.contribution-update-hint {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  max-width: 220px;
+  margin-left: 6px;
+  padding: 8px 10px;
+  background: color-mix(in srgb, var(--amber) 10%, var(--bg-base));
+  border: 1px solid color-mix(in srgb, var(--amber) 34%, var(--border));
+  border-radius: 10px;
+  box-shadow: var(--shadow-sm);
+}
+
+.contribution-update-hint::before {
+  content: '';
+  position: absolute;
+  top: -7px;
+  left: 14px;
+  width: 12px;
+  height: 12px;
+  background: inherit;
+  border-top: inherit;
+  border-left: inherit;
+  transform: rotate(45deg);
+}
+
+.contribution-update-hint-text {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-primary);
+}
+
+.contribution-update-hint-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background var(--transition), color var(--transition);
+}
+
+.contribution-update-hint-close:hover {
+  background: color-mix(in srgb, var(--amber) 16%, transparent);
+  color: var(--text-primary);
+}
+
+.contribution-update-hint-close:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--amber) 34%, transparent);
+  outline-offset: 1px;
+}
+
 /* ============================================================
    Theme Toggle
    ============================================================ */
@@ -366,7 +436,7 @@ header {
 
 .run-group {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 4px;
   flex-wrap: wrap;
 }

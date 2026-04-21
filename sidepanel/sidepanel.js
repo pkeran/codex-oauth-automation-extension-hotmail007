@@ -57,6 +57,9 @@ const btnSaveSettings = document.getElementById('btn-save-settings');
 const btnStop = document.getElementById('btn-stop');
 const btnReset = document.getElementById('btn-reset');
 const btnContributionMode = document.getElementById('btn-contribution-mode');
+const contributionUpdateHint = document.getElementById('contribution-update-hint');
+const contributionUpdateHintText = document.getElementById('contribution-update-hint-text');
+const btnDismissContributionUpdateHint = document.getElementById('btn-dismiss-contribution-update-hint');
 const stepsProgress = document.getElementById('steps-progress');
 const btnAutoRun = document.getElementById('btn-auto-run');
 const btnAutoContinue = document.getElementById('btn-auto-continue');
@@ -243,6 +246,7 @@ const MAIL_2925_MODE_RECEIVE = 'receive';
 const DEFAULT_MAIL_2925_MODE = MAIL_2925_MODE_PROVIDE;
 const AUTO_SKIP_FAILURES_PROMPT_DISMISSED_STORAGE_KEY = 'multipage-auto-skip-failures-prompt-dismissed';
 const AUTO_RUN_FALLBACK_RISK_PROMPT_DISMISSED_STORAGE_KEY = 'multipage-auto-run-fallback-risk-prompt-dismissed';
+const CONTRIBUTION_CONTENT_PROMPT_DISMISSED_VERSION_STORAGE_KEY = 'multipage-contribution-content-prompt-dismissed-version';
 const AUTO_RUN_FALLBACK_RISK_WARNING_MIN_RUNS = 15;
 const AUTO_RUN_FALLBACK_RISK_RECOMMENDED_THREAD_INTERVAL_MINUTES = 5;
 const HOTMAIL_SERVICE_MODE_REMOTE = 'remote';
@@ -500,6 +504,8 @@ let scheduledCountdownTimer = null;
 let configMenuOpen = false;
 let configActionInFlight = false;
 let currentReleaseSnapshot = null;
+let currentContributionContentSnapshot = null;
+let contributionContentSnapshotRequestInFlight = null;
 
 const EYE_OPEN_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>';
 const EYE_CLOSED_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 19C5 19 1 12 1 12a21.77 21.77 0 0 1 5.06-6.94"/><path d="M9.9 4.24A10.94 10.94 0 0 1 12 5c7 0 11 7 11 7a21.86 21.86 0 0 1-2.16 3.19"/><path d="M1 1l22 22"/><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/></svg>';
@@ -517,6 +523,7 @@ const normalizeLuckmailTimestampValue = window.LuckMailUtils?.normalizeTimestamp
     return Number.isFinite(timestamp) ? timestamp : 0;
   });
 const sidepanelUpdateService = window.SidepanelUpdateService;
+const contributionContentService = window.SidepanelContributionContentService;
 const DEFAULT_LUCKMAIL_PRESERVE_TAG_NAME = window.LuckMailUtils?.DEFAULT_LUCKMAIL_PRESERVE_TAG_NAME || '保留';
 const normalizeIcloudHost = window.IcloudUtils?.normalizeIcloudHost
   || ((value) => {
@@ -824,6 +831,19 @@ function setPromptDismissed(storageKey, dismissed) {
     localStorage.setItem(storageKey, '1');
   } else {
     localStorage.removeItem(storageKey);
+  }
+}
+
+function getDismissedContributionContentPromptVersion() {
+  return String(localStorage.getItem(CONTRIBUTION_CONTENT_PROMPT_DISMISSED_VERSION_STORAGE_KEY) || '').trim();
+}
+
+function setDismissedContributionContentPromptVersion(version) {
+  const normalized = String(version || '').trim();
+  if (normalized) {
+    localStorage.setItem(CONTRIBUTION_CONTENT_PROMPT_DISMISSED_VERSION_STORAGE_KEY, normalized);
+  } else {
+    localStorage.removeItem(CONTRIBUTION_CONTENT_PROMPT_DISMISSED_VERSION_STORAGE_KEY);
   }
 }
 
@@ -2289,6 +2309,81 @@ async function initializeReleaseInfo() {
   renderReleaseSnapshot(snapshot);
 }
 
+function getContributionUpdateHintMessage(snapshot = currentContributionContentSnapshot) {
+  if (!snapshot?.promptVersion) {
+    return '';
+  }
+
+  return '公告 / 使用教程有更新了，可点上方“贡献/使用”查看。';
+}
+
+function shouldShowContributionUpdateHint(snapshot = currentContributionContentSnapshot) {
+  const promptVersion = String(snapshot?.promptVersion || '').trim();
+  if (!contributionUpdateHint || !contributionUpdateHintText || !btnContributionMode) {
+    return false;
+  }
+  if (!promptVersion) {
+    return false;
+  }
+  if (promptVersion === getDismissedContributionContentPromptVersion()) {
+    return false;
+  }
+  if (latestState?.contributionMode) {
+    return false;
+  }
+  return !btnContributionMode.disabled;
+}
+
+function renderContributionUpdateHint(snapshot = currentContributionContentSnapshot) {
+  if (!contributionUpdateHint) {
+    return;
+  }
+
+  const visible = shouldShowContributionUpdateHint(snapshot);
+  contributionUpdateHint.hidden = !visible;
+  if (!visible || !contributionUpdateHintText) {
+    return;
+  }
+
+  contributionUpdateHintText.textContent = getContributionUpdateHintMessage(snapshot);
+}
+
+function dismissContributionUpdateHint() {
+  const promptVersion = String(currentContributionContentSnapshot?.promptVersion || '').trim();
+  if (promptVersion) {
+    setDismissedContributionContentPromptVersion(promptVersion);
+  }
+  renderContributionUpdateHint();
+}
+
+async function refreshContributionContentHint() {
+  if (!contributionContentService?.getContentUpdateSnapshot) {
+    currentContributionContentSnapshot = null;
+    renderContributionUpdateHint();
+    return null;
+  }
+  if (contributionContentSnapshotRequestInFlight) {
+    return contributionContentSnapshotRequestInFlight;
+  }
+
+  contributionContentSnapshotRequestInFlight = contributionContentService.getContentUpdateSnapshot()
+    .then((snapshot) => {
+      currentContributionContentSnapshot = snapshot;
+      renderContributionUpdateHint(snapshot);
+      return snapshot;
+    })
+    .catch((error) => {
+      currentContributionContentSnapshot = null;
+      renderContributionUpdateHint(null);
+      throw error;
+    })
+    .finally(() => {
+      contributionContentSnapshotRequestInFlight = null;
+    });
+
+  return contributionContentSnapshotRequestInFlight;
+}
+
 function syncPasswordField(state) {
   inputPassword.value = state?.contributionMode ? '' : (state.customPassword || state.password || '');
 }
@@ -3367,12 +3462,16 @@ const contributionModeManager = window.SidepanelContributionMode?.createContribu
     sendMessage: (message) => chrome.runtime.sendMessage(message),
   },
   constants: {
-    contributionOauthUrl: 'https://apikey.qzz.io/oauth/',
-    contributionUploadUrl: 'https://apikey.qzz.io',
+    contributionOauthUrl: `${contributionContentService?.portalUrl || 'https://apikey.qzz.io'}/oauth/`,
+    contributionUploadUrl: contributionContentService?.portalUrl || 'https://apikey.qzz.io',
   },
 });
-const renderContributionMode = contributionModeManager?.render
+const baseRenderContributionMode = contributionModeManager?.render
   || (() => { });
+const renderContributionMode = () => {
+  baseRenderContributionMode();
+  renderContributionUpdateHint();
+};
 const bindContributionModeEvents = contributionModeManager?.bindEvents
   || (() => { });
 bindContributionModeEvents();
@@ -3693,6 +3792,11 @@ extensionUpdateStatus?.addEventListener('click', () => {
   openReleaseListPage();
 });
 
+btnDismissContributionUpdateHint?.addEventListener('click', (event) => {
+  event.stopPropagation();
+  dismissContributionUpdateHint();
+});
+
 configMenu?.addEventListener('click', (event) => {
   event.stopPropagation();
 });
@@ -3728,6 +3832,12 @@ autoStartModal?.addEventListener('click', (event) => {
 btnAutoStartClose?.addEventListener('click', () => resolveModalChoice(null));
 
 async function startAutoRunFromCurrentSettings() {
+  try {
+    await refreshContributionContentHint();
+  } catch (error) {
+    console.warn('Failed to refresh contribution content hint before auto run:', error);
+  }
+
   const totalRuns = getRunCountValue();
   let mode = 'restart';
   const autoRunSkipFailures = inputAutoSkipFailures.checked;
@@ -3789,57 +3899,7 @@ async function startAutoRunFromCurrentSettings() {
 // Auto Run
 btnAutoRun.addEventListener('click', async () => {
   try {
-    return await startAutoRunFromCurrentSettings();
-    const totalRuns = getRunCountValue();
-    let mode = 'restart';
-    const autoRunSkipFailures = inputAutoSkipFailures.checked;
-    const fallbackThreadIntervalMinutes = normalizeAutoRunThreadIntervalMinutes(
-      inputAutoSkipFailuresThreadIntervalMinutes.value
-    );
-    inputAutoSkipFailuresThreadIntervalMinutes.value = String(fallbackThreadIntervalMinutes);
-
-    if (shouldOfferAutoModeChoice()) {
-      const startStep = getFirstUnfinishedStep();
-      const runningStep = getRunningSteps()[0] ?? null;
-      const choice = await openAutoStartChoiceDialog(startStep, { runningStep });
-      if (!choice) {
-        return;
-      }
-      mode = choice;
-    }
-
-    if (shouldWarnAutoRunFallbackRisk(totalRuns, autoRunSkipFailures)
-      && !isAutoRunFallbackRiskPromptDismissed()) {
-      const result = await openAutoRunFallbackRiskConfirmModal(totalRuns, fallbackThreadIntervalMinutes);
-      if (!result.confirmed) {
-        return;
-      }
-      if (result.dismissPrompt) {
-        setAutoRunFallbackRiskPromptDismissed(true);
-      }
-    }
-
-    btnAutoRun.disabled = true;
-    inputRunCount.disabled = true;
-    const delayEnabled = inputAutoDelayEnabled.checked;
-    const delayMinutes = normalizeAutoDelayMinutes(inputAutoDelayMinutes.value);
-    inputAutoDelayMinutes.value = String(delayMinutes);
-    btnAutoRun.innerHTML = delayEnabled
-      ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg> 计划中...'
-      : '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg> 运行中...';
-    const response = await chrome.runtime.sendMessage({
-      type: delayEnabled ? 'SCHEDULE_AUTO_RUN' : 'AUTO_RUN',
-      source: 'sidepanel',
-      payload: {
-        totalRuns,
-        delayMinutes,
-        autoRunSkipFailures,
-        mode,
-      },
-    });
-    if (response?.error) {
-      throw new Error(response.error);
-    }
+    await startAutoRunFromCurrentSettings();
   } catch (err) {
     setDefaultAutoRunButton();
     inputRunCount.disabled = false;
@@ -4786,4 +4846,8 @@ loadHeroSmsCountries().catch((err) => {
   updatePanelModeUI();
   updateButtonStates();
   updateStatusDisplay(latestState);
+  return refreshContributionContentHint();
+}).catch((err) => {
+  console.error('Failed to initialize sidepanel state:', err);
+});
 }));
