@@ -4839,15 +4839,16 @@ initializeReleaseInfo().catch((err) => {
 });
 loadHeroSmsCountries().catch((err) => {
   console.error('Failed to load HeroSMS countries:', err);
-}).finally(() => restoreState().then(() => {
-  syncPasswordToggleLabel();
-  syncVpsUrlToggleLabel();
-  syncVpsPasswordToggleLabel();
-  updatePanelModeUI();
-  updateButtonStates();
-  updateStatusDisplay(latestState);
-  return refreshContributionContentHint();
-}).catch((err) => {
-  console.error('Failed to initialize sidepanel state:', err);
+}).finally(() => {
+  return restoreState().then(() => {
+    syncPasswordToggleLabel();
+    syncVpsUrlToggleLabel();
+    syncVpsPasswordToggleLabel();
+    updatePanelModeUI();
+    updateButtonStates();
+    updateStatusDisplay(latestState);
+    return refreshContributionContentHint();
+  }).catch((err) => {
+    console.error('Failed to initialize sidepanel state:', err);
+  });
 });
-}));
