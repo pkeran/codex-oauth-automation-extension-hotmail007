@@ -249,8 +249,7 @@ const DEFAULT_MAIL_2925_MODE = MAIL_2925_MODE_PROVIDE;
 const AUTO_SKIP_FAILURES_PROMPT_DISMISSED_STORAGE_KEY = 'multipage-auto-skip-failures-prompt-dismissed';
 const AUTO_RUN_FALLBACK_RISK_PROMPT_DISMISSED_STORAGE_KEY = 'multipage-auto-run-fallback-risk-prompt-dismissed';
 const CONTRIBUTION_CONTENT_PROMPT_DISMISSED_VERSION_STORAGE_KEY = 'multipage-contribution-content-prompt-dismissed-version';
-const AUTO_RUN_FALLBACK_RISK_WARNING_MIN_RUNS = 15;
-const AUTO_RUN_FALLBACK_RISK_RECOMMENDED_THREAD_INTERVAL_MINUTES = 5;
+const AUTO_RUN_FALLBACK_RISK_WARNING_MIN_RUNS = 3;
 const HOTMAIL_SERVICE_MODE_REMOTE = 'remote';
 const HOTMAIL_SERVICE_MODE_LOCAL = 'local';
 const ICLOUD_PROVIDER = 'icloud';
@@ -897,14 +896,10 @@ async function openAutoSkipFailuresConfirmModal() {
   };
 }
 
-async function openAutoRunFallbackRiskConfirmModal(totalRuns, fallbackThreadIntervalMinutes) {
-  const intervalLabel = Number.isFinite(fallbackThreadIntervalMinutes)
-    ? `${fallbackThreadIntervalMinutes} 分钟`
-    : '未设置';
-
+async function openAutoRunFallbackRiskConfirmModal(totalRuns) {
   const result = await openConfirmModalWithOption({
     title: '自动运行风险提醒',
-    message: `当前设置为 ${totalRuns} 轮自动化，已开启自动重试，线程间隔为 ${intervalLabel}。轮数过多时，可能会因为 IP 短时间注册过多而集中失败。建议控制在 ${AUTO_RUN_FALLBACK_RISK_WARNING_MIN_RUNS} 轮以下，并将线程间隔设置在 ${AUTO_RUN_FALLBACK_RISK_RECOMMENDED_THREAD_INTERVAL_MINUTES} 分钟以上。是否继续？`,
+    message: `当前轮数已经不适合单节点情况，请确保已经配置并打开节点轮询功能（若没有配置，请点击贡献/使用按钮，根据网页中使用教程进行配置），避免连续使用一个节点注册，导致出现手机号验证。`,
     confirmLabel: '继续',
   });
 
@@ -1179,7 +1174,7 @@ function formatAutoStepDelayInputValue(value) {
 }
 
 function getRunCountValue() {
-  return Math.min(50, Math.max(1, parseInt(inputRunCount.value, 10) || 1));
+  return Math.max(1, parseInt(inputRunCount.value, 10) || 1);
 }
 
 function updateFallbackThreadIntervalInputState() {
@@ -3853,7 +3848,7 @@ async function startAutoRunFromCurrentSettings() {
 
   if (shouldWarnAutoRunFallbackRisk(totalRuns, autoRunSkipFailures)
     && !isAutoRunFallbackRiskPromptDismissed()) {
-    const result = await openAutoRunFallbackRiskConfirmModal(totalRuns, fallbackThreadIntervalMinutes);
+    const result = await openAutoRunFallbackRiskConfirmModal(totalRuns);
     if (!result.confirmed) {
       return false;
     }
