@@ -114,16 +114,24 @@ function isVisibleElement(el) {
     && rect.height > 0;
 }
 
+function getVisibleSplitVerificationInputs() {
+  return Array.from(document.querySelectorAll('input[maxlength="1"]'))
+    .filter(isVisibleElement);
+}
+
 function getVerificationCodeTarget() {
+  const splitInputs = getVisibleSplitVerificationInputs();
   const codeInput = document.querySelector(VERIFICATION_CODE_INPUT_SELECTOR);
   if (codeInput && isVisibleElement(codeInput)) {
+    const maxLength = Number(codeInput.getAttribute?.('maxlength') || codeInput.maxLength || 0);
+    if (maxLength === 1 && splitInputs.length >= 6) {
+      return { type: 'split', elements: splitInputs };
+    }
     return { type: 'single', element: codeInput };
   }
 
-  const singleInputs = Array.from(document.querySelectorAll('input[maxlength="1"]'))
-    .filter(isVisibleElement);
-  if (singleInputs.length >= 6) {
-    return { type: 'split', elements: singleInputs };
+  if (splitInputs.length >= 6) {
+    return { type: 'split', elements: splitInputs };
   }
 
   return null;
@@ -1702,15 +1710,30 @@ async function prepareSignupVerificationFlow(payload = {}, timeout = 30000) {
 async function waitForVerificationSubmitOutcome(step, timeout) {
   const resolvedTimeout = timeout ?? (step === 8 ? 30000 : 12000);
   const start = Date.now();
+  let recoveryCount = 0;
+  const maxRecoveryCount = 2;
 
   while (Date.now() - start < resolvedTimeout) {
     throwIfStopped();
 
-    if (step === 4) {
-      const signupRetryState = getCurrentAuthRetryPageState('signup');
-      if (signupRetryState?.userAlreadyExistsBlocked) {
-        throw createSignupUserAlreadyExistsError();
+    const retryFlow = step === 4 ? 'signup' : 'login';
+    const retryState = getCurrentAuthRetryPageState(retryFlow);
+    if (retryState?.userAlreadyExistsBlocked) {
+      throw createSignupUserAlreadyExistsError();
+    }
+    if (retryState) {
+      if (recoveryCount >= maxRecoveryCount) {
+        throw new Error(`步骤 ${step}：验证码提交后连续进入认证重试页 ${maxRecoveryCount} 次，页面仍未恢复。URL: ${location.href}`);
       }
+      recoveryCount += 1;
+      log(`步骤 ${step}：验证码提交后进入认证重试页，正在自动恢复（${recoveryCount}/${maxRecoveryCount}）...`, 'warn');
+      await recoverCurrentAuthRetryPage({
+        flow: retryFlow,
+        logLabel: `步骤 ${step}：验证码提交后检测到认证重试页，正在点击“重试”恢复`,
+        step,
+        timeoutMs: 12000,
+      });
+      continue;
     }
 
     const errorText = getVerificationErrorText();
@@ -1750,6 +1773,96 @@ async function waitForVerificationSubmitOutcome(step, timeout) {
   return { success: true, assumed: true };
 }
 
+function getVerificationSubmitButtonForTarget(codeInput, options = {}) {
+  const { allowDisabled = false } = options;
+  const form = codeInput?.form || codeInput?.closest?.('form') || null;
+  const isUsableAction = (element) => {
+    if (!element || !isVisibleElement(element)) return false;
+    return allowDisabled || isActionEnabled(element);
+  };
+
+  const findSubmitInRoot = (root) => {
+    if (!root?.querySelectorAll) return null;
+
+    const directCandidates = root.querySelectorAll('button[type="submit"], input[type="submit"]');
+    for (const element of directCandidates) {
+      if (isUsableAction(element)) {
+        return element;
+      }
+    }
+
+    const textCandidates = root.querySelectorAll('button, [role="button"], input[type="button"], input[type="submit"]');
+    return Array.from(textCandidates).find((element) => {
+      if (!isUsableAction(element)) return false;
+      const text = getActionText(element);
+      return /verify|confirm|submit|continue|确认|验证|继续/i.test(text);
+    }) || null;
+  };
+
+  return findSubmitInRoot(form) || findSubmitInRoot(document);
+}
+
+async function waitForVerificationSubmitButton(codeInput, timeout = 5000) {
+  const start = Date.now();
+
+  while (Date.now() - start < timeout) {
+    throwIfStopped();
+    if (is405MethodNotAllowedPage()) {
+      throw new Error('当前页面处于 405 错误恢复流程中，暂时无法定位验证码提交按钮。');
+    }
+
+    const button = getVerificationSubmitButtonForTarget(codeInput, { allowDisabled: false });
+    if (button) {
+      return button;
+    }
+
+    await sleep(150);
+  }
+
+  return null;
+}
+
+async function waitForVerificationCodeTarget(timeout = 10000) {
+  const start = Date.now();
+
+  while (Date.now() - start < timeout) {
+    throwIfStopped();
+    if (is405MethodNotAllowedPage()) {
+      throw new Error('当前页面处于 405 错误恢复流程中，暂时无法定位验证码输入框。');
+    }
+
+    const target = getVerificationCodeTarget();
+    if (target) {
+      return target;
+    }
+
+    await sleep(150);
+  }
+
+  throw new Error('未找到验证码输入框。URL: ' + location.href);
+}
+
+async function waitForSplitVerificationInputsFilled(inputs, code, timeout = 2500) {
+  const expected = String(code || '').slice(0, 6);
+  const start = Date.now();
+
+  while (Date.now() - start < timeout) {
+    throwIfStopped();
+    const current = Array.from(inputs || [])
+      .slice(0, expected.length)
+      .map((input) => String(input?.value || '').trim())
+      .join('');
+
+    if (current === expected) {
+      return true;
+    }
+
+    await sleep(100);
+  }
+
+  return false;
+}
+
 async function fillVerificationCode(step, payload) {
   const { code } = payload;
   if (!code) throw new Error('未提供验证码。');
@@ -1764,6 +1877,7 @@ async function fillVerificationCode(step, payload) {
   // Retry with 405 error recovery if needed
   const maxRetries = 3;
   let codeInput = null;
+  let splitInputs = null;
 
   for (let retry = 0; retry <= maxRetries; retry++) {
     throwIfStopped();
@@ -1776,28 +1890,14 @@ async function fillVerificationCode(step, payload) {
     }
 
     try {
-      codeInput = await waitForElement(VERIFICATION_CODE_INPUT_SELECTOR, 10000);
+      const verificationTarget = await waitForVerificationCodeTarget(10000);
+      if (verificationTarget.type === 'split') {
+        splitInputs = verificationTarget.elements;
+      } else {
+        codeInput = verificationTarget.element;
+      }
       break; // Found it
     } catch {
-      // Check for multiple single-digit inputs (common pattern)
-      const singleInputs = document.querySelectorAll('input[maxlength="1"]');
-      if (singleInputs.length >= 6) {
-        log(`步骤 ${step}：发现分开的单字符验证码输入框，正在逐个填写...`);
-        for (let i = 0; i < 6 && i < singleInputs.length; i++) {
-          fillInput(singleInputs[i], code[i]);
-          await sleep(100);
-        }
-        const outcome = await waitForVerificationSubmitOutcome(step);
-        if (outcome.invalidCode) {
-          log(`步骤 ${step}：验证码被拒绝：${outcome.errorText}`, 'warn');
-        } else if (outcome.addPhonePage) {
-          log(`步骤 ${step}：验证码提交后页面进入手机号页面，当前流程将停止自动授权。`, 'warn');
-        } else {
-          log(`步骤 ${step}：验证码已通过${outcome.assumed ? '（按成功推定）' : ''}。`, 'ok');
-        }
-        return outcome;
-      }
-
       // No input found — check if it's a 405 error and can be recovered
       if (is405MethodNotAllowedPage() && retry < maxRetries) {
         log(`步骤 ${step}：未找到验证码输入框且页面出现 405 错误，正在恢复...`, 'warn');
@@ -1809,6 +1909,51 @@ async function fillVerificationCode(step, payload) {
     }
   }
 
+  if (splitInputs?.length >= 6) {
+    log(`步骤 ${step}：发现分开的单字符验证码输入框，正在逐个填写...`);
+    for (let i = 0; i < 6 && i < splitInputs.length; i++) {
+      const targetInput = splitInputs[i];
+      try {
+        targetInput.focus?.();
+      } catch {}
+      fillInput(splitInputs[i], code[i]);
+      try {
+        targetInput.dispatchEvent(new KeyboardEvent('keyup', { key: code[i], bubbles: true }));
+      } catch {}
+      await sleep(100);
+    }
+    const filled = await waitForSplitVerificationInputsFilled(splitInputs, code, 2500);
+    if (!filled) {
+      const current = Array.from(splitInputs)
+        .slice(0, 6)
+        .map((input) => String(input?.value || '').trim() || '_')
+        .join('');
+      log(`步骤 ${step}：分格验证码输入框未稳定呈现目标值，当前页面值为 ${current}，准备继续观察提交流程。`, 'warn');
+    } else {
+      log(`步骤 ${step}：分格验证码输入框已稳定显示 ${code}。`, 'info');
+    }
+
+    await sleep(800);
+    const splitSubmitBtn = await waitForVerificationSubmitButton(splitInputs[0], 2000).catch(() => null);
+    if (splitSubmitBtn) {
+      await humanPause(450, 1200);
+      simulateClick(splitSubmitBtn);
+      log(`步骤 ${step}：分格验证码已提交`);
+    } else {
+      log(`步骤 ${step}：分格验证码页面未找到可点击提交按钮，继续等待页面自动推进。`, 'info');
+    }
+
+    const outcome = await waitForVerificationSubmitOutcome(step);
+    if (outcome.invalidCode) {
+      log(`步骤 ${step}：验证码被拒绝：${outcome.errorText}`, 'warn');
+    } else if (outcome.addPhonePage) {
+      log(`步骤 ${step}：验证码提交后页面进入手机号页面，当前流程将停止自动授权。`, 'warn');
+    } else {
+      log(`步骤 ${step}：验证码已通过${outcome.assumed ? '（按成功推定）' : ''}。`, 'ok');
+    }
+    return outcome;
+  }
+
   if (!codeInput) {
     throw new Error('未找到验证码输入框。URL: ' + location.href);
   }
@@ -1816,17 +1961,16 @@ async function fillVerificationCode(step, payload) {
   fillInput(codeInput, code);
   log(`步骤 ${step}：验证码已填写`);
 
-  // Report complete BEFORE submit (page may navigate away)
-
   // Submit
-  await sleep(500);
-  const submitBtn = document.querySelector('button[type="submit"]')
-    || await waitForElementByText('button', /verify|confirm|submit|continue|确认|验证/i, 5000).catch(() => null);
+  await sleep(800);
+  const submitBtn = await waitForVerificationSubmitButton(codeInput, 5000).catch(() => null);
 
   if (submitBtn) {
     await humanPause(450, 1200);
     simulateClick(submitBtn);
     log(`步骤 ${step}：验证码已提交`);
+  } else {
+    log(`步骤 ${step}：未找到可提交的验证码按钮，先等待页面自动推进或反馈结果。`, 'warn');
   }
 
   const outcome = await waitForVerificationSubmitOutcome(step);
