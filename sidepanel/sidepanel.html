@@ -450,31 +450,33 @@
           <span class="section-label">2925 账号池</span>
         </div>
         <div class="section-mini-actions">
+          <button id="btn-toggle-mail2925-form" class="btn btn-outline btn-xs" type="button" aria-expanded="false">添加账号</button>
           <button id="btn-delete-all-mail2925-accounts" class="btn btn-ghost btn-xs" type="button">全部删除</button>
           <button id="btn-toggle-mail2925-list" class="btn btn-ghost btn-xs" type="button" aria-expanded="false">展开列表</button>
         </div>
       </div>
-      <div class="data-row">
-        <span class="data-label">邮箱</span>
-        <input type="text" id="input-mail2925-email" class="data-input" placeholder="name@2925.com" />
-      </div>
-      <div class="data-row">
-        <span class="data-label">密码</span>
-        <input type="password" id="input-mail2925-password" class="data-input" placeholder="2925 登录密码" />
-      </div>
-      <div class="data-row hotmail-actions-row">
-        <span class="data-label"></span>
-        <div class="data-inline">
-          <button id="btn-add-mail2925-account" class="btn btn-primary btn-sm" type="button">添加账号</button>
-          <button id="btn-cancel-mail2925-edit" class="btn btn-outline btn-sm" type="button" style="display:none;">取消编辑</button>
+      <div id="mail2925-form-shell" class="mail2925-form-shell" hidden>
+        <div class="data-row">
+          <span class="data-label">邮箱</span>
+          <input type="text" id="input-mail2925-email" class="data-input" placeholder="name@2925.com" />
         </div>
-      </div>
-      <div class="data-row hotmail-import-row">
-        <span class="data-label">批量导入</span>
-        <div class="hotmail-import-box">
-          <textarea id="input-mail2925-import" class="data-textarea mono"
-            placeholder="邮箱----密码&#10;name@2925.com----password"></textarea>
-          <button id="btn-import-mail2925-accounts" class="btn btn-outline btn-sm" type="button">导入</button>
+        <div class="data-row">
+          <span class="data-label">密码</span>
+          <input type="password" id="input-mail2925-password" class="data-input" placeholder="2925 登录密码" />
+        </div>
+        <div class="data-row hotmail-actions-row">
+          <span class="data-label"></span>
+          <div class="data-inline mail2925-actions-inline">
+            <button id="btn-add-mail2925-account" class="btn btn-primary btn-sm" type="button">添加账号</button>
+            <button id="btn-import-mail2925-accounts" class="btn btn-outline btn-sm mail2925-import-action" type="button">批量导入</button>
+          </div>
+        </div>
+        <div class="data-row hotmail-import-row">
+          <span class="data-label">批量导入</span>
+          <div class="hotmail-import-box">
+            <textarea id="input-mail2925-import" class="data-textarea mono"
+              placeholder="邮箱----密码&#10;name@2925.com----password"></textarea>
+          </div>
         </div>
       </div>
       <div id="mail2925-list-shell" class="hotmail-list-shell is-collapsed">

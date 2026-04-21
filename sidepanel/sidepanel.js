@@ -158,10 +158,11 @@ const inputMail2925Email = document.getElementById('input-mail2925-email');
 const inputMail2925Password = document.getElementById('input-mail2925-password');
 const inputMail2925Import = document.getElementById('input-mail2925-import');
 const btnAddMail2925Account = document.getElementById('btn-add-mail2925-account');
-const btnCancelMail2925Edit = document.getElementById('btn-cancel-mail2925-edit');
+const btnToggleMail2925Form = document.getElementById('btn-toggle-mail2925-form');
 const btnImportMail2925Accounts = document.getElementById('btn-import-mail2925-accounts');
 const btnDeleteAllMail2925Accounts = document.getElementById('btn-delete-all-mail2925-accounts');
 const btnToggleMail2925List = document.getElementById('btn-toggle-mail2925-list');
+const mail2925FormShell = document.getElementById('mail2925-form-shell');
 const mail2925ListShell = document.getElementById('mail2925-list-shell');
 const mail2925AccountsList = document.getElementById('mail2925-accounts-list');
 const inputLuckmailApiKey = document.getElementById('input-luckmail-api-key');
@@ -3136,14 +3137,15 @@ const mail2925Manager = window.SidepanelMail2925Manager?.createMail2925Manager({
   },
   dom: {
     btnAddMail2925Account,
-    btnCancelMail2925Edit,
     btnDeleteAllMail2925Accounts,
     btnImportMail2925Accounts,
+    btnToggleMail2925Form,
     btnToggleMail2925List,
     inputMail2925Email,
     inputMail2925Import,
     inputMail2925Password,
     mail2925AccountsList,
+    mail2925FormShell,
     mail2925ListShell,
   },
   helpers: {

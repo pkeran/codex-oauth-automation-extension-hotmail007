@@ -1198,7 +1198,7 @@ function getSignupPasswordTimeoutErrorPageState() {
 
 function getLoginTimeoutErrorPageState() {
   return getAuthTimeoutErrorPageState({
-    pathPatterns: [/\/log-in(?:[/?#]|$)/i],
+    pathPatterns: getLoginAuthRetryPathPatterns(),
   });
 }
 
@@ -1263,17 +1263,17 @@ function inspectLoginAuthState() {
     consentReady,
   };
 
-  if (verificationTarget) {
-    return {
-      ...baseState,
-      state: 'verification_page',
-    };
-  }
-
   if (retryState) {
     return {
       ...baseState,
       state: 'login_timeout_error_page',
+    };
+  }
+
+  if (verificationTarget) {
+    return {
+      ...baseState,
+      state: 'verification_page',
     };
   }
 
@@ -1431,6 +1431,86 @@ async function createStep6LoginTimeoutRecoverableResult(reason, snapshot, messag
 
   return createStep6RecoverableResult(reason, resolvedSnapshot, {
     message,
+  });
+}
+
+async function finalizeStep6VerificationReady(options = {}) {
+  const {
+    logLabel = '步骤 7 收尾',
+    loginVerificationRequestedAt = null,
+    timeout = 12000,
+    via = 'verification_page_ready',
+  } = options;
+  const start = Date.now();
+  const maxRounds = 3;
+  const settleDelayMs = 3000;
+  let round = 0;
+
+  while (Date.now() - start < timeout && round < maxRounds) {
+    throwIfStopped();
+    round += 1;
+    log(`${logLabel}：确认页面是否稳定停留在登录验证码阶段（第 ${round}/${maxRounds} 轮，先等待 3 秒）...`, 'info');
+    await sleep(settleDelayMs);
+
+    const rawSnapshot = inspectLoginAuthState();
+    const snapshot = normalizeStep6Snapshot(rawSnapshot);
+
+    if (snapshot.state === 'verification_page') {
+      log(`${logLabel}：登录验证码页面已稳定就绪。`, 'ok');
+      return createStep6SuccessResult(snapshot, {
+        via,
+        loginVerificationRequestedAt,
+      });
+    }
+
+    if (snapshot.state === 'login_timeout_error_page') {
+      log(`${logLabel}：页面进入登录超时报错页，准备自动恢复后重试步骤 7。`, 'warn');
+      return createStep6LoginTimeoutRecoverableResult(
+        'login_timeout_error_page',
+        snapshot,
+        '登录验证码页面准备就绪前进入登录超时报错页。'
+      );
+    }
+
+    if (snapshot.state === 'password_page' || snapshot.state === 'email_page') {
+      return createStep6RecoverableResult('verification_page_unstable', snapshot, {
+        message: `页面曾进入登录验证码阶段，但又回到了${getLoginAuthStateLabel(snapshot)}，准备重新执行步骤 7。`,
+        loginVerificationRequestedAt,
+      });
+    }
+
+    if (snapshot.state === 'add_phone_page') {
+      throw new Error(`登录验证码页面准备过程中页面进入手机号页面。URL: ${snapshot.url}`);
+    }
+  }
+
+  const rawSnapshot = inspectLoginAuthState();
+  const snapshot = normalizeStep6Snapshot(rawSnapshot);
+  if (snapshot.state === 'verification_page') {
+    log(`${logLabel}：登录验证码页面已稳定就绪。`, 'ok');
+    return createStep6SuccessResult(snapshot, {
+      via,
+      loginVerificationRequestedAt,
+    });
+  }
+  if (snapshot.state === 'login_timeout_error_page') {
+    log(`${logLabel}：页面进入登录超时报错页，准备自动恢复后重试步骤 7。`, 'warn');
+    return createStep6LoginTimeoutRecoverableResult(
+      'login_timeout_error_page',
+      snapshot,
+      '登录验证码页面准备就绪前进入登录超时报错页。'
+    );
+  }
+  if (snapshot.state === 'password_page' || snapshot.state === 'email_page') {
+    return createStep6RecoverableResult('verification_page_unstable', snapshot, {
+      message: `页面曾进入登录验证码阶段，但又回到了${getLoginAuthStateLabel(snapshot)}，准备重新执行步骤 7。`,
+      loginVerificationRequestedAt,
+    });
+  }
+
+  return createStep6RecoverableResult('verification_page_finalize_unknown', snapshot, {
+    message: '登录验证码页面状态在收尾确认阶段未稳定，准备重新执行步骤 7。',
+    loginVerificationRequestedAt,
   });
 }
 
@@ -1999,7 +2079,15 @@ async function step6SwitchToOneTimeCodeLogin(snapshot) {
   simulateClick(switchTrigger);
   log('步骤 7：已点击一次性验证码登录');
   await sleep(1200);
-  return waitForStep6SwitchTransition(loginVerificationRequestedAt);
+  const result = await waitForStep6SwitchTransition(loginVerificationRequestedAt);
+  if (result?.step6Outcome === 'success') {
+    return finalizeStep6VerificationReady({
+      logLabel: '步骤 7 收尾',
+      loginVerificationRequestedAt: result.loginVerificationRequestedAt || loginVerificationRequestedAt,
+      via: result.via || 'switch_to_one_time_code_login',
+    });
+  }
+  return result;
 }
 
 async function step6LoginFromPasswordPage(payload, snapshot) {
@@ -2030,8 +2118,11 @@ async function step6LoginFromPasswordPage(payload, snapshot) {
 
     const transition = await waitForStep6PasswordSubmitTransition(passwordSubmittedAt);
     if (transition.action === 'done') {
-      log('步骤 7：已进入登录验证码页面。', 'ok');
-      return transition.result;
+      return finalizeStep6VerificationReady({
+        logLabel: '步骤 7 收尾',
+        loginVerificationRequestedAt: transition.result.loginVerificationRequestedAt || passwordSubmittedAt,
+        via: transition.result.via || 'password_submit',
+      });
     }
     if (transition.action === 'recoverable') {
       log(`步骤 7：${transition.result.message || '提交密码后仍未进入登录验证码页面，准备重新执行步骤 7。'}`, 'warn');
@@ -2077,8 +2168,11 @@ async function step6LoginFromEmailPage(payload, snapshot) {
 
   const transition = await waitForStep6EmailSubmitTransition(emailSubmittedAt);
   if (transition.action === 'done') {
-    log('步骤 7：已进入登录验证码页面。', 'ok');
-    return transition.result;
+    return finalizeStep6VerificationReady({
+      logLabel: '步骤 7 收尾',
+      loginVerificationRequestedAt: transition.result.loginVerificationRequestedAt || emailSubmittedAt,
+      via: transition.result.via || 'email_submit',
+    });
   }
   if (transition.action === 'recoverable') {
     log(`步骤 7：${transition.result.message || '提交邮箱后仍未进入目标页面，准备重新执行步骤 7。'}`, 'warn');
@@ -2102,8 +2196,11 @@ async function step6_login(payload) {
   const snapshot = normalizeStep6Snapshot(await waitForKnownLoginAuthState(15000));
 
   if (snapshot.state === 'verification_page') {
-    log('步骤 7：登录验证码页面已就绪。', 'ok');
-    return createStep6SuccessResult(snapshot, { via: 'already_on_verification_page' });
+    return finalizeStep6VerificationReady({
+      logLabel: '步骤 7 收尾',
+      loginVerificationRequestedAt: null,
+      via: 'already_on_verification_page',
+    });
   }
 
   if (snapshot.state === 'login_timeout_error_page') {

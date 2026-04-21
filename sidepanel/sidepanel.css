@@ -1112,6 +1112,20 @@ header {
   visibility: hidden;
 }
 
+.mail2925-form-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.mail2925-actions-inline {
+  width: 100%;
+}
+
+.mail2925-import-action {
+  margin-left: auto;
+}
+
 .hotmail-import-row {
   align-items: flex-start;
 }
