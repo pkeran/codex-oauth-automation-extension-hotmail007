@@ -12,11 +12,11 @@
     const expandedStorageKey = constants.expandedStorageKey || 'multipage-mail2925-list-expanded';
     const displayTimeZone = constants.displayTimeZone || 'Asia/Shanghai';
     const copyIcon = constants.copyIcon || '';
+    const createAccountPoolFormController = globalScope.SidepanelAccountPoolUi?.createAccountPoolFormController;
 
     let actionInFlight = false;
     let listExpanded = false;
     let editingAccountId = '';
-    let formVisible = false;
 
     function getMail2925Accounts(currentState = state.getLatestState()) {
       return helpers.getMail2925Accounts(currentState);
@@ -119,34 +119,24 @@
       if (dom.inputMail2925Password) dom.inputMail2925Password.value = '';
     }
 
-    function syncMail2925FormUi() {
-      if (dom.mail2925FormShell) {
-        dom.mail2925FormShell.hidden = !formVisible;
-      }
-      if (dom.btnToggleMail2925Form) {
-        dom.btnToggleMail2925Form.textContent = formVisible ? '取消添加' : '添加账号';
-        dom.btnToggleMail2925Form.setAttribute('aria-expanded', String(formVisible));
-      }
-    }
-
-    function setMail2925FormVisible(visible, options = {}) {
-      const {
-        clearForm = false,
-        focusField = false,
-      } = options;
-
-      formVisible = Boolean(visible);
-      if (!formVisible && clearForm) {
-        stopEditingAccount({ clearForm: true });
-      } else if (clearForm) {
-        clearMail2925Form();
-      }
-
-      syncMail2925FormUi();
-      if (formVisible && focusField) {
-        dom.inputMail2925Email?.focus?.();
-      }
-    }
+    const formController = typeof createAccountPoolFormController === 'function'
+      ? createAccountPoolFormController({
+        formShell: dom.mail2925FormShell,
+        toggleButton: dom.btnToggleMail2925Form,
+        hiddenLabel: '添加账号',
+        visibleLabel: '取消添加',
+        onClear: () => {
+          stopEditingAccount({ clearForm: true });
+        },
+        onFocus: () => {
+          dom.inputMail2925Email?.focus?.();
+        },
+      })
+      : {
+        isVisible: () => false,
+        setVisible() {},
+        sync() {},
+      };
 
     function syncEditUi() {
       if (dom.btnAddMail2925Account) {
@@ -159,7 +149,7 @@
       editingAccountId = account.id;
       if (dom.inputMail2925Email) dom.inputMail2925Email.value = String(account.email || '').trim();
       if (dom.inputMail2925Password) dom.inputMail2925Password.value = String(account.password || '');
-      setMail2925FormVisible(true, { focusField: false });
+      formController.setVisible(true, { focusField: false });
       syncEditUi();
     }
 
@@ -262,7 +252,7 @@
         }
 
         applyMail2925AccountMutation(response.account);
-        setMail2925FormVisible(false, { clearForm: true });
+        formController.setVisible(false, { clearForm: true });
         helpers.showToast(
           updatingExisting
             ? `已更新 2925 账号 ${email}`
@@ -360,7 +350,7 @@
         mail2925Accounts: [],
         currentMail2925AccountId: null,
       });
-      setMail2925FormVisible(false, { clearForm: true });
+      formController.setVisible(false, { clearForm: true });
       refreshManagedAliasBaseEmail();
       renderMail2925Accounts();
       helpers.showToast(`已删除全部 ${response.deletedCount || 0} 个 2925 账号`, 'success', 2200);
@@ -488,7 +478,7 @@
           }
           state.syncLatestState(nextState);
           if (editingAccountId === accountId) {
-            setMail2925FormVisible(false, { clearForm: true });
+            formController.setVisible(false, { clearForm: true });
           }
           refreshManagedAliasBaseEmail();
           renderMail2925Accounts();
@@ -508,11 +498,11 @@
       });
 
       dom.btnToggleMail2925Form?.addEventListener('click', () => {
-        if (formVisible) {
-          setMail2925FormVisible(false, { clearForm: true });
+        if (formController.isVisible()) {
+          formController.setVisible(false, { clearForm: true });
           return;
         }
-        setMail2925FormVisible(true, { clearForm: !editingAccountId, focusField: true });
+        formController.setVisible(true, { clearForm: !editingAccountId, focusField: true });
       });
 
       dom.btnDeleteAllMail2925Accounts?.addEventListener('click', async () => {
@@ -532,7 +522,7 @@
       dom.btnImportMail2925Accounts?.addEventListener('click', handleImportMail2925Accounts);
       dom.mail2925AccountsList?.addEventListener('click', handleAccountListClick);
       syncEditUi();
-      syncMail2925FormUi();
+      formController.sync();
     }
 
     return {

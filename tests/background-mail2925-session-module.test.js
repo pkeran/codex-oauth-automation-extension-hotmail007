@@ -223,5 +223,5 @@ test('ensureMail2925MailboxSession requests stop when auto run is active and log
   );
 
   assert.equal(events.stopCalls.length, 1);
-  assert.match(events.stopCalls[0].logMessage, /20 秒内未进入收件箱/);
+  assert.match(events.stopCalls[0].logMessage, /登录后仍未进入收件箱/);
 });

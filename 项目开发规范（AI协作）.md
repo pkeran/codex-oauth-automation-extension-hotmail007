@@ -96,6 +96,7 @@
 - `background/generated-email-helpers.js` 只负责调度，不应再次复制 Gmail / 2925 规则
 - `background/signup-flow-helpers.js` 只负责“复用已有邮箱还是重新生成”的流程决策
 - `sidepanel/sidepanel.js` 只负责 UI 接线、校验触发和状态同步
+- Hotmail / 2925 账号池这类跨 provider 的 sidepanel 表单显隐、头部按钮文案切换与共用操作行，应优先收敛到共享 UI helper（当前为 `sidepanel/account-pool-ui.js`），不要在各自 manager 中复制一套近似状态机
 
 ### 3.3 新增配置项
 

@@ -78,5 +78,5 @@ test('ensureMail2925MailboxSession waits 3 seconds before and after opening logi
 
   assert.deepStrictEqual(events.openedUrls, ['https://2925.com/login/']);
   assert.deepStrictEqual(events.sleeps, [3000, 3000]);
-  assert.equal(events.readyCalls, 1);
+  assert.equal(events.readyCalls, 2);
 });

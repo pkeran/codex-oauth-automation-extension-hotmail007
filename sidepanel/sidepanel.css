@@ -1112,17 +1112,17 @@ header {
   visibility: hidden;
 }
 
-.mail2925-form-shell {
+.account-pool-form-shell {
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
 
-.mail2925-actions-inline {
+.account-pool-actions-inline {
   width: 100%;
 }
 
-.mail2925-import-action {
+.account-pool-import-action {
   margin-left: auto;
 }
 
@@ -1148,7 +1148,7 @@ header {
 }
 
 .hotmail-list-shell.is-collapsed {
-  max-height: 236px;
+  max-height: 176px;
 }
 
 .hotmail-list-shell.is-expanded {

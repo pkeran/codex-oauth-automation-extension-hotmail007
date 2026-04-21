@@ -2,13 +2,59 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 
+function createAccountPoolUiStub() {
+  return {
+    createAccountPoolFormController({
+      formShell,
+      toggleButton,
+      hiddenLabel = '添加账号',
+      visibleLabel = '取消添加',
+      onClear,
+      onFocus,
+    } = {}) {
+      let visible = false;
+
+      function sync() {
+        if (formShell) {
+          formShell.hidden = !visible;
+        }
+        if (toggleButton) {
+          toggleButton.textContent = visible ? visibleLabel : hiddenLabel;
+          toggleButton.setAttribute?.('aria-expanded', String(visible));
+        }
+      }
+
+      function setVisible(nextVisible, options = {}) {
+        visible = Boolean(nextVisible);
+        if (options.clearForm) {
+          onClear?.();
+        }
+        sync();
+        if (visible && options.focusField) {
+          onFocus?.();
+        }
+      }
+
+      sync();
+      return {
+        isVisible: () => visible,
+        setVisible,
+        sync,
+      };
+    },
+  };
+}
+
 test('sidepanel loads mail2925 manager before sidepanel bootstrap', () => {
   const html = fs.readFileSync('sidepanel/sidepanel.html', 'utf8');
+  const helperIndex = html.indexOf('<script src="account-pool-ui.js"></script>');
   const managerIndex = html.indexOf('<script src="mail-2925-manager.js"></script>');
   const sidepanelIndex = html.indexOf('<script src="sidepanel.js"></script>');
 
+  assert.notEqual(helperIndex, -1);
   assert.notEqual(managerIndex, -1);
   assert.notEqual(sidepanelIndex, -1);
+  assert.ok(helperIndex < managerIndex);
   assert.ok(managerIndex < sidepanelIndex);
 });
 
@@ -22,9 +68,16 @@ test('sidepanel html contains mail2925 pool toggle and selector controls', () =>
   assert.doesNotMatch(html, /id="btn-cancel-mail2925-edit"/);
 });
 
+test('sidepanel css keeps collapsed shared mailbox list near a single card height', () => {
+  const css = fs.readFileSync('sidepanel/sidepanel.css', 'utf8');
+  assert.match(css, /\.hotmail-list-shell\.is-collapsed\s*\{\s*max-height:\s*176px;\s*\}/);
+});
+
 test('mail2925 manager exposes a factory and renders empty state', () => {
   const source = fs.readFileSync('sidepanel/mail-2925-manager.js', 'utf8');
-  const windowObject = {};
+  const windowObject = {
+    SidepanelAccountPoolUi: createAccountPoolUiStub(),
+  };
   const localStorageMock = {
     getItem() {
       return null;
@@ -101,7 +154,9 @@ test('mail2925 manager exposes a factory and renders empty state', () => {
 
 test('mail2925 manager toggles form container from header button', () => {
   const source = fs.readFileSync('sidepanel/mail-2925-manager.js', 'utf8');
-  const windowObject = {};
+  const windowObject = {
+    SidepanelAccountPoolUi: createAccountPoolUiStub(),
+  };
   const localStorageMock = {
     getItem() {
       return null;
@@ -179,7 +234,9 @@ test('mail2925 manager toggles form container from header button', () => {
 
 test('mail2925 manager hides form after save succeeds', async () => {
   const source = fs.readFileSync('sidepanel/mail-2925-manager.js', 'utf8');
-  const windowObject = {};
+  const windowObject = {
+    SidepanelAccountPoolUi: createAccountPoolUiStub(),
+  };
   const localStorageMock = {
     getItem() {
       return null;
