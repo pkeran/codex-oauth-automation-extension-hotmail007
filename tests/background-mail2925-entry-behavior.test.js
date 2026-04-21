@@ -72,6 +72,67 @@ test('ensureMail2925MailboxSession reuses current mailbox page without sending l
   assert.equal(result.result.usedExistingSession, true);
 });
 
+test('ensureMail2925MailboxSession does not require account-pool accounts when pool is off and mailbox page stays on mailList', async () => {
+  let currentState = {
+    autoRunning: false,
+    mail2925UseAccountPool: false,
+    mail2925Accounts: [],
+    currentMail2925AccountId: null,
+  };
+  let sendCalls = 0;
+
+  const manager = api.createMail2925SessionManager({
+    addLog: async () => {},
+    broadcastDataUpdate: () => {},
+    chrome: {
+      tabs: {
+        get: async () => ({ id: 9, url: 'https://2925.com/#/mailList' }),
+      },
+      cookies: {
+        getAll: async () => [],
+        remove: async () => ({ ok: true }),
+      },
+      browsingData: {
+        removeCookies: async () => {},
+      },
+    },
+    ensureContentScriptReadyOnTab: async () => {},
+    findMail2925Account: mail2925Utils.findMail2925Account,
+    getMail2925AccountStatus: mail2925Utils.getMail2925AccountStatus,
+    getState: async () => currentState,
+    isAutoRunLockedState: () => false,
+    isMail2925AccountAvailable: mail2925Utils.isMail2925AccountAvailable,
+    MAIL2925_LIMIT_COOLDOWN_MS: mail2925Utils.MAIL2925_LIMIT_COOLDOWN_MS,
+    normalizeMail2925Account: mail2925Utils.normalizeMail2925Account,
+    normalizeMail2925Accounts: mail2925Utils.normalizeMail2925Accounts,
+    pickMail2925AccountForRun: mail2925Utils.pickMail2925AccountForRun,
+    reuseOrCreateTab: async () => 9,
+    sendToMailContentScriptResilient: async () => {
+      sendCalls += 1;
+      return { loggedIn: true };
+    },
+    setPersistentSettings: async (payload) => {
+      currentState = { ...currentState, ...payload };
+    },
+    setState: async (updates) => {
+      currentState = { ...currentState, ...updates };
+    },
+    throwIfStopped: () => {},
+    upsertMail2925AccountInList: mail2925Utils.upsertMail2925AccountInList,
+  });
+
+  const result = await manager.ensureMail2925MailboxSession({
+    accountId: null,
+    forceRelogin: false,
+    allowLoginWhenOnLoginPage: false,
+    actionLabel: '步骤 4：确认 2925 邮箱登录态',
+  });
+
+  assert.equal(sendCalls, 0);
+  assert.equal(result.result.usedExistingSession, true);
+  assert.equal(result.account, null);
+});
+
 test('ensureMail2925MailboxSession stops immediately when login page is detected and account pool is off', async () => {
   let currentState = {
     autoRunning: true,

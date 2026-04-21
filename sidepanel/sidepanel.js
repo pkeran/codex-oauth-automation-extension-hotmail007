@@ -295,24 +295,24 @@ function getManagedAliasProviderUiCopy(provider = selectMailProvider.value) {
   }
   if (String(provider || '').trim().toLowerCase() === GMAIL_PROVIDER) {
     return {
-      baseLabel: 'Gmail 原邮箱',
+      baseLabel: '基邮箱',
       basePlaceholder: '例如 yourname@gmail.com',
       buttonLabel: '生成',
       successVerb: '生成',
       label: 'Gmail +tag 邮箱',
       placeholder: '点击生成 Gmail +tag 邮箱，或手动填写完整邮箱',
-      hint: '先填写 Gmail 原邮箱后点“生成”，也可以直接手动填写完整的 Gmail 邮箱。',
+      hint: '先填写基邮箱后点“生成”，也可以直接手动填写完整的 Gmail 邮箱。',
     };
   }
   if (String(provider || '').trim().toLowerCase() === '2925') {
     return {
-      baseLabel: '2925 基邮箱',
+      baseLabel: '基邮箱',
       basePlaceholder: '例如 yourname@2925.com',
       buttonLabel: '生成',
       successVerb: '生成',
       label: '2925 邮箱',
       placeholder: '点击生成 2925 邮箱，或手动填写完整邮箱',
-      hint: '先填写 2925 基邮箱后点“生成”，也可以直接手动填写完整的 2925 邮箱。',
+      hint: '先填写基邮箱后点“生成”，也可以直接手动填写完整的 2925 邮箱。',
     };
   }
   return null;

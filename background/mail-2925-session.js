@@ -86,10 +86,9 @@
 
     function isMail2925LimitReachedError(error) {
       const message = getErrorMessage(error);
-      const normalized = message.toLowerCase();
       return message.startsWith(MAIL2925_LIMIT_ERROR_PREFIX)
-        || normalized.includes('子邮箱已达上限')
-        || normalized.includes('已达上限邮箱');
+        || message.includes('子邮箱已达上限')
+        || message.includes('已达上限邮箱');
     }
 
     function isMail2925ThreadTerminatedError(error) {
@@ -385,7 +384,7 @@
             origins: MAIL2925_COOKIE_ORIGINS,
           });
         } catch (_) {
-          // 这里只做尽力清理。
+          // Best effort cleanup only.
         }
       }
 
@@ -399,10 +398,14 @@
         actionLabel = '确保 2925 邮箱登录态',
         allowLoginWhenOnLoginPage = true,
       } = options;
-      const account = await ensureMail2925AccountForFlow({
-        allowAllocate: true,
-        preferredAccountId: accountId,
-      });
+
+      let account = null;
+      if (forceRelogin) {
+        account = await ensureMail2925AccountForFlow({
+          allowAllocate: true,
+          preferredAccountId: accountId,
+        });
+      }
 
       const sendLoginMessage = typeof sendToContentScriptResilient === 'function'
         ? sendToContentScriptResilient
@@ -416,13 +419,14 @@
           }
         );
 
-      const buildSuccessPayload = async (result = {}) => ({
-        account: await ensureMail2925AccountForFlow({
-          allowAllocate: false,
-          preferredAccountId: account.id,
-        }),
+      const buildSuccessPayload = () => ({
+        account,
         mail: getMail2925MailConfig(),
-        result,
+        result: {
+          loggedIn: true,
+          currentView: 'mailbox',
+          usedExistingSession: true,
+        },
       });
 
       const failMailboxSession = async (message) => {
@@ -471,29 +475,22 @@
         if (matchedLoginTab?.url) {
           openedUrl = String(matchedLoginTab.url || '').trim();
         }
-        if (matchedLoginTab && typeof ensureContentScriptReadyOnTab === 'function') {
-          await ensureContentScriptReadyOnTab(MAIL2925_SOURCE, tabId, {
-            inject: MAIL2925_INJECT,
-            injectSource: MAIL2925_INJECT_SOURCE,
-            timeoutMs: 20000,
-            retryDelayMs: 800,
-            logMessage: '步骤 0：2925 登录页内容脚本未就绪，正在等待页面稳定后继续登录...',
-          });
-        }
       }
 
       if (!forceRelogin && !isMail2925LoginUrl(openedUrl)) {
         await addLog('2925：当前邮箱页未跳转到登录页，将直接复用已登录会话。', 'info');
-        return buildSuccessPayload({
-          loggedIn: true,
-          currentView: 'mailbox',
-          currentUrl: openedUrl,
-          usedExistingSession: true,
-        });
+        return buildSuccessPayload();
       }
 
       if (!forceRelogin && !allowLoginWhenOnLoginPage) {
         await failMailboxSession(`2925：${actionLabel}失败，当前页面已跳转到登录页，且当前未启用 2925 账号池，不执行自动登录。`);
+      }
+
+      if (!account) {
+        account = await ensureMail2925AccountForFlow({
+          allowAllocate: true,
+          preferredAccountId: accountId,
+        });
       }
 
       if (typeof ensureContentScriptReadyOnTab === 'function') {
@@ -531,7 +528,7 @@
             timeoutMs: forceRelogin ? 30000 : 25000,
             retryDelayMs: 800,
             responseTimeoutMs: forceRelogin ? 30000 : 25000,
-            logMessage: '步骤 0：2925 登录页通信异常，正在等待当前页面重新就绪后继续确认登录态...',
+            logMessage: '步骤 0：2925 登录页通信异常，正在等待页面恢复...',
           }
         );
       } catch (err) {
@@ -547,7 +544,7 @@
         await failMailboxSession(`2925：${actionLabel}失败（${result.error}）。`);
       }
       if (result?.limitReached) {
-        throw new Error(`${MAIL2925_LIMIT_ERROR_PREFIX}${result.limitMessage || '2925 子邮箱已达上限邮箱'}`);
+        throw new Error(`${MAIL2925_LIMIT_ERROR_PREFIX}${result.limitMessage || '子邮箱已达上限邮箱'}`);
       }
       if (!result?.loggedIn) {
         await failMailboxSession(`2925：${actionLabel}失败，登录后仍未进入收件箱。`);
@@ -559,10 +556,18 @@
       });
       await setState({ currentMail2925AccountId: account.id });
       broadcastDataUpdate({ currentMail2925AccountId: account.id });
+
       const finalUrl = (await getMail2925TabUrlById(tabId)) || await getMail2925CurrentTabUrl();
       await addLog(`2925：登录态确认成功，当前地址=${finalUrl || 'unknown'}`, 'ok');
 
-      return buildSuccessPayload(result);
+      return {
+        account: await ensureMail2925AccountForFlow({
+          allowAllocate: false,
+          preferredAccountId: account.id,
+        }),
+        mail: getMail2925MailConfig(),
+        result,
+      };
     }
 
     async function handleMail2925LimitReachedError(step, error) {
@@ -570,10 +575,21 @@
         || '子邮箱已达上限邮箱';
       const state = await getState();
       const currentAccount = getCurrentMail2925Account(state);
+      const poolEnabled = Boolean(state?.mail2925UseAccountPool);
+
+      if (!poolEnabled) {
+        if (typeof requestStop === 'function') {
+          await requestStop({
+            logMessage: `步骤 ${step}：2925 检测到“${reason}”，当前未启用账号池，已按手动停止逻辑暂停自动流程。`,
+          });
+        }
+        return new Error('流程已被用户停止。');
+      }
+
       if (!currentAccount) {
         if (typeof requestStop === 'function') {
           await requestStop({
-            logMessage: `步骤 ${step}：2925 检测到“${reason}”，但当前没有可识别的账号可供处理。`,
+            logMessage: `步骤 ${step}：2925 检测到“${reason}”，但当前没有可识别的账号可供切换。`,
           });
         }
         return new Error('流程已被用户停止。');
@@ -601,7 +617,7 @@
         broadcastDataUpdate({ currentMail2925AccountId: null });
         if (typeof requestStop === 'function') {
           await requestStop({
-            logMessage: `步骤 ${step}：2925 账号 ${currentAccount.email} 命中“${reason}”，且当前没有可切换的下一个账号。`,
+            logMessage: `步骤 ${step}：2925 账号 ${currentAccount.email} 命中“${reason}”，但当前没有可切换的下一个账号。`,
           });
         }
         return new Error('流程已被用户停止。');
@@ -616,7 +632,7 @@
       });
       await addLog(`步骤 ${step}：2925 已切换到下一个账号 ${nextAccount.email}。`, 'warn');
       return buildMail2925ThreadTerminatedError(
-        `步骤 ${step}：2925 账号 ${currentAccount.email} 命中“${reason}”，已切换到 ${nextAccount.email}，当前尝试结束，等待下一次重试。`
+        `步骤 ${step}：2925 账号 ${currentAccount.email} 命中“${reason}”，已切换到 ${nextAccount.email}，当前尝试结束，等待下一轮重试。`
       );
     }
 
