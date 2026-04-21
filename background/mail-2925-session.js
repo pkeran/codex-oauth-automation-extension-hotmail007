@@ -525,14 +525,14 @@
             },
           },
           {
-            timeoutMs: forceRelogin ? 30000 : 25000,
+            timeoutMs: 50000,
             retryDelayMs: 800,
-            responseTimeoutMs: forceRelogin ? 30000 : 25000,
+            responseTimeoutMs: 50000,
             logMessage: '步骤 0：2925 登录页通信异常，正在等待页面恢复...',
           }
         );
       } catch (err) {
-        const message = `2925：${actionLabel}失败（${getErrorMessage(err) || '20 秒内未进入收件箱'}）。`;
+        const message = `2925：${actionLabel}失败（${getErrorMessage(err) || '40 秒内未进入收件箱'}）。`;
         const stopped = await stopAutoRunForMail2925LoginFailure(`${message}已按手动停止逻辑暂停自动流程。`);
         if (stopped) {
           throw new Error('流程已被用户停止。');

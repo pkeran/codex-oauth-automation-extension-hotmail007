@@ -4,8 +4,12 @@ const fs = require('node:fs');
 
 const source = fs.readFileSync('content/mail-2925.js', 'utf8');
 
-test('ensureMail2925Session waits at most 20 seconds for mailbox after clicking login', () => {
-  assert.match(source, /waitForMail2925View\('mailbox',\s*20000\)/);
+test('ensureMail2925Session waits at most 40 seconds for mailbox after clicking login', () => {
+  assert.match(source, /waitForMail2925View\('mailbox',\s*40000\)/);
+});
+
+test('ensureMail2925Session waits 1 second after filling credentials before clicking login', () => {
+  assert.match(source, /fillInput\(passwordInput,\s*password\);[\s\S]*?await sleep\(200\);[\s\S]*?await sleep\(1000\);[\s\S]*?simulateClick\(loginButton\);/);
 });
 
 function extractFunction(name) {

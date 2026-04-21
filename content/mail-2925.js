@@ -935,11 +935,12 @@ async function ensureMail2925Session(payload = {}) {
   await sleep(150);
   fillInput(passwordInput, password);
   await sleep(200);
+  await sleep(1000);
   log(`步骤 0：2925 已定位到登录表单，准备点击“登录”，当前地址 ${location.href}`, 'info');
   simulateClick(loginButton);
   log(`步骤 0：2925 已点击“登录”，点击后地址 ${location.href}`, 'info');
 
-  const finalState = await waitForMail2925View('mailbox', 20000);
+  const finalState = await waitForMail2925View('mailbox', 40000);
   log(`步骤 0：2925 登录等待结束，状态=${finalState.view}，地址=${location.href}`, 'info');
   if (finalState.view !== 'mailbox') {
     throw new Error('2925：提交账号密码后未进入收件箱。');
