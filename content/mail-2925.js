@@ -515,8 +515,9 @@ function detectMail2925ViewState() {
     return { view: 'limit', limitMessage };
   }
 
-  if (findMailItems().length > 0) {
-    return { view: 'mailbox', limitMessage: '' };
+  const mailboxEmail = getMail2925DisplayedMailboxEmail();
+  if (findMailItems().length > 0 || mailboxEmail) {
+    return { view: 'mailbox', limitMessage: '', mailboxEmail };
   }
 
   if (findMail2925LoginPasswordInput() && findMail2925LoginEmailInput()) {
@@ -529,6 +530,62 @@ function detectMail2925ViewState() {
   }
 
   return { view: 'unknown', limitMessage: '' };
+}
+
+function getMail2925DisplayedMailboxEmail() {
+  const directSelectors = [
+    '[class*="user"] [class*="mail"]',
+    '[class*="user"] [class*="email"]',
+    '[class*="account"] [class*="mail"]',
+    '[class*="account"] [class*="email"]',
+    '[class*="header"] [class*="mail"]',
+    '[class*="header"] [class*="email"]',
+  ];
+
+  for (const selector of directSelectors) {
+    const candidates = document.querySelectorAll(selector);
+    for (const candidate of candidates) {
+      if (!isVisibleNode(candidate) || isMailItemNode(candidate)) {
+        continue;
+      }
+      const email = extractEmails(candidate.textContent || candidate.innerText || '')[0] || '';
+      if (email) {
+        return email;
+      }
+    }
+  }
+
+  const topCandidates = Array.from(document.querySelectorAll('body *'))
+    .filter((node) => {
+      if (!isVisibleNode(node) || isMailItemNode(node)) {
+        return false;
+      }
+      const rect = typeof node.getBoundingClientRect === 'function'
+        ? node.getBoundingClientRect()
+        : null;
+      if (!rect) return false;
+      return rect.top >= 0 && rect.top <= Math.max(window.innerHeight * 0.35, 280);
+    })
+    .map((node) => {
+      const email = extractEmails(node.textContent || node.innerText || '')[0] || '';
+      return { node, email };
+    })
+    .filter((entry) => entry.email);
+
+  if (!topCandidates.length) {
+    return '';
+  }
+
+  topCandidates.sort((left, right) => {
+    const leftRect = left.node.getBoundingClientRect();
+    const rightRect = right.node.getBoundingClientRect();
+    if (leftRect.top !== rightRect.top) {
+      return leftRect.top - rightRect.top;
+    }
+    return leftRect.left - rightRect.left;
+  });
+
+  return topCandidates[0]?.email || '';
 }
 
 function isCheckboxChecked(node) {
@@ -627,6 +684,39 @@ function extractVerificationCode(text, strictChatGPTCodeOnly = false) {
   if (match6) return match6[1];
 
   return null;
+}
+
+function extractEmails(text = '') {
+  const matches = String(text || '').match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi) || [];
+  return [...new Set(matches.map((item) => item.toLowerCase()))];
+}
+
+function emailMatchesTarget(candidate, targetEmail) {
+  const normalizedCandidate = String(candidate || '').trim().toLowerCase();
+  const normalizedTarget = String(targetEmail || '').trim().toLowerCase();
+  return Boolean(normalizedCandidate && normalizedTarget && normalizedCandidate === normalizedTarget);
+}
+
+function getTargetEmailMatchState(text, targetEmail) {
+  const normalizedTarget = String(targetEmail || '').trim().toLowerCase();
+  if (!normalizedTarget) {
+    return { matches: true, hasExplicitEmail: false };
+  }
+
+  const normalizedText = String(text || '').toLowerCase();
+  if (normalizedText.includes(normalizedTarget)) {
+    return { matches: true, hasExplicitEmail: true };
+  }
+
+  const extractedEmails = extractEmails(normalizedText);
+  if (!extractedEmails.length) {
+    return { matches: true, hasExplicitEmail: false };
+  }
+
+  return {
+    matches: extractedEmails.some((candidate) => emailMatchesTarget(candidate, normalizedTarget)),
+    hasExplicitEmail: true,
+  };
 }
 
 function normalizeMinuteTimestamp(timestamp) {
@@ -840,6 +930,7 @@ async function ensureMail2925Session(payload = {}) {
   const email = String(payload?.email || '').trim();
   const password = String(payload?.password || '');
   const forceLogin = Boolean(payload?.forceLogin);
+  const allowLoginWhenOnLoginPage = payload?.allowLoginWhenOnLoginPage !== false;
   log(`步骤 0：2925 登录态检查开始，当前地址 ${location.href}，forceLogin=${forceLogin ? 'true' : 'false'}`, 'info');
 
   for (let attempt = 0; attempt < 10; attempt += 1) {
@@ -860,9 +951,19 @@ async function ensureMail2925Session(payload = {}) {
         ok: true,
         loggedIn: true,
         currentView: 'mailbox',
+        mailboxEmail: currentState.mailboxEmail || '',
       };
     }
     if (currentState.view === 'login') {
+      if (!forceLogin && !allowLoginWhenOnLoginPage) {
+        return {
+          ok: false,
+          loggedIn: false,
+          currentView: 'login',
+          requiresLogin: true,
+          mailboxEmail: '',
+        };
+      }
       break;
     }
     await sleep(500);
@@ -875,6 +976,7 @@ async function ensureMail2925Session(payload = {}) {
       ok: true,
       loggedIn: true,
       currentView: 'mailbox',
+      mailboxEmail: loginState.mailboxEmail || '',
     };
   }
   if (loginState.view === 'limit') {
@@ -884,6 +986,15 @@ async function ensureMail2925Session(payload = {}) {
       currentView: 'limit',
       limitReached: true,
       limitMessage: loginState.limitMessage,
+    };
+  }
+  if (!forceLogin && !allowLoginWhenOnLoginPage && loginState.view === 'login') {
+    return {
+      ok: false,
+      loggedIn: false,
+      currentView: 'login',
+      requiresLogin: true,
+      mailboxEmail: '',
     };
   }
 
@@ -902,11 +1013,12 @@ async function ensureMail2925Session(payload = {}) {
   await sleep(150);
   fillInput(passwordInput, password);
   await sleep(200);
+  await sleep(1000);
   log(`步骤 0：2925 已定位到登录表单，准备点击“登录”，当前地址 ${location.href}`, 'info');
   simulateClick(loginButton);
   log(`步骤 0：2925 已点击“登录”，点击后地址 ${location.href}`, 'info');
 
-  const finalState = await waitForMail2925View('mailbox', 20000);
+  const finalState = await waitForMail2925View('mailbox', 40000);
   log(`步骤 0：2925 登录等待结束，状态=${finalState.view}，地址=${location.href}`, 'info');
   if (finalState.view !== 'mailbox') {
     throw new Error('2925：提交账号密码后未进入收件箱。');
@@ -917,6 +1029,7 @@ async function ensureMail2925Session(payload = {}) {
     loggedIn: true,
     currentView: 'mailbox',
     usedCredentials: true,
+    mailboxEmail: finalState.mailboxEmail || getMail2925DisplayedMailboxEmail() || '',
   };
 }
 
@@ -930,6 +1043,8 @@ async function handlePollEmail(step, payload) {
     filterAfterTimestamp = 0,
     excludeCodes = [],
     strictChatGPTCodeOnly = false,
+    targetEmail = '',
+    mail2925MatchTargetEmail = false,
   } = payload || {};
   const excludedCodeSet = new Set(excludeCodes.filter(Boolean));
   const filterAfterMinute = normalizeMinuteTimestamp(Number(filterAfterTimestamp) || 0);
@@ -994,9 +1109,21 @@ async function handlePollEmail(step, payload) {
         if (!matchesMailFilters(previewText, senderFilters, subjectFilters)) {
           continue;
         }
+        const previewTargetState = mail2925MatchTargetEmail
+          ? getTargetEmailMatchState(previewText, targetEmail)
+          : { matches: true, hasExplicitEmail: false };
+        if (mail2925MatchTargetEmail && previewTargetState.hasExplicitEmail && !previewTargetState.matches) {
+          continue;
+        }
 
         const previewCode = extractVerificationCode(previewText, strictChatGPTCodeOnly);
         const openedText = await openMailAndDeleteAfterRead(item, step);
+        const openedTargetState = mail2925MatchTargetEmail
+          ? getTargetEmailMatchState(openedText, targetEmail)
+          : { matches: true, hasExplicitEmail: false };
+        if (mail2925MatchTargetEmail && openedTargetState.hasExplicitEmail && !openedTargetState.matches) {
+          continue;
+        }
         const bodyCode = extractVerificationCode(openedText, strictChatGPTCodeOnly);
         const candidateCode = bodyCode || previewCode;
 

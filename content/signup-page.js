@@ -114,16 +114,24 @@ function isVisibleElement(el) {
     && rect.height > 0;
 }
 
+function getVisibleSplitVerificationInputs() {
+  return Array.from(document.querySelectorAll('input[maxlength="1"]'))
+    .filter(isVisibleElement);
+}
+
 function getVerificationCodeTarget() {
+  const splitInputs = getVisibleSplitVerificationInputs();
   const codeInput = document.querySelector(VERIFICATION_CODE_INPUT_SELECTOR);
   if (codeInput && isVisibleElement(codeInput)) {
+    const maxLength = Number(codeInput.getAttribute?.('maxlength') || codeInput.maxLength || 0);
+    if (maxLength === 1 && splitInputs.length >= 6) {
+      return { type: 'split', elements: splitInputs };
+    }
     return { type: 'single', element: codeInput };
   }
 
-  const singleInputs = Array.from(document.querySelectorAll('input[maxlength="1"]'))
-    .filter(isVisibleElement);
-  if (singleInputs.length >= 6) {
-    return { type: 'split', elements: singleInputs };
+  if (splitInputs.length >= 6) {
+    return { type: 'split', elements: splitInputs };
   }
 
   return null;
@@ -377,13 +385,82 @@ function getSignupEntryStateSummary(snapshot = inspectSignupEntryState()) {
 }
 
 function getSignupEntryDiagnostics() {
+  const view = typeof window !== 'undefined' ? window : globalThis;
+  const safeGetComputedStyle = (el) => {
+    if (!el || typeof view?.getComputedStyle !== 'function') {
+      return null;
+    }
+    try {
+      return view.getComputedStyle(el);
+    } catch {
+      return null;
+    }
+  };
+  const buildRectSummary = (el) => {
+    const rect = typeof el?.getBoundingClientRect === 'function'
+      ? el.getBoundingClientRect()
+      : null;
+    return rect
+      ? {
+          width: Math.round(rect.width || 0),
+          height: Math.round(rect.height || 0),
+        }
+      : null;
+  };
+  const buildVisibilityMeta = (el) => {
+    const style = safeGetComputedStyle(el);
+    return {
+      className: String(el?.className || '').slice(0, 200),
+      hidden: Boolean(el?.hidden),
+      ariaHidden: el?.getAttribute?.('aria-hidden') || '',
+      inert: typeof el?.hasAttribute === 'function' ? el.hasAttribute('inert') : false,
+      display: style?.display || '',
+      visibility: style?.visibility || '',
+      opacity: style?.opacity || '',
+      pointerEvents: style?.pointerEvents || '',
+    };
+  };
+  const findBlockingAncestor = (el) => {
+    let current = el?.parentElement || null;
+    while (current) {
+      const style = safeGetComputedStyle(current);
+      const rect = buildRectSummary(current);
+      const hidden = Boolean(current.hidden);
+      const ariaHidden = current.getAttribute?.('aria-hidden') || '';
+      const inert = typeof current.hasAttribute === 'function' ? current.hasAttribute('inert') : false;
+      const blockedByStyle = Boolean(
+        style
+        && (
+          style.display === 'none'
+          || style.visibility === 'hidden'
+          || style.opacity === '0'
+          || style.pointerEvents === 'none'
+        )
+      );
+      const blockedByRect = Boolean(rect && (rect.width === 0 || rect.height === 0));
+      if (hidden || ariaHidden === 'true' || inert || blockedByStyle || blockedByRect) {
+        return {
+          tag: (current.tagName || '').toLowerCase(),
+          id: current.id || '',
+          className: String(current.className || '').slice(0, 200),
+          hidden,
+          ariaHidden,
+          inert,
+          display: style?.display || '',
+          visibility: style?.visibility || '',
+          opacity: style?.opacity || '',
+          pointerEvents: style?.pointerEvents || '',
+          rect,
+        };
+      }
+      current = current.parentElement;
+    }
+    return null;
+  };
   const actionCandidates = document.querySelectorAll(
     'a, button, [role="button"], [role="link"], input[type="button"], input[type="submit"]'
   );
   const allActions = Array.from(actionCandidates).map((el) => {
-    const rect = typeof el?.getBoundingClientRect === 'function'
-      ? el.getBoundingClientRect()
-      : null;
     const text = getActionText(el);
     return {
       tag: (el.tagName || '').toLowerCase(),
@@ -391,12 +468,7 @@ function getSignupEntryDiagnostics() {
       text: text.slice(0, 80),
       visible: isVisibleElement(el),
       enabled: isActionEnabled(el),
-      rect: rect
-        ? {
-            width: Math.round(rect.width || 0),
-            height: Math.round(rect.height || 0),
-          }
-        : null,
+      rect: buildRectSummary(el),
     };
   });
   const visibleActions = Array.from(actionCandidates)
@@ -409,7 +481,20 @@ function getSignupEntryDiagnostics() {
       enabled: isActionEnabled(el),
     }))
     .filter((item) => item.text);
-  const signupLikeActions = allActions
+  const signupLikeActions = Array.from(actionCandidates)
+    .map((el) => {
+      const text = getActionText(el);
+      return {
+        tag: (el.tagName || '').toLowerCase(),
+        type: el.getAttribute?.('type') || '',
+        text: text.slice(0, 80),
+        visible: isVisibleElement(el),
+        enabled: isActionEnabled(el),
+        rect: buildRectSummary(el),
+        ...buildVisibilityMeta(el),
+        blockingAncestor: findBlockingAncestor(el),
+      };
+    })
     .filter((item) => item.text && SIGNUP_ENTRY_TRIGGER_PATTERN.test(item.text))
     .slice(0, 12);
 
@@ -417,13 +502,131 @@ function getSignupEntryDiagnostics() {
     url: location.href,
     title: document.title || '',
     readyState: document.readyState || '',
+    viewport: {
+      innerWidth: Math.round(Number(view?.innerWidth) || 0),
+      innerHeight: Math.round(Number(view?.innerHeight) || 0),
+      outerWidth: Math.round(Number(view?.outerWidth) || 0),
+      outerHeight: Math.round(Number(view?.outerHeight) || 0),
+      devicePixelRatio: Number(view?.devicePixelRatio) || 0,
+    },
     hasEmailInput: Boolean(getSignupEmailInput()),
     hasPasswordInput: Boolean(getSignupPasswordInput()),
     bodyContainsSignupText: SIGNUP_ENTRY_TRIGGER_PATTERN.test(getPageTextSnapshot()),
+    signupLikeActionCounts: {
+      total: signupLikeActions.length,
+      visible: signupLikeActions.filter((item) => item.visible).length,
+      hidden: signupLikeActions.filter((item) => !item.visible).length,
+    },
     signupLikeActions,
     visibleActions,
     bodyTextPreview: getPageTextSnapshot().slice(0, 240),
   };
+}
+
+function getSignupPasswordDiagnostics() {
+  const view = typeof window !== 'undefined' ? window : globalThis;
+  const safeGetComputedStyle = (el) => {
+    if (!el || typeof view?.getComputedStyle !== 'function') {
+      return null;
+    }
+    try {
+      return view.getComputedStyle(el);
+    } catch {
+      return null;
+    }
+  };
+  const buildRectSummary = (el) => {
+    const rect = typeof el?.getBoundingClientRect === 'function'
+      ? el.getBoundingClientRect()
+      : null;
+    return rect
+      ? {
+          width: Math.round(rect.width || 0),
+          height: Math.round(rect.height || 0),
+        }
+      : null;
+  };
+  const buildInputSummary = (el) => {
+    const style = safeGetComputedStyle(el);
+    return {
+      tag: (el?.tagName || '').toLowerCase(),
+      type: el?.getAttribute?.('type') || el?.type || '',
+      name: el?.getAttribute?.('name') || el?.name || '',
+      id: el?.id || '',
+      autocomplete: el?.getAttribute?.('autocomplete') || '',
+      placeholder: String(el?.getAttribute?.('placeholder') || '').slice(0, 80),
+      visible: isVisibleElement(el),
+      enabled: isActionEnabled(el),
+      valueLength: String(el?.value || '').length,
+      rect: buildRectSummary(el),
+      className: String(el?.className || '').slice(0, 200),
+      display: style?.display || '',
+      visibility: style?.visibility || '',
+      opacity: style?.opacity || '',
+      pointerEvents: style?.pointerEvents || '',
+      formAction: el?.form?.action || '',
+    };
+  };
+  const buildActionSummary = (el) => {
+    const style = safeGetComputedStyle(el);
+    return {
+      tag: (el?.tagName || '').toLowerCase(),
+      type: el?.getAttribute?.('type') || el?.type || '',
+      role: el?.getAttribute?.('role') || '',
+      text: getActionText(el).slice(0, 120),
+      visible: isVisibleElement(el),
+      enabled: isActionEnabled(el),
+      rect: buildRectSummary(el),
+      className: String(el?.className || '').slice(0, 200),
+      display: style?.display || '',
+      visibility: style?.visibility || '',
+      opacity: style?.opacity || '',
+      pointerEvents: style?.pointerEvents || '',
+      dataDdActionName: el?.getAttribute?.('data-dd-action-name') || '',
+      formAction: el?.form?.action || '',
+    };
+  };
+  const passwordInputs = Array.from(document.querySelectorAll(
+    'input[type="password"], input[name*="password" i], input[autocomplete="new-password"], input[autocomplete="current-password"]'
+  ))
+    .map(buildInputSummary)
+    .slice(0, 8);
+  const actionCandidates = Array.from(document.querySelectorAll(
+    'button, a, [role="button"], [role="link"], input[type="button"], input[type="submit"]'
+  ))
+    .map(buildActionSummary)
+    .filter((item) => item.text)
+    .slice(0, 16);
+  const visibleActions = actionCandidates.filter((item) => item.visible).slice(0, 12);
+  const submitButton = getSignupPasswordSubmitButton({ allowDisabled: true });
+  const oneTimeCodeTrigger = findOneTimeCodeLoginTrigger();
+  const retryState = getSignupPasswordTimeoutErrorPageState();
+
+  return {
+    url: location.href,
+    title: document.title || '',
+    readyState: document.readyState || '',
+    displayedEmail: getSignupPasswordDisplayedEmail(),
+    hasVisiblePasswordInput: Boolean(getSignupPasswordInput()),
+    passwordInputCount: passwordInputs.length,
+    visiblePasswordInputCount: passwordInputs.filter((item) => item.visible).length,
+    passwordInputs,
+    submitButton: submitButton ? buildActionSummary(submitButton) : null,
+    oneTimeCodeTrigger: oneTimeCodeTrigger ? buildActionSummary(oneTimeCodeTrigger) : null,
+    retryPage: Boolean(retryState),
+    retryEnabled: Boolean(retryState?.retryEnabled),
+    userAlreadyExistsBlocked: Boolean(retryState?.userAlreadyExistsBlocked),
+    visibleActions,
+    bodyTextPreview: getPageTextSnapshot().slice(0, 240),
+  };
+}
+
+function logSignupPasswordDiagnostics(context, level = 'warn') {
+  try {
+    log(`${context}：密码页诊断快照：${JSON.stringify(getSignupPasswordDiagnostics())}`, level);
+  } catch (error) {
+    console.warn('[MultiPage:signup-page] failed to build signup password diagnostics:', error?.message || error);
+  }
 }
 
 async function waitForSignupEntryState(options = {}) {
@@ -613,6 +816,10 @@ async function step3_fillEmailPassword(payload) {
   }
 
   if (snapshot.state !== 'password_page' || !snapshot.passwordInput) {
+    logSignupPasswordDiagnostics('步骤 3：未能识别可填写的密码输入框');
+  }
+
+  if (snapshot.state !== 'password_page' || !snapshot.passwordInput) {
     throw new Error('在密码页未找到密码输入框。URL: ' + location.href);
   }
   if (normalizedEmail && snapshot.displayedEmail && snapshot.displayedEmail !== normalizedEmail) {
@@ -626,6 +833,12 @@ async function step3_fillEmailPassword(payload) {
   const submitBtn = snapshot.submitButton
     || getSignupPasswordSubmitButton({ allowDisabled: true })
     || await waitForElementByText('button', /continue|sign\s*up|submit|注册|创建|create/i, 5000).catch(() => null);
+
+  if (!submitBtn) {
+    logSignupPasswordDiagnostics('步骤 3：未找到可提交的密码页按钮');
+  } else if (typeof findOneTimeCodeLoginTrigger === 'function' && findOneTimeCodeLoginTrigger()) {
+    logSignupPasswordDiagnostics('步骤 3：当前密码页同时存在一次性验证码入口', 'info');
+  }
 
   // Report complete BEFORE submit, because submit causes page navigation
   // which kills the content script connection
@@ -1198,7 +1411,7 @@ function getSignupPasswordTimeoutErrorPageState() {
 
 function getLoginTimeoutErrorPageState() {
   return getAuthTimeoutErrorPageState({
-    pathPatterns: [/\/log-in(?:[/?#]|$)/i],
+    pathPatterns: getLoginAuthRetryPathPatterns(),
   });
 }
 
@@ -1263,17 +1476,17 @@ function inspectLoginAuthState() {
     consentReady,
   };
 
-  if (verificationTarget) {
-    return {
-      ...baseState,
-      state: 'verification_page',
-    };
-  }
-
   if (retryState) {
     return {
       ...baseState,
       state: 'login_timeout_error_page',
+    };
+  }
+
+  if (verificationTarget) {
+    return {
+      ...baseState,
+      state: 'verification_page',
     };
   }
 
@@ -1434,6 +1647,86 @@ async function createStep6LoginTimeoutRecoverableResult(reason, snapshot, messag
   });
 }
 
+async function finalizeStep6VerificationReady(options = {}) {
+  const {
+    logLabel = '步骤 7 收尾',
+    loginVerificationRequestedAt = null,
+    timeout = 12000,
+    via = 'verification_page_ready',
+  } = options;
+  const start = Date.now();
+  const maxRounds = 3;
+  const settleDelayMs = 3000;
+  let round = 0;
+
+  while (Date.now() - start < timeout && round < maxRounds) {
+    throwIfStopped();
+    round += 1;
+    log(`${logLabel}：确认页面是否稳定停留在登录验证码阶段（第 ${round}/${maxRounds} 轮，先等待 3 秒）...`, 'info');
+    await sleep(settleDelayMs);
+
+    const rawSnapshot = inspectLoginAuthState();
+    const snapshot = normalizeStep6Snapshot(rawSnapshot);
+
+    if (snapshot.state === 'verification_page') {
+      log(`${logLabel}：登录验证码页面已稳定就绪。`, 'ok');
+      return createStep6SuccessResult(snapshot, {
+        via,
+        loginVerificationRequestedAt,
+      });
+    }
+
+    if (snapshot.state === 'login_timeout_error_page') {
+      log(`${logLabel}：页面进入登录超时报错页，准备自动恢复后重试步骤 7。`, 'warn');
+      return createStep6LoginTimeoutRecoverableResult(
+        'login_timeout_error_page',
+        snapshot,
+        '登录验证码页面准备就绪前进入登录超时报错页。'
+      );
+    }
+
+    if (snapshot.state === 'password_page' || snapshot.state === 'email_page') {
+      return createStep6RecoverableResult('verification_page_unstable', snapshot, {
+        message: `页面曾进入登录验证码阶段，但又回到了${getLoginAuthStateLabel(snapshot)}，准备重新执行步骤 7。`,
+        loginVerificationRequestedAt,
+      });
+    }
+
+    if (snapshot.state === 'add_phone_page') {
+      throw new Error(`登录验证码页面准备过程中页面进入手机号页面。URL: ${snapshot.url}`);
+    }
+  }
+
+  const rawSnapshot = inspectLoginAuthState();
+  const snapshot = normalizeStep6Snapshot(rawSnapshot);
+  if (snapshot.state === 'verification_page') {
+    log(`${logLabel}：登录验证码页面已稳定就绪。`, 'ok');
+    return createStep6SuccessResult(snapshot, {
+      via,
+      loginVerificationRequestedAt,
+    });
+  }
+  if (snapshot.state === 'login_timeout_error_page') {
+    log(`${logLabel}：页面进入登录超时报错页，准备自动恢复后重试步骤 7。`, 'warn');
+    return createStep6LoginTimeoutRecoverableResult(
+      'login_timeout_error_page',
+      snapshot,
+      '登录验证码页面准备就绪前进入登录超时报错页。'
+    );
+  }
+  if (snapshot.state === 'password_page' || snapshot.state === 'email_page') {
+    return createStep6RecoverableResult('verification_page_unstable', snapshot, {
+      message: `页面曾进入登录验证码阶段，但又回到了${getLoginAuthStateLabel(snapshot)}，准备重新执行步骤 7。`,
+      loginVerificationRequestedAt,
+    });
+  }
+
+  return createStep6RecoverableResult('verification_page_finalize_unknown', snapshot, {
+    message: '登录验证码页面状态在收尾确认阶段未稳定，准备重新执行步骤 7。',
+    loginVerificationRequestedAt,
+  });
+}
+
 function normalizeStep6Snapshot(snapshot) {
   if (snapshot?.state !== 'oauth_consent_page') {
     return snapshot;
@@ -1552,6 +1845,7 @@ async function prepareSignupVerificationFlow(payload = {}, timeout = 30000) {
   const start = Date.now();
   let recoveryRound = 0;
   const maxRecoveryRounds = 3;
+  let passwordPageDiagnosticsLogged = false;
 
   while (Date.now() - start < timeout && recoveryRound < maxRecoveryRounds) {
     throwIfStopped();
@@ -1590,6 +1884,10 @@ async function prepareSignupVerificationFlow(payload = {}, timeout = 30000) {
     }
 
     if (snapshot.state === 'password') {
+      if (!passwordPageDiagnosticsLogged) {
+        passwordPageDiagnosticsLogged = true;
+        logSignupPasswordDiagnostics(`${prepareLogLabel}：页面仍停留在密码页`);
+      }
       if (!password) {
         throw new Error('当前回到了密码页，但没有可用密码，无法自动重新提交。');
       }
@@ -1622,15 +1920,30 @@ async function prepareSignupVerificationFlow(payload = {}, timeout = 30000) {
 async function waitForVerificationSubmitOutcome(step, timeout) {
   const resolvedTimeout = timeout ?? (step === 8 ? 30000 : 12000);
   const start = Date.now();
+  let recoveryCount = 0;
+  const maxRecoveryCount = 2;
 
   while (Date.now() - start < resolvedTimeout) {
     throwIfStopped();
 
-    if (step === 4) {
-      const signupRetryState = getCurrentAuthRetryPageState('signup');
-      if (signupRetryState?.userAlreadyExistsBlocked) {
-        throw createSignupUserAlreadyExistsError();
+    const retryFlow = step === 4 ? 'signup' : 'login';
+    const retryState = getCurrentAuthRetryPageState(retryFlow);
+    if (retryState?.userAlreadyExistsBlocked) {
+      throw createSignupUserAlreadyExistsError();
+    }
+    if (retryState) {
+      if (recoveryCount >= maxRecoveryCount) {
+        throw new Error(`步骤 ${step}：验证码提交后连续进入认证重试页 ${maxRecoveryCount} 次，页面仍未恢复。URL: ${location.href}`);
       }
+      recoveryCount += 1;
+      log(`步骤 ${step}：验证码提交后进入认证重试页，正在自动恢复（${recoveryCount}/${maxRecoveryCount}）...`, 'warn');
+      await recoverCurrentAuthRetryPage({
+        flow: retryFlow,
+        logLabel: `步骤 ${step}：验证码提交后检测到认证重试页，正在点击“重试”恢复`,
+        step,
+        timeoutMs: 12000,
+      });
+      continue;
     }
 
     const errorText = getVerificationErrorText();
@@ -1670,6 +1983,96 @@ async function waitForVerificationSubmitOutcome(step, timeout) {
   return { success: true, assumed: true };
 }
 
+function getVerificationSubmitButtonForTarget(codeInput, options = {}) {
+  const { allowDisabled = false } = options;
+  const form = codeInput?.form || codeInput?.closest?.('form') || null;
+  const isUsableAction = (element) => {
+    if (!element || !isVisibleElement(element)) return false;
+    return allowDisabled || isActionEnabled(element);
+  };
+
+  const findSubmitInRoot = (root) => {
+    if (!root?.querySelectorAll) return null;
+
+    const directCandidates = root.querySelectorAll('button[type="submit"], input[type="submit"]');
+    for (const element of directCandidates) {
+      if (isUsableAction(element)) {
+        return element;
+      }
+    }
+
+    const textCandidates = root.querySelectorAll('button, [role="button"], input[type="button"], input[type="submit"]');
+    return Array.from(textCandidates).find((element) => {
+      if (!isUsableAction(element)) return false;
+      const text = getActionText(element);
+      return /verify|confirm|submit|continue|确认|验证|继续/i.test(text);
+    }) || null;
+  };
+
+  return findSubmitInRoot(form) || findSubmitInRoot(document);
+}
+
+async function waitForVerificationSubmitButton(codeInput, timeout = 5000) {
+  const start = Date.now();
+
+  while (Date.now() - start < timeout) {
+    throwIfStopped();
+    if (is405MethodNotAllowedPage()) {
+      throw new Error('当前页面处于 405 错误恢复流程中，暂时无法定位验证码提交按钮。');
+    }
+
+    const button = getVerificationSubmitButtonForTarget(codeInput, { allowDisabled: false });
+    if (button) {
+      return button;
+    }
+
+    await sleep(150);
+  }
+
+  return null;
+}
+
+async function waitForVerificationCodeTarget(timeout = 10000) {
+  const start = Date.now();
+
+  while (Date.now() - start < timeout) {
+    throwIfStopped();
+    if (is405MethodNotAllowedPage()) {
+      throw new Error('当前页面处于 405 错误恢复流程中，暂时无法定位验证码输入框。');
+    }
+
+    const target = getVerificationCodeTarget();
+    if (target) {
+      return target;
+    }
+
+    await sleep(150);
+  }
+
+  throw new Error('未找到验证码输入框。URL: ' + location.href);
+}
+
+async function waitForSplitVerificationInputsFilled(inputs, code, timeout = 2500) {
+  const expected = String(code || '').slice(0, 6);
+  const start = Date.now();
+
+  while (Date.now() - start < timeout) {
+    throwIfStopped();
+    const current = Array.from(inputs || [])
+      .slice(0, expected.length)
+      .map((input) => String(input?.value || '').trim())
+      .join('');
+
+    if (current === expected) {
+      return true;
+    }
+
+    await sleep(100);
+  }
+
+  return false;
+}
+
 async function fillVerificationCode(step, payload) {
   const { code } = payload;
   if (!code) throw new Error('未提供验证码。');
@@ -1684,6 +2087,7 @@ async function fillVerificationCode(step, payload) {
   // Retry with 405 error recovery if needed
   const maxRetries = 3;
   let codeInput = null;
+  let splitInputs = null;
 
   for (let retry = 0; retry <= maxRetries; retry++) {
     throwIfStopped();
@@ -1696,28 +2100,14 @@ async function fillVerificationCode(step, payload) {
     }
 
     try {
-      codeInput = await waitForElement(VERIFICATION_CODE_INPUT_SELECTOR, 10000);
+      const verificationTarget = await waitForVerificationCodeTarget(10000);
+      if (verificationTarget.type === 'split') {
+        splitInputs = verificationTarget.elements;
+      } else {
+        codeInput = verificationTarget.element;
+      }
       break; // Found it
     } catch {
-      // Check for multiple single-digit inputs (common pattern)
-      const singleInputs = document.querySelectorAll('input[maxlength="1"]');
-      if (singleInputs.length >= 6) {
-        log(`步骤 ${step}：发现分开的单字符验证码输入框，正在逐个填写...`);
-        for (let i = 0; i < 6 && i < singleInputs.length; i++) {
-          fillInput(singleInputs[i], code[i]);
-          await sleep(100);
-        }
-        const outcome = await waitForVerificationSubmitOutcome(step);
-        if (outcome.invalidCode) {
-          log(`步骤 ${step}：验证码被拒绝：${outcome.errorText}`, 'warn');
-        } else if (outcome.addPhonePage) {
-          log(`步骤 ${step}：验证码提交后页面进入手机号页面，当前流程将停止自动授权。`, 'warn');
-        } else {
-          log(`步骤 ${step}：验证码已通过${outcome.assumed ? '（按成功推定）' : ''}。`, 'ok');
-        }
-        return outcome;
-      }
-
       // No input found — check if it's a 405 error and can be recovered
       if (is405MethodNotAllowedPage() && retry < maxRetries) {
         log(`步骤 ${step}：未找到验证码输入框且页面出现 405 错误，正在恢复...`, 'warn');
@@ -1729,6 +2119,51 @@ async function fillVerificationCode(step, payload) {
     }
   }
 
+  if (splitInputs?.length >= 6) {
+    log(`步骤 ${step}：发现分开的单字符验证码输入框，正在逐个填写...`);
+    for (let i = 0; i < 6 && i < splitInputs.length; i++) {
+      const targetInput = splitInputs[i];
+      try {
+        targetInput.focus?.();
+      } catch {}
+      fillInput(splitInputs[i], code[i]);
+      try {
+        targetInput.dispatchEvent(new KeyboardEvent('keyup', { key: code[i], bubbles: true }));
+      } catch {}
+      await sleep(100);
+    }
+    const filled = await waitForSplitVerificationInputsFilled(splitInputs, code, 2500);
+    if (!filled) {
+      const current = Array.from(splitInputs)
+        .slice(0, 6)
+        .map((input) => String(input?.value || '').trim() || '_')
+        .join('');
+      log(`步骤 ${step}：分格验证码输入框未稳定呈现目标值，当前页面值为 ${current}，准备继续观察提交流程。`, 'warn');
+    } else {
+      log(`步骤 ${step}：分格验证码输入框已稳定显示 ${code}。`, 'info');
+    }
+
+    await sleep(800);
+    const splitSubmitBtn = await waitForVerificationSubmitButton(splitInputs[0], 2000).catch(() => null);
+    if (splitSubmitBtn) {
+      await humanPause(450, 1200);
+      simulateClick(splitSubmitBtn);
+      log(`步骤 ${step}：分格验证码已提交`);
+    } else {
+      log(`步骤 ${step}：分格验证码页面未找到可点击提交按钮，继续等待页面自动推进。`, 'info');
+    }
+
+    const outcome = await waitForVerificationSubmitOutcome(step);
+    if (outcome.invalidCode) {
+      log(`步骤 ${step}：验证码被拒绝：${outcome.errorText}`, 'warn');
+    } else if (outcome.addPhonePage) {
+      log(`步骤 ${step}：验证码提交后页面进入手机号页面，当前流程将停止自动授权。`, 'warn');
+    } else {
+      log(`步骤 ${step}：验证码已通过${outcome.assumed ? '（按成功推定）' : ''}。`, 'ok');
+    }
+    return outcome;
+  }
+
   if (!codeInput) {
     throw new Error('未找到验证码输入框。URL: ' + location.href);
   }
@@ -1736,17 +2171,16 @@ async function fillVerificationCode(step, payload) {
   fillInput(codeInput, code);
   log(`步骤 ${step}：验证码已填写`);
 
-  // Report complete BEFORE submit (page may navigate away)
-
   // Submit
-  await sleep(500);
-  const submitBtn = document.querySelector('button[type="submit"]')
-    || await waitForElementByText('button', /verify|confirm|submit|continue|确认|验证/i, 5000).catch(() => null);
+  await sleep(800);
+  const submitBtn = await waitForVerificationSubmitButton(codeInput, 5000).catch(() => null);
 
   if (submitBtn) {
     await humanPause(450, 1200);
     simulateClick(submitBtn);
     log(`步骤 ${step}：验证码已提交`);
+  } else {
+    log(`步骤 ${step}：未找到可提交的验证码按钮，先等待页面自动推进或反馈结果。`, 'warn');
   }
 
   const outcome = await waitForVerificationSubmitOutcome(step);
@@ -1999,7 +2433,15 @@ async function step6SwitchToOneTimeCodeLogin(snapshot) {
   simulateClick(switchTrigger);
   log('步骤 7：已点击一次性验证码登录');
   await sleep(1200);
-  return waitForStep6SwitchTransition(loginVerificationRequestedAt);
+  const result = await waitForStep6SwitchTransition(loginVerificationRequestedAt);
+  if (result?.step6Outcome === 'success') {
+    return finalizeStep6VerificationReady({
+      logLabel: '步骤 7 收尾',
+      loginVerificationRequestedAt: result.loginVerificationRequestedAt || loginVerificationRequestedAt,
+      via: result.via || 'switch_to_one_time_code_login',
+    });
+  }
+  return result;
 }
 
 async function step6LoginFromPasswordPage(payload, snapshot) {
@@ -2030,8 +2472,11 @@ async function step6LoginFromPasswordPage(payload, snapshot) {
 
     const transition = await waitForStep6PasswordSubmitTransition(passwordSubmittedAt);
     if (transition.action === 'done') {
-      log('步骤 7：已进入登录验证码页面。', 'ok');
-      return transition.result;
+      return finalizeStep6VerificationReady({
+        logLabel: '步骤 7 收尾',
+        loginVerificationRequestedAt: transition.result.loginVerificationRequestedAt || passwordSubmittedAt,
+        via: transition.result.via || 'password_submit',
+      });
     }
     if (transition.action === 'recoverable') {
       log(`步骤 7：${transition.result.message || '提交密码后仍未进入登录验证码页面，准备重新执行步骤 7。'}`, 'warn');
@@ -2077,8 +2522,11 @@ async function step6LoginFromEmailPage(payload, snapshot) {
 
   const transition = await waitForStep6EmailSubmitTransition(emailSubmittedAt);
   if (transition.action === 'done') {
-    log('步骤 7：已进入登录验证码页面。', 'ok');
-    return transition.result;
+    return finalizeStep6VerificationReady({
+      logLabel: '步骤 7 收尾',
+      loginVerificationRequestedAt: transition.result.loginVerificationRequestedAt || emailSubmittedAt,
+      via: transition.result.via || 'email_submit',
+    });
   }
   if (transition.action === 'recoverable') {
     log(`步骤 7：${transition.result.message || '提交邮箱后仍未进入目标页面，准备重新执行步骤 7。'}`, 'warn');
@@ -2102,8 +2550,11 @@ async function step6_login(payload) {
   const snapshot = normalizeStep6Snapshot(await waitForKnownLoginAuthState(15000));
 
   if (snapshot.state === 'verification_page') {
-    log('步骤 7：登录验证码页面已就绪。', 'ok');
-    return createStep6SuccessResult(snapshot, { via: 'already_on_verification_page' });
+    return finalizeStep6VerificationReady({
+      logLabel: '步骤 7 收尾',
+      loginVerificationRequestedAt: null,
+      via: 'already_on_verification_page',
+    });
   }
 
   if (snapshot.state === 'login_timeout_error_page') {

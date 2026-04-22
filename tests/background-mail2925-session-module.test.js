@@ -17,6 +17,7 @@ test('handleMail2925LimitReachedError disables current account and switches to t
   const api = new Function('self', `${source}; return self.MultiPageBackgroundMail2925Session;`)(globalScope);
 
   let currentState = {
+    mail2925UseAccountPool: true,
     mail2925Accounts: mail2925Utils.normalizeMail2925Accounts([
       { id: 'current', email: 'current@2925.com', password: 'p1', enabled: true, lastUsedAt: 10 },
       { id: 'next', email: 'next@2925.com', password: 'p2', enabled: true, lastUsedAt: 20 },
@@ -99,6 +100,7 @@ test('handleMail2925LimitReachedError requests stop when no next mail2925 accoun
   const api = new Function('self', `${source}; return self.MultiPageBackgroundMail2925Session;`)(globalScope);
 
   let currentState = {
+    mail2925UseAccountPool: true,
     mail2925Accounts: mail2925Utils.normalizeMail2925Accounts([
       { id: 'only', email: 'only@2925.com', password: 'p1', enabled: true, lastUsedAt: 10 },
     ]),
@@ -223,5 +225,115 @@ test('ensureMail2925MailboxSession requests stop when auto run is active and log
   );
 
   assert.equal(events.stopCalls.length, 1);
-  assert.match(events.stopCalls[0].logMessage, /20 秒内未进入收件箱/);
+  assert.match(events.stopCalls[0].logMessage, /登录后仍未进入收件箱/);
+});
+
+test('handleMail2925LimitReachedError stops immediately when account pool is off even if another account exists', async () => {
+  const source = fs.readFileSync('background/mail-2925-session.js', 'utf8');
+  const globalScope = {};
+  const api = new Function('self', `${source}; return self.MultiPageBackgroundMail2925Session;`)(globalScope);
+
+  let currentState = {
+    mail2925UseAccountPool: false,
+    mail2925Accounts: mail2925Utils.normalizeMail2925Accounts([
+      { id: 'current', email: 'current@2925.com', password: 'p1', enabled: true, lastUsedAt: 10 },
+      { id: 'next', email: 'next@2925.com', password: 'p2', enabled: true, lastUsedAt: 20 },
+    ]),
+    currentMail2925AccountId: 'current',
+  };
+  const events = {
+    stopCalls: [],
+    sessionChecks: 0,
+  };
+
+  const manager = api.createMail2925SessionManager({
+    addLog: async () => {},
+    broadcastDataUpdate: () => {},
+    chrome: {
+      cookies: {
+        getAll: async () => [],
+        remove: async () => ({ ok: true }),
+      },
+      browsingData: {
+        removeCookies: async () => {},
+      },
+    },
+    findMail2925Account: mail2925Utils.findMail2925Account,
+    getMail2925AccountStatus: mail2925Utils.getMail2925AccountStatus,
+    getState: async () => currentState,
+    isMail2925AccountAvailable: mail2925Utils.isMail2925AccountAvailable,
+    MAIL2925_LIMIT_COOLDOWN_MS: mail2925Utils.MAIL2925_LIMIT_COOLDOWN_MS,
+    normalizeMail2925Account: mail2925Utils.normalizeMail2925Account,
+    normalizeMail2925Accounts: mail2925Utils.normalizeMail2925Accounts,
+    pickMail2925AccountForRun: mail2925Utils.pickMail2925AccountForRun,
+    requestStop: async (options = {}) => {
+      events.stopCalls.push(options);
+    },
+    reuseOrCreateTab: async () => 1,
+    sendToMailContentScriptResilient: async () => {
+      events.sessionChecks += 1;
+      return { loggedIn: true };
+    },
+    setPersistentSettings: async (payload) => {
+      currentState = { ...currentState, ...payload };
+    },
+    setState: async (updates) => {
+      currentState = { ...currentState, ...updates };
+    },
+    throwIfStopped: () => {},
+    upsertMail2925AccountInList: mail2925Utils.upsertMail2925AccountInList,
+  });
+
+  const error = await manager.handleMail2925LimitReachedError(
+    4,
+    new Error('MAIL2925_LIMIT_REACHED::子邮箱已达上限邮箱')
+  );
+
+  assert.equal(error.message, '流程已被用户停止。');
+  assert.equal(events.sessionChecks, 0);
+  assert.equal(events.stopCalls.length, 1);
+  assert.equal(currentState.currentMail2925AccountId, 'current');
+});
+
+test('setCurrentMail2925Account persists currentMail2925AccountId for browser restart restore', async () => {
+  const source = fs.readFileSync('background/mail-2925-session.js', 'utf8');
+  const globalScope = {};
+  const api = new Function('self', `${source}; return self.MultiPageBackgroundMail2925Session;`)(globalScope);
+
+  let currentState = {
+    mail2925Accounts: mail2925Utils.normalizeMail2925Accounts([
+      { id: 'acc-1', email: 'acc1@2925.com', password: 'p1', enabled: true, lastUsedAt: 10 },
+    ]),
+    currentMail2925AccountId: null,
+  };
+  const persistedUpdates = [];
+
+  const manager = api.createMail2925SessionManager({
+    addLog: async () => {},
+    broadcastDataUpdate: () => {},
+    chrome: {},
+    findMail2925Account: mail2925Utils.findMail2925Account,
+    getMail2925AccountStatus: mail2925Utils.getMail2925AccountStatus,
+    getState: async () => currentState,
+    isMail2925AccountAvailable: mail2925Utils.isMail2925AccountAvailable,
+    MAIL2925_LIMIT_COOLDOWN_MS: mail2925Utils.MAIL2925_LIMIT_COOLDOWN_MS,
+    normalizeMail2925Account: mail2925Utils.normalizeMail2925Account,
+    normalizeMail2925Accounts: mail2925Utils.normalizeMail2925Accounts,
+    pickMail2925AccountForRun: mail2925Utils.pickMail2925AccountForRun,
+    setPersistentSettings: async (payload) => {
+      persistedUpdates.push(payload);
+    },
+    setState: async (updates) => {
+      currentState = { ...currentState, ...updates };
+    },
+    throwIfStopped: () => {},
+    upsertMail2925AccountInList: mail2925Utils.upsertMail2925AccountInList,
+  });
+
+  await manager.setCurrentMail2925Account('acc-1');
+
+  assert.equal(currentState.currentMail2925AccountId, 'acc-1');
+  assert.deepStrictEqual(persistedUpdates, [
+    { currentMail2925AccountId: 'acc-1' },
+  ]);
 });

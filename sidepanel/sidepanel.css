@@ -1114,6 +1114,20 @@ header {
   visibility: hidden;
 }
 
+.account-pool-form-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.account-pool-actions-inline {
+  width: 100%;
+}
+
+.account-pool-import-action {
+  margin-left: auto;
+}
+
 .hotmail-import-row {
   align-items: flex-start;
 }
@@ -1136,7 +1150,7 @@ header {
 }
 
 .hotmail-list-shell.is-collapsed {
-  max-height: 236px;
+  max-height: 176px;
 }
 
 .hotmail-list-shell.is-expanded {
