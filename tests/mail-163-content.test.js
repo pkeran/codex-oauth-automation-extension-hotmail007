@@ -147,6 +147,7 @@ test('readOpenedMailText prefers opened body content that contains the verificat
   const bundle = [
     extractFunction('normalizeText'),
     extractFunction('collectOpenedMailTextCandidates'),
+    extractFunction('selectOpenedMailTextCandidate'),
     extractFunction('readOpenedMailText'),
     extractFunction('extractVerificationCode'),
   ].join('\n');
@@ -194,6 +195,7 @@ test('openMailAndGetMessageText reads opened body text and returns to inbox', as
   const bundle = [
     extractFunction('normalizeText'),
     extractFunction('collectOpenedMailTextCandidates'),
+    extractFunction('selectOpenedMailTextCandidate'),
     extractFunction('readOpenedMailText'),
     extractFunction('returnToInbox'),
     extractFunction('openMailAndGetMessageText'),
@@ -260,6 +262,82 @@ return {
   assert.match(text, /214203/);
   assert.equal(api.getClickCount(), 1);
   assert.equal(api.isInInbox(), true);
+});
+
+test('openMailAndGetMessageText ignores stale pre-open text that contains an old code', async () => {
+  const bundle = [
+    extractFunction('normalizeText'),
+    extractFunction('collectOpenedMailTextCandidates'),
+    extractFunction('selectOpenedMailTextCandidate'),
+    extractFunction('readOpenedMailText'),
+    extractFunction('returnToInbox'),
+    extractFunction('openMailAndGetMessageText'),
+    extractFunction('extractVerificationCode'),
+  ].join('\n');
+
+  const api = new Function(`
+let stage = 'before';
+const oldText = 'OpenAI Your temporary ChatGPT login code. Ignore this old code 111111. '.repeat(10);
+const newText = 'OpenAI Your temporary ChatGPT login code. Your new code is 222222.';
+const mailItem = {
+  click() {
+    stage = 'after';
+  },
+};
+const inboxLink = {
+  click() {
+    stage = 'done';
+  },
+};
+
+function getMailSubjectText() {
+  return 'Your temporary ChatGPT login code';
+}
+
+function getMailSenderText() {
+  return 'OpenAI';
+}
+
+const document = {
+  querySelector(selector) {
+    if (selector === '.nui-tree-item-text[title="收件箱"], [title="收件箱"]') return inboxLink;
+    return null;
+  },
+  querySelectorAll(selector) {
+    if (selector === 'iframe') {
+      return [];
+    }
+    if (stage === 'before') {
+      return [{ innerText: oldText, textContent: oldText }];
+    }
+    if (stage === 'after') {
+      return [
+        { innerText: oldText, textContent: oldText },
+        { innerText: newText, textContent: newText },
+      ];
+    }
+    return [];
+  },
+  body: {
+    innerText: '',
+    textContent: '',
+  },
+};
+
+function findMailItems() {
+  return stage === 'done' ? [mailItem] : [];
+}
+
+async function sleep() {}
+
+${bundle}
+
+return { openMailAndGetMessageText, mailItem };
+`)();
+
+  const text = await api.openMailAndGetMessageText(api.mailItem);
+  assert.match(text, /222222/);
+  assert.doesNotMatch(text, /111111/);
 });
 
 test('handlePollEmail ignores same-minute old snapshot mail before fallback', async () => {

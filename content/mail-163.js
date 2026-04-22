@@ -377,12 +377,13 @@ function collectOpenedMailTextCandidates() {
   return texts.sort((a, b) => b.length - a.length);
 }
 
-function readOpenedMailText(item) {
+function selectOpenedMailTextCandidate(item, candidates = [], options = {}) {
   const subject = normalizeText(getMailSubjectText(item)).toLowerCase();
   const sender = normalizeText(getMailSenderText(item)).toLowerCase();
-  const candidates = collectOpenedMailTextCandidates();
+  const excludedSet = new Set((options.excludedTexts || []).map((value) => normalizeText(value)));
+  const allowExcludedFallback = options.allowExcludedFallback !== false;
 
-  const preferred = candidates.find((candidate) => {
+  const pickCandidate = (source) => source.find((candidate) => {
     const lower = candidate.toLowerCase();
     if (subject && lower.includes(subject)) {
       return true;
@@ -391,9 +392,20 @@ function readOpenedMailText(item) {
       return true;
     }
     return Boolean(extractVerificationCode(candidate) && /chatgpt|openai|verification|验证码|login code/i.test(lower));
-  });
+  }) || source[0] || '';
 
-  return preferred || candidates[0] || '';
+  const filteredCandidates = candidates.filter((candidate) => !excludedSet.has(normalizeText(candidate)));
+  const preferred = pickCandidate(filteredCandidates);
+  if (preferred || !allowExcludedFallback) {
+    return preferred;
+  }
+
+  return pickCandidate(candidates);
+}
+
+function readOpenedMailText(item, options = {}) {
+  const candidates = collectOpenedMailTextCandidates();
+  return selectOpenedMailTextCandidate(item, candidates, options);
 }
 
 async function returnToInbox() {
@@ -417,7 +429,8 @@ async function returnToInbox() {
 }
 
 async function openMailAndGetMessageText(item) {
-  const beforeText = readOpenedMailText(item);
+  const beforeCandidates = collectOpenedMailTextCandidates();
+  const beforeText = selectOpenedMailTextCandidate(item, beforeCandidates);
   if (typeof simulateClick === 'function') {
     simulateClick(item);
   } else {
@@ -427,7 +440,10 @@ async function openMailAndGetMessageText(item) {
   let openedText = '';
   for (let i = 0; i < 24; i += 1) {
     await sleep(250);
-    const candidate = readOpenedMailText(item);
+    const candidate = readOpenedMailText(item, {
+      excludedTexts: beforeCandidates,
+      allowExcludedFallback: false,
+    });
     if (!candidate) {
       continue;
     }
