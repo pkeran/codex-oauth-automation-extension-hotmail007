@@ -186,6 +186,7 @@
         await syncMail2925Accounts(accounts.map((item) => (item.id === account.id ? nextAccount : item)));
       }
 
+      await setPersistentSettings({ currentMail2925AccountId: nextAccount.id });
       await setState({ currentMail2925AccountId: nextAccount.id });
       broadcastDataUpdate({ currentMail2925AccountId: nextAccount.id });
       if (logMessage) {
@@ -210,6 +211,7 @@
       await syncMail2925Accounts(accounts.map((item) => (item.id === account.id ? nextAccount : item)));
 
       if (state.currentMail2925AccountId === account.id && nextAccount.enabled === false) {
+        await setPersistentSettings({ currentMail2925AccountId: '' });
         await setState({ currentMail2925AccountId: null });
         broadcastDataUpdate({ currentMail2925AccountId: null });
       }
@@ -224,6 +226,7 @@
       await syncMail2925Accounts(nextAccounts);
 
       if (state.currentMail2925AccountId === accountId) {
+        await setPersistentSettings({ currentMail2925AccountId: '' });
         await setState({ currentMail2925AccountId: null });
         broadcastDataUpdate({ currentMail2925AccountId: null });
       }
@@ -239,6 +242,7 @@
       await syncMail2925Accounts(nextAccounts);
 
       if (state.currentMail2925AccountId && !findMail2925Account(nextAccounts, state.currentMail2925AccountId)) {
+        await setPersistentSettings({ currentMail2925AccountId: '' });
         await setState({ currentMail2925AccountId: null });
         broadcastDataUpdate({ currentMail2925AccountId: null });
       }
@@ -613,6 +617,7 @@
       });
 
       if (!nextAccount) {
+        await setPersistentSettings({ currentMail2925AccountId: '' });
         await setState({ currentMail2925AccountId: null });
         broadcastDataUpdate({ currentMail2925AccountId: null });
         if (typeof requestStop === 'function') {
