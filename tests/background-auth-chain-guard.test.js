@@ -162,7 +162,7 @@ return {
 test('oauth timeout budget ignores stale deadlines from an old oauth url', async () => {
   const api = new Function(`
 const LOG_PREFIX = '[test]';
-const OAUTH_FLOW_TIMEOUT_MS = 6 * 60 * 1000;
+const OAUTH_FLOW_TIMEOUT_MS = 5 * 60 * 1000;
 ${extractFunction('normalizeOAuthFlowDeadlineAt')}
 ${extractFunction('normalizeOAuthFlowSourceUrl')}
 ${extractFunction('getOAuthFlowRemainingMs')}
