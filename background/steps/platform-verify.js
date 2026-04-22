@@ -79,7 +79,8 @@
         source: 'background',
         payload: { localhostUrl: state.localhostUrl, vpsPassword: state.vpsPassword },
       }, {
-        timeoutMs: 30000,
+        timeoutMs: 125000,
+        responseTimeoutMs: 125000,
         retryDelayMs: 700,
         logMessage: '步骤 10：CPA 面板通信未就绪，正在等待页面恢复...',
       });
