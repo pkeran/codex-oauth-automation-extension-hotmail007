@@ -156,6 +156,7 @@ const inputTempEmailBaseUrl = { value: 'https://temp.example.com' };
 const inputTempEmailAdminAuth = { value: 'admin-secret' };
 const inputTempEmailCustomAuth = { value: 'custom-secret' };
 const inputTempEmailReceiveMailbox = { value: 'relay@example.com' };
+const inputTempEmailUseRandomSubdomain = { checked: true };
 const inputAutoSkipFailures = { checked: false };
 const inputAutoSkipFailuresThreadIntervalMinutes = { value: '5' };
 const inputAutoDelayEnabled = { checked: true };
@@ -192,6 +193,7 @@ return {
   assert.equal('customPassword' in contributionPayload, false);
   assert.equal('accountRunHistoryTextEnabled' in contributionPayload, false);
   assert.equal('accountRunHistoryHelperBaseUrl' in contributionPayload, false);
+  assert.equal(contributionPayload.cloudflareTempEmailUseRandomSubdomain, true);
 
   api.setLatestState({ contributionMode: false });
   const normalPayload = api.collectSettingsPayload();
@@ -200,6 +202,7 @@ return {
   assert.equal(normalPayload.accountRunHistoryHelperBaseUrl, 'http://127.0.0.1:17373');
   assert.equal(normalPayload.codex2apiUrl, 'http://localhost:8080/admin/accounts');
   assert.equal(normalPayload.codex2apiAdminKey, 'codex-admin-secret');
+  assert.equal(normalPayload.cloudflareTempEmailUseRandomSubdomain, true);
 });
 
 test('contribution mode manager enters mode, starts main auto flow, polls contribution status, and exits cleanly', async () => {

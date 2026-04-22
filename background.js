@@ -147,11 +147,12 @@ const HOTMAIL_MAILBOXES = ['INBOX', 'Junk'];
 const STOP_ERROR_MESSAGE = '流程已被用户停止。';
 const CLOUDFLARE_SECURITY_BLOCK_ERROR_PREFIX = 'CF_SECURITY_BLOCKED::';
 const CLOUDFLARE_SECURITY_BLOCK_USER_MESSAGE = '您已触发Cloudflare 安全防护系统，已完全停止流程，请不要短时间内多次进行重新发送验证码，连续刷新、反复点击重试会加重风控；请先关闭页面等待 15-30 分钟，让系统的临时限制自动解除。或者更换浏览器';
+const BROWSER_SWITCH_REQUIRED_ERROR_PREFIX = 'BROWSER_SWITCH_REQUIRED::';
 const HUMAN_STEP_DELAY_MIN = 700;
 const HUMAN_STEP_DELAY_MAX = 2200;
 const STEP6_MAX_ATTEMPTS = 3;
 const STEP7_MAIL_POLLING_RECOVERY_MAX_ATTEMPTS = 8;
-const OAUTH_FLOW_TIMEOUT_MS = 6 * 60 * 1000;
+const OAUTH_FLOW_TIMEOUT_MS = 5 * 60 * 1000;
 const SUB2API_STEP1_RESPONSE_TIMEOUT_MS = 90000;
 const SUB2API_STEP9_RESPONSE_TIMEOUT_MS = 120000;
 const DEFAULT_SUB2API_URL = 'https://sub2api.hisence.fun/admin/accounts';
@@ -271,6 +272,7 @@ const PERSISTED_SETTING_DEFAULTS = {
   accountRunHistoryHelperBaseUrl: DEFAULT_ACCOUNT_RUN_HISTORY_HELPER_BASE_URL,
   gmailBaseEmail: '',
   mail2925BaseEmail: '',
+  currentMail2925AccountId: '',
   emailPrefix: '',
   inbucketHost: '',
   inbucketMailbox: '',
@@ -283,6 +285,7 @@ const PERSISTED_SETTING_DEFAULTS = {
   cloudflareTempEmailAdminAuth: '',
   cloudflareTempEmailCustomAuth: '',
   cloudflareTempEmailReceiveMailbox: '',
+  cloudflareTempEmailUseRandomSubdomain: false,
   cloudflareTempEmailDomain: '',
   cloudflareTempEmailDomains: [],
   hotmailAccounts: [],
@@ -839,6 +842,7 @@ function getCloudflareTempEmailConfig(state = {}) {
     adminAuth: String(state.cloudflareTempEmailAdminAuth || ''),
     customAuth: String(state.cloudflareTempEmailCustomAuth || ''),
     receiveMailbox: normalizeCloudflareTempEmailReceiveMailbox(state.cloudflareTempEmailReceiveMailbox),
+    useRandomSubdomain: Boolean(state.cloudflareTempEmailUseRandomSubdomain),
     domain: normalizeCloudflareTempEmailDomain(state.cloudflareTempEmailDomain),
     domains: normalizeCloudflareTempEmailDomains(state.cloudflareTempEmailDomains),
   };
@@ -911,6 +915,7 @@ function normalizePersistentSettingValue(key, value) {
       return normalizeEmailGenerator(value);
     case 'autoDeleteUsedIcloudAlias':
     case 'accountRunHistoryTextEnabled':
+    case 'cloudflareTempEmailUseRandomSubdomain':
       return Boolean(value);
     case 'icloudHostPreference':
       return normalizeIcloudHost(value) || 'auto';
@@ -918,6 +923,7 @@ function normalizePersistentSettingValue(key, value) {
       return normalizeAccountRunHistoryHelperBaseUrl(value);
     case 'gmailBaseEmail':
     case 'mail2925BaseEmail':
+    case 'currentMail2925AccountId':
     case 'emailPrefix':
       return String(value || '').trim();
     case 'inbucketHost':
@@ -4043,6 +4049,17 @@ function getTerminalSecurityBlockedTitle(error) {
   return 'Cloudflare 风控拦截';
 }
 
+function isBrowserSwitchRequiredError(error) {
+  return getErrorMessage(error).startsWith(BROWSER_SWITCH_REQUIRED_ERROR_PREFIX);
+}
+
+function getBrowserSwitchRequiredMessage(error) {
+  const message = getErrorMessage(error);
+  return message.startsWith(BROWSER_SWITCH_REQUIRED_ERROR_PREFIX)
+    ? message.slice(BROWSER_SWITCH_REQUIRED_ERROR_PREFIX.length).trim()
+    : message;
+}
+
 function broadcastSecurityBlockedAlert(title = '流程已完全停止', message = CLOUDFLARE_SECURITY_BLOCK_USER_MESSAGE, alertText = '检测到 Cloudflare 风控，请暂停当前操作。') {
   chrome.runtime.sendMessage({
     type: 'SECURITY_BLOCKED_ALERT',
@@ -4063,6 +4080,13 @@ async function handleCloudflareSecurityBlocked(error) {
   const alertText = getTerminalSecurityBlockedAlertText(error);
   await requestStop({ logMessage: message });
   broadcastSecurityBlockedAlert(title, message, alertText);
+  return message;
+}
+
+async function handleBrowserSwitchRequired(error) {
+  const message = getBrowserSwitchRequiredMessage(error)
+    || '检测到第 10 步的特殊冲突状态，请更换浏览器后重新进行注册登录。';
+  await requestStop({ logMessage: message });
   return message;
 }
 
@@ -5371,6 +5395,10 @@ async function executeStep(step, options = {}) {
     }
     if (isTerminalSecurityBlockedError(err)) {
       await handleCloudflareSecurityBlocked(err);
+      throw new Error(STOP_ERROR_MESSAGE);
+    }
+    if (isBrowserSwitchRequiredError(err)) {
+      await handleBrowserSwitchRequired(err);
       throw new Error(STOP_ERROR_MESSAGE);
     }
     if (!(deferRetryableTransportError && doesStepUseCompletionSignal(step) && isRetryableContentScriptTransportError(err))) {
@@ -6885,7 +6913,7 @@ async function startOAuthFlowTimeoutWindow(options = {}) {
     oauthFlowDeadlineAt: deadlineAt,
     oauthFlowDeadlineSourceUrl: normalizeOAuthFlowSourceUrl(options.oauthUrl),
   });
-  await addLog(`步骤 ${step}：已拿到新的 OAuth 登录地址，开始 6 分钟倒计时。`, 'info');
+  await addLog(`步骤 ${step}：已拿到新的 OAuth 登录地址，开始 ${Math.round(OAUTH_FLOW_TIMEOUT_MS / 60000)} 分钟倒计时。`, 'info');
   return deadlineAt;
 }
 
@@ -7220,7 +7248,6 @@ async function getStep8PageState(tabId, responseTimeoutMs = 1500) {
 async function waitForStep8Ready(tabId, timeoutMs = STEP8_READY_WAIT_TIMEOUT_MS) {
   const start = Date.now();
   let recovered = false;
-  let retryRecovered = false;
 
   while (Date.now() - start < timeoutMs) {
     throwIfStopped();
@@ -7232,20 +7259,9 @@ async function waitForStep8Ready(tabId, timeoutMs = STEP8_READY_WAIT_TIMEOUT_MS)
       throw new Error('步骤 9：认证页进入了手机号页面，当前不是 OAuth 同意页，无法继续自动授权。');
     }
     if (pageState?.retryPage) {
-      await recoverAuthRetryPageOnTab(tabId, {
-        flow: 'auth',
-        logLabel: '步骤 9：检测到认证页重试页，正在点击“重试”恢复',
-        step: 8,
-        timeoutMs: Math.max(1000, Math.min(12000, timeoutMs)),
-      });
-      retryRecovered = true;
-      await sleepWithStop(250);
-      continue;
+      throw new Error(`步骤 9：当前认证页已进入重试页，当前流程将直接报错。URL: ${pageState.url || 'unknown'}`);
     }
     if (pageState?.consentReady) {
-      if (retryRecovered) {
-        await addLog('步骤 9：认证页重试页已恢复，准备重新定位“继续”按钮...', 'info');
-      }
       return pageState;
     }
     if (pageState === null && !recovered) {
@@ -7410,18 +7426,7 @@ async function waitForStep8ClickEffect(tabId, baselineUrl, timeoutMs = STEP8_CLI
       throw new Error('步骤 9：点击“继续”后页面跳到了手机号页面，当前流程无法继续自动授权。');
     }
     if (pageState?.retryPage) {
-      await recoverAuthRetryPageOnTab(tabId, {
-        flow: 'auth',
-        logLabel: '步骤 9：点击“继续”后进入重试页，正在点击“重试”恢复',
-        step: 8,
-        timeoutMs: Math.max(1000, Math.min(12000, timeoutMs)),
-      });
-      return {
-        progressed: false,
-        reason: 'retry_page_recovered',
-        restartCurrentStep: true,
-        url: pageState.url || baselineUrl || '',
-      };
+      throw new Error(`步骤 9：点击“继续”后页面进入认证页重试页，当前流程将直接报错。URL: ${pageState.url || baselineUrl || 'unknown'}`);
     }
     if (pageState === null) {
       if (!recovered) {
@@ -7455,8 +7460,6 @@ function getStep8EffectLabel(effect) {
   switch (effect?.reason) {
     case 'url_changed':
       return `URL 已变化：${effect.url}`;
-    case 'retry_page_recovered':
-      return '页面进入重试页并已恢复，需要重新执行当前步骤';
     case 'page_reloading':
       return '页面正在跳转或重载';
     case 'left_consent_page':
