@@ -438,6 +438,20 @@ function formatStep10StatusSummaryValue(text, emptyText = '无') {
   return text ? `"${getInlineTextSnippet(text, 80)}"` : emptyText;
 }
 
+function isStep10BrowserSwitchRequiredConflict(diagnostics = {}) {
+  return Boolean(diagnostics?.hasExactSuccessVisibleBadge)
+    && /请更新\s*cli\s*proxy\s*api\s*或检查连接/i.test(String(diagnostics?.callbackFailureText || ''));
+}
+
+function getStep10BrowserSwitchRequiredMessage(diagnostics = {}) {
+  const callbackFailureText = normalizeStep9StatusText(diagnostics?.callbackFailureText || '');
+  return [
+    '检测到 CPA 页面同时显示“认证成功”和“回调 URL 提交失败: 请更新CLI Proxy API或检查连接”。',
+    '这类冲突状态通常通过更换浏览器可以解决，请更换浏览器后重新进行注册登录。',
+    callbackFailureText ? `面板原文：${callbackFailureText}` : '',
+  ].filter(Boolean).join(' ');
+}
+
 function buildStep9StatusDiagnostics(entries = [], pageErrorEntries = [], pageSnippet = '') {
   const visibleEntries = entries.filter((entry) => entry.visible);
   const callbackEntries = visibleEntries.filter((entry) => entry.location === 'callback');
@@ -686,6 +700,13 @@ async function waitForExactSuccessBadge(timeout = STEP9_SUCCESS_BADGE_TIMEOUT_MS
         );
         console.info(LOG_PREFIX, '[Step 9] callback accepted and waiting for auth completion', diagnostics);
       }
+    }
+
+    if (isStep10BrowserSwitchRequiredConflict(diagnostics)) {
+      const browserSwitchMessage = getStep10BrowserSwitchRequiredMessage(diagnostics);
+      log(`步骤 10：${browserSwitchMessage}`, 'error');
+      console.error(LOG_PREFIX, '[Step 9] browser-switch conflict detected', diagnostics);
+      throw new Error(`BROWSER_SWITCH_REQUIRED::${browserSwitchMessage}`);
     }
 
     if (diagnostics.hasExactSuccessVisibleBadge && diagnostics.hasFailureVisibleBadge) {

@@ -66,6 +66,8 @@ const bundle = [
   extractFunction('isStep9SuccessStatus'),
   extractFunction('isStep9SuccessLikeStatus'),
   extractFunction('formatStep10StatusSummaryValue'),
+  extractFunction('isStep10BrowserSwitchRequiredConflict'),
+  extractFunction('getStep10BrowserSwitchRequiredMessage'),
   extractFunction('buildStep9StatusDiagnostics'),
   extractFunction('extractStep10FailureDetail'),
   extractFunction('explainStep10Failure'),
@@ -84,6 +86,8 @@ ${bundle}
 return {
   buildStep9StatusDiagnostics,
   explainStep10Failure,
+  isStep10BrowserSwitchRequiredConflict,
+  getStep10BrowserSwitchRequiredMessage,
 };
 `)();
 }
@@ -199,4 +203,33 @@ test('step 10 explains callback upgrade hint with user-friendly reason', () => {
   assert.equal(explanation.code, 'callback_submit_api_unavailable');
   assert.match(explanation.userMessage, /CLI Proxy API 版本过旧|管理接口未启动|连接异常/);
   assert.match(explanation.userMessage, /回调提交阶段/);
+});
+
+test('step 10 requests browser switch when success badge and callback upgrade failure coexist', () => {
+  const api = createApi();
+  const diagnostics = api.buildStep9StatusDiagnostics(
+    [
+      {
+        visible: true,
+        text: '认证成功',
+        className: 'status-badge success',
+        location: 'main',
+        hasErrorVisualSignal: false,
+        errorVisualSummary: '',
+      },
+      {
+        visible: true,
+        text: '回调 URL 提交失败: 请更新CLI Proxy API或检查连接',
+        className: 'status-badge error',
+        location: 'callback',
+        hasErrorVisualSignal: true,
+        errorVisualSummary: 'color=rgb(220, 38, 38)',
+      },
+    ],
+    [],
+    'page'
+  );
+
+  assert.equal(api.isStep10BrowserSwitchRequiredConflict(diagnostics), true);
+  assert.match(api.getStep10BrowserSwitchRequiredMessage(diagnostics), /更换浏览器后重新进行注册登录/);
 });
