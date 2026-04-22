@@ -40,6 +40,7 @@
       getPendingAutoRunTimerPlan,
       getSourceLabel,
       getState,
+      getTabId,
       getStopRequested,
       handleAutoRunLoopUnhandledError,
       importSettingsBundle,
@@ -50,6 +51,7 @@
       isLocalhostOAuthCallbackUrl,
       isLuckmailProvider,
       isStopError,
+      isTabAlive,
       launchAutoRunTimerPlan,
       listIcloudAliases,
       listLuckmailPurchasesForManagement,
@@ -106,6 +108,23 @@
       }
 
       return appendAccountRunRecord(status, state, reason);
+    }
+
+    async function ensureManualStepPrerequisites(step) {
+      if (step !== 4) {
+        return;
+      }
+
+      const signupTabId = typeof getTabId === 'function'
+        ? await getTabId('signup-page')
+        : null;
+      const signupTabAlive = signupTabId && typeof isTabAlive === 'function'
+        ? await isTabAlive('signup-page')
+        : Boolean(signupTabId);
+
+      if (!signupTabId || !signupTabAlive) {
+        throw new Error('手动执行步骤 4 前，请先执行步骤 1 或步骤 2，确保认证页仍然打开并停留在验证码页。');
+      }
     }
 
     async function handleStepData(step, payload) {
@@ -402,6 +421,9 @@
             await ensureManualInteractionAllowed('手动执行步骤');
           }
           const step = message.payload.step;
+          if (message.source === 'sidepanel') {
+            await ensureManualStepPrerequisites(step);
+          }
           if (message.source === 'sidepanel') {
             await invalidateDownstreamAfterStepRestart(step, { logLabel: `步骤 ${step} 重新执行` });
           }
