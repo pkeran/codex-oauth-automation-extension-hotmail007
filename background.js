@@ -5498,6 +5498,7 @@ const mail2925SessionManager = self.MultiPageBackgroundMail2925Session?.createMa
   sleepWithStop,
   throwIfStopped,
   upsertMail2925AccountInList,
+  waitForTabComplete,
   waitForTabUrlMatch,
 });
 
