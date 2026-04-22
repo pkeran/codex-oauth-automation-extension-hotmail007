@@ -337,6 +337,131 @@ test('phone verification helper throws a step-7 restart error after 60 seconds p
   }
 });
 
+test('phone verification helper replaces the number when code submission returns to add-phone', async () => {
+  const requests = [];
+  const messages = [];
+  let currentState = {
+    heroSmsApiKey: 'demo-key',
+    verificationResendCount: 1,
+    currentPhoneActivation: null,
+    reusablePhoneActivation: null,
+  };
+
+  const numbers = [
+    { activationId: '111111', phoneNumber: '66950000001' },
+    { activationId: '222222', phoneNumber: '66950000002' },
+  ];
+  let numberIndex = 0;
+  let submitCodeCount = 0;
+
+  const helpers = api.createPhoneVerificationHelpers({
+    addLog: async () => {},
+    ensureStep8SignupPageReady: async () => {},
+    fetchImpl: async (url) => {
+      const parsedUrl = new URL(url);
+      requests.push(parsedUrl);
+      const action = parsedUrl.searchParams.get('action');
+      const id = parsedUrl.searchParams.get('id');
+
+      if (action === 'getNumber') {
+        const nextNumber = numbers[numberIndex];
+        numberIndex += 1;
+        return {
+          ok: true,
+          text: async () => `ACCESS_NUMBER:${nextNumber.activationId}:${nextNumber.phoneNumber}`,
+        };
+      }
+      if (action === 'getStatus') {
+        return {
+          ok: true,
+          text: async () => 'STATUS_OK:654321',
+        };
+      }
+      if (action === 'setStatus') {
+        return {
+          ok: true,
+          text: async () => `STATUS_UPDATED:${id}`,
+        };
+      }
+      throw new Error(`Unexpected HeroSMS action: ${action}`);
+    },
+    getOAuthFlowStepTimeoutMs: async (defaultTimeoutMs) => defaultTimeoutMs,
+    getState: async () => ({ ...currentState }),
+    sendToContentScriptResilient: async (_source, message) => {
+      messages.push(message.type);
+      if (message.type === 'SUBMIT_PHONE_NUMBER') {
+        return {
+          phoneVerificationPage: true,
+          url: 'https://auth.openai.com/phone-verification',
+        };
+      }
+      if (message.type === 'SUBMIT_PHONE_VERIFICATION_CODE') {
+        submitCodeCount += 1;
+        return submitCodeCount === 1
+          ? {
+            returnedToAddPhone: true,
+            url: 'https://auth.openai.com/add-phone',
+          }
+          : {
+            success: true,
+            consentReady: true,
+            url: 'https://auth.openai.com/authorize',
+          };
+      }
+      if (message.type === 'RESEND_PHONE_VERIFICATION_CODE') {
+        return {
+          resent: true,
+          url: 'https://auth.openai.com/phone-verification',
+        };
+      }
+      throw new Error(`Unexpected content-script message: ${message.type}`);
+    },
+    setState: async (updates) => {
+      currentState = { ...currentState, ...updates };
+    },
+    sleepWithStop: async () => {},
+    throwIfStopped: () => {},
+  });
+
+  const result = await helpers.completePhoneVerificationFlow(1, {
+    addPhonePage: true,
+    phoneVerificationPage: false,
+    url: 'https://auth.openai.com/add-phone',
+  });
+
+  assert.deepStrictEqual(result, {
+    success: true,
+    consentReady: true,
+    url: 'https://auth.openai.com/authorize',
+  });
+  assert.deepStrictEqual(messages, [
+    'SUBMIT_PHONE_NUMBER',
+    'SUBMIT_PHONE_VERIFICATION_CODE',
+    'SUBMIT_PHONE_NUMBER',
+    'SUBMIT_PHONE_VERIFICATION_CODE',
+  ]);
+
+  const actions = requests.map((url) => `${url.searchParams.get('action')}:${url.searchParams.get('id') || ''}`);
+  assert.deepStrictEqual(actions, [
+    'getNumber:',
+    'getStatus:111111',
+    'setStatus:111111',
+    'getNumber:',
+    'getStatus:222222',
+    'setStatus:222222',
+  ]);
+  assert.deepStrictEqual(currentState.currentPhoneActivation, null);
+  assert.deepStrictEqual(currentState.reusablePhoneActivation, {
+    activationId: '222222',
+    phoneNumber: '66950000002',
+    provider: 'hero-sms',
+    serviceCode: 'dr',
+    countryId: 52,
+    successfulUses: 1,
+    maxUses: 3,
+  });
+});
+
 test('phone verification helper reuses the same number up to three successful registrations', async () => {
   const requests = [];
   let currentState = {

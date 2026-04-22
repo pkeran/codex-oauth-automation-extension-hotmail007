@@ -691,7 +691,22 @@
             await addLog(`Step 9: received phone verification code ${codeResult.code}.`, 'info');
             const submitResult = await submitPhoneVerificationCode(tabId, codeResult.code);
 
-            if (submitResult.invalidCode || submitResult.returnedToAddPhone) {
+            if (submitResult.returnedToAddPhone) {
+              await addLog(
+                'Step 9: phone verification returned to add-phone after code submission, replacing the current number.',
+                'warn'
+              );
+              shouldReplaceNumber = true;
+              pageState = {
+                ...pageState,
+                ...submitResult,
+                addPhonePage: true,
+                phoneVerificationPage: false,
+              };
+              break;
+            }
+
+            if (submitResult.invalidCode) {
               if (attempt >= DEFAULT_PHONE_SUBMIT_ATTEMPTS) {
                 throw new Error(
                   `Phone verification code was rejected after ${DEFAULT_PHONE_SUBMIT_ATTEMPTS} attempts: ${submitResult.errorText || submitResult.url || 'unknown error'}`
