@@ -423,6 +423,7 @@ test('contribution oauth manager starts session, opens auth url, submits callbac
   assert.match(fetchCalls[0].url, /\/start$/);
   assert.match(String(fetchCalls[0].options.body || ''), /"nickname":""/);
   assert.match(String(fetchCalls[0].options.body || ''), /"qq":""/);
+  assert.match(String(fetchCalls[0].options.body || ''), /"email":"user@example\.com"/);
   assert.match(fetchCalls[1].url, /\/status\?/);
 
   const callbackState = await manager.handleCapturedCallback(
