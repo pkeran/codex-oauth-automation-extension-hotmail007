@@ -7194,7 +7194,6 @@ async function getStep8PageState(tabId, responseTimeoutMs = 1500) {
 async function waitForStep8Ready(tabId, timeoutMs = STEP8_READY_WAIT_TIMEOUT_MS) {
   const start = Date.now();
   let recovered = false;
-  let retryRecovered = false;
 
   while (Date.now() - start < timeoutMs) {
     throwIfStopped();
@@ -7206,20 +7205,9 @@ async function waitForStep8Ready(tabId, timeoutMs = STEP8_READY_WAIT_TIMEOUT_MS)
       throw new Error('步骤 9：认证页进入了手机号页面，当前不是 OAuth 同意页，无法继续自动授权。');
     }
     if (pageState?.retryPage) {
-      await recoverAuthRetryPageOnTab(tabId, {
-        flow: 'auth',
-        logLabel: '步骤 9：检测到认证页重试页，正在点击“重试”恢复',
-        step: 8,
-        timeoutMs: Math.max(1000, Math.min(12000, timeoutMs)),
-      });
-      retryRecovered = true;
-      await sleepWithStop(250);
-      continue;
+      throw new Error(`步骤 9：当前认证页已进入重试页，当前流程将直接报错。URL: ${pageState.url || 'unknown'}`);
     }
     if (pageState?.consentReady) {
-      if (retryRecovered) {
-        await addLog('步骤 9：认证页重试页已恢复，准备重新定位“继续”按钮...', 'info');
-      }
       return pageState;
     }
     if (pageState === null && !recovered) {
@@ -7384,18 +7372,7 @@ async function waitForStep8ClickEffect(tabId, baselineUrl, timeoutMs = STEP8_CLI
       throw new Error('步骤 9：点击“继续”后页面跳到了手机号页面，当前流程无法继续自动授权。');
     }
     if (pageState?.retryPage) {
-      await recoverAuthRetryPageOnTab(tabId, {
-        flow: 'auth',
-        logLabel: '步骤 9：点击“继续”后进入重试页，正在点击“重试”恢复',
-        step: 8,
-        timeoutMs: Math.max(1000, Math.min(12000, timeoutMs)),
-      });
-      return {
-        progressed: false,
-        reason: 'retry_page_recovered',
-        restartCurrentStep: true,
-        url: pageState.url || baselineUrl || '',
-      };
+      throw new Error(`步骤 9：点击“继续”后页面进入认证页重试页，当前流程将直接报错。URL: ${pageState.url || baselineUrl || 'unknown'}`);
     }
     if (pageState === null) {
       if (!recovered) {
@@ -7429,8 +7406,6 @@ function getStep8EffectLabel(effect) {
   switch (effect?.reason) {
     case 'url_changed':
       return `URL 已变化：${effect.url}`;
-    case 'retry_page_recovered':
-      return '页面进入重试页并已恢复，需要重新执行当前步骤';
     case 'page_reloading':
       return '页面正在跳转或重载';
     case 'left_consent_page':
