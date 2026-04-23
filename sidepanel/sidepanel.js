@@ -33,6 +33,16 @@ const updateCardSummary = document.getElementById('update-card-summary');
 const updateReleaseList = document.getElementById('update-release-list');
 const btnOpenRelease = document.getElementById('btn-open-release');
 const settingsCard = document.getElementById('settings-card');
+const contributionModePanel = document.getElementById('contribution-mode-panel');
+const contributionModeText = document.getElementById('contribution-mode-text');
+const inputContributionNickname = document.getElementById('input-contribution-nickname');
+const inputContributionQq = document.getElementById('input-contribution-qq');
+const contributionOauthStatus = document.getElementById('contribution-oauth-status');
+const contributionCallbackStatus = document.getElementById('contribution-callback-status');
+const contributionModeSummary = document.getElementById('contribution-mode-summary');
+const btnStartContribution = document.getElementById('btn-start-contribution');
+const btnOpenContributionUpload = document.getElementById('btn-open-contribution-upload');
+const btnExitContributionMode = document.getElementById('btn-exit-contribution-mode');
 const displayOauthUrl = document.getElementById('display-oauth-url');
 const displayLocalhostUrl = document.getElementById('display-localhost-url');
 const displayStatus = document.getElementById('display-status');
@@ -47,6 +57,10 @@ const btnSaveSettings = document.getElementById('btn-save-settings');
 const btnStop = document.getElementById('btn-stop');
 const btnReset = document.getElementById('btn-reset');
 const btnContributionMode = document.getElementById('btn-contribution-mode');
+const contributionUpdateLayer = document.getElementById('contribution-update-layer');
+const contributionUpdateHint = document.getElementById('contribution-update-hint');
+const contributionUpdateHintText = document.getElementById('contribution-update-hint-text');
+const btnDismissContributionUpdateHint = document.getElementById('btn-dismiss-contribution-update-hint');
 const stepsProgress = document.getElementById('steps-progress');
 const btnAutoRun = document.getElementById('btn-auto-run');
 const btnAutoContinue = document.getElementById('btn-auto-continue');
@@ -80,9 +94,15 @@ const rowSub2ApiGroup = document.getElementById('row-sub2api-group');
 const inputSub2ApiGroup = document.getElementById('input-sub2api-group');
 const rowSub2ApiDefaultProxy = document.getElementById('row-sub2api-default-proxy');
 const inputSub2ApiDefaultProxy = document.getElementById('input-sub2api-default-proxy');
+const rowCodex2ApiUrl = document.getElementById('row-codex2api-url');
+const inputCodex2ApiUrl = document.getElementById('input-codex2api-url');
+const rowCodex2ApiAdminKey = document.getElementById('row-codex2api-admin-key');
+const inputCodex2ApiAdminKey = document.getElementById('input-codex2api-admin-key');
+const rowCustomPassword = document.getElementById('row-custom-password');
 const selectMailProvider = document.getElementById('select-mail-provider');
 const btnMailLogin = document.getElementById('btn-mail-login');
 const rowMail2925Mode = document.getElementById('row-mail-2925-mode');
+const rowMail2925PoolSettings = document.getElementById('row-mail2925-pool-settings');
 const mail2925ModeButtons = Array.from(document.querySelectorAll('[data-mail2925-mode]'));
 const rowEmailGenerator = document.getElementById('row-email-generator');
 const selectEmailGenerator = document.getElementById('select-email-generator');
@@ -94,11 +114,17 @@ const rowTempEmailCustomAuth = document.getElementById('row-temp-email-custom-au
 const inputTempEmailCustomAuth = document.getElementById('input-temp-email-custom-auth');
 const rowTempEmailReceiveMailbox = document.getElementById('row-temp-email-receive-mailbox');
 const inputTempEmailReceiveMailbox = document.getElementById('input-temp-email-receive-mailbox');
+const rowTempEmailRandomSubdomainToggle = document.getElementById('row-temp-email-random-subdomain-toggle');
+const inputTempEmailUseRandomSubdomain = document.getElementById('input-temp-email-use-random-subdomain');
 const rowTempEmailDomain = document.getElementById('row-temp-email-domain');
 const selectTempEmailDomain = document.getElementById('select-temp-email-domain');
 const inputTempEmailDomain = document.getElementById('input-temp-email-domain');
 const btnTempEmailDomainMode = document.getElementById('btn-temp-email-domain-mode');
+const cloudflareTempEmailSection = document.getElementById('cloudflare-temp-email-section');
+const btnCloudflareTempEmailUsageGuide = document.getElementById('btn-cloudflare-temp-email-usage-guide');
+const btnCloudflareTempEmailGithub = document.getElementById('btn-cloudflare-temp-email-github');
 const hotmailSection = document.getElementById('hotmail-section');
+const mail2925Section = document.getElementById('mail2925-section');
 const luckmailSection = document.getElementById('luckmail-section');
 const icloudSection = document.getElementById('icloud-section');
 const icloudSummary = document.getElementById('icloud-summary');
@@ -133,12 +159,25 @@ const inputHotmailRefreshToken = document.getElementById('input-hotmail-refresh-
 const inputHotmailImport = document.getElementById('input-hotmail-import');
 const btnAddHotmailAccount = document.getElementById('btn-add-hotmail-account');
 const btnImportHotmailAccounts = document.getElementById('btn-import-hotmail-accounts');
+const btnToggleHotmailForm = document.getElementById('btn-toggle-hotmail-form');
 const btnHotmailUsageGuide = document.getElementById('btn-hotmail-usage-guide');
 const btnClearUsedHotmailAccounts = document.getElementById('btn-clear-used-hotmail-accounts');
 const btnDeleteAllHotmailAccounts = document.getElementById('btn-delete-all-hotmail-accounts');
 const btnToggleHotmailList = document.getElementById('btn-toggle-hotmail-list');
+const hotmailFormShell = document.getElementById('hotmail-form-shell');
 const hotmailListShell = document.getElementById('hotmail-list-shell');
 const hotmailAccountsList = document.getElementById('hotmail-accounts-list');
+const inputMail2925Email = document.getElementById('input-mail2925-email');
+const inputMail2925Password = document.getElementById('input-mail2925-password');
+const inputMail2925Import = document.getElementById('input-mail2925-import');
+const btnAddMail2925Account = document.getElementById('btn-add-mail2925-account');
+const btnToggleMail2925Form = document.getElementById('btn-toggle-mail2925-form');
+const btnImportMail2925Accounts = document.getElementById('btn-import-mail2925-accounts');
+const btnDeleteAllMail2925Accounts = document.getElementById('btn-delete-all-mail2925-accounts');
+const btnToggleMail2925List = document.getElementById('btn-toggle-mail2925-list');
+const mail2925FormShell = document.getElementById('mail2925-form-shell');
+const mail2925ListShell = document.getElementById('mail2925-list-shell');
+const mail2925AccountsList = document.getElementById('mail2925-accounts-list');
 const inputLuckmailApiKey = document.getElementById('input-luckmail-api-key');
 const inputLuckmailBaseUrl = document.getElementById('input-luckmail-base-url');
 const selectLuckmailEmailType = document.getElementById('select-luckmail-email-type');
@@ -160,6 +199,9 @@ const luckmailList = document.getElementById('luckmail-list');
 const rowEmailPrefix = document.getElementById('row-email-prefix');
 const labelEmailPrefix = document.getElementById('label-email-prefix');
 const inputEmailPrefix = document.getElementById('input-email-prefix');
+const selectMail2925PoolAccount = document.getElementById('select-mail2925-pool-account');
+const inputMail2925UseAccountPool = document.getElementById('input-mail2925-use-account-pool');
+const labelMail2925UseAccountPool = document.getElementById('label-mail2925-use-account-pool');
 const rowInbucketHost = document.getElementById('row-inbucket-host');
 const inputInbucketHost = document.getElementById('input-inbucket-host');
 const rowInbucketMailbox = document.getElementById('row-inbucket-mailbox');
@@ -175,6 +217,7 @@ const inputAutoDelayEnabled = document.getElementById('input-auto-delay-enabled'
 const inputAutoDelayMinutes = document.getElementById('input-auto-delay-minutes');
 const inputAutoStepDelaySeconds = document.getElementById('input-auto-step-delay-seconds');
 const inputVerificationResendCount = document.getElementById('input-verification-resend-count');
+const rowAccountRunHistoryTextEnabled = document.getElementById('row-account-run-history-text-enabled');
 const inputAccountRunHistoryTextEnabled = document.getElementById('input-account-run-history-text-enabled');
 const rowAccountRunHistoryHelperBaseUrl = document.getElementById('row-account-run-history-helper-base-url');
 const inputAccountRunHistoryHelperBaseUrl = document.getElementById('input-account-run-history-helper-base-url');
@@ -212,10 +255,11 @@ const DEFAULT_CPA_CALLBACK_MODE = 'step8';
 const MAIL_2925_MODE_PROVIDE = 'provide';
 const MAIL_2925_MODE_RECEIVE = 'receive';
 const DEFAULT_MAIL_2925_MODE = MAIL_2925_MODE_PROVIDE;
+const NEW_USER_GUIDE_PROMPT_DISMISSED_STORAGE_KEY = 'multipage-new-user-guide-prompt-dismissed';
 const AUTO_SKIP_FAILURES_PROMPT_DISMISSED_STORAGE_KEY = 'multipage-auto-skip-failures-prompt-dismissed';
 const AUTO_RUN_FALLBACK_RISK_PROMPT_DISMISSED_STORAGE_KEY = 'multipage-auto-run-fallback-risk-prompt-dismissed';
-const AUTO_RUN_FALLBACK_RISK_WARNING_MIN_RUNS = 15;
-const AUTO_RUN_FALLBACK_RISK_RECOMMENDED_THREAD_INTERVAL_MINUTES = 5;
+const CONTRIBUTION_CONTENT_PROMPT_DISMISSED_VERSION_STORAGE_KEY = 'multipage-contribution-content-prompt-dismissed-version';
+const AUTO_RUN_FALLBACK_RISK_WARNING_MIN_RUNS = 3;
 const HOTMAIL_SERVICE_MODE_REMOTE = 'remote';
 const HOTMAIL_SERVICE_MODE_LOCAL = 'local';
 const ICLOUD_PROVIDER = 'icloud';
@@ -225,18 +269,29 @@ const DEFAULT_LUCKMAIL_BASE_URL = 'https://mails.luckyous.com';
 const DEFAULT_LUCKMAIL_EMAIL_TYPE = 'ms_graph';
 const DISPLAY_TIMEZONE = 'Asia/Shanghai';
 const DEFAULT_ACCOUNT_RUN_HISTORY_HELPER_BASE_URL = 'http://127.0.0.1:17373';
-const CONTRIBUTION_UPLOAD_URL = 'https://apikey.qzz.io/';
 
 function getManagedAliasUtils() {
   return window.MultiPageManagedAliasUtils || null;
 }
 
-function isManagedAliasProvider(provider = selectMailProvider.value) {
+function isManagedAliasProvider(provider = selectMailProvider.value, mail2925Mode = getSelectedMail2925Mode()) {
   const utils = getManagedAliasUtils();
+  if (utils?.usesManagedAliasGeneration) {
+    return utils.usesManagedAliasGeneration(provider, { mail2925Mode });
+  }
   if (utils?.isManagedAliasProvider) {
+    const normalizedProvider = String(provider || '').trim().toLowerCase();
+    if (normalizedProvider === '2925') {
+      return utils.isManagedAliasProvider(provider)
+        && normalizeMail2925Mode(mail2925Mode) === MAIL_2925_MODE_PROVIDE;
+    }
     return utils.isManagedAliasProvider(provider);
   }
-  return [GMAIL_PROVIDER, '2925'].includes(String(provider || '').trim().toLowerCase());
+  const normalizedProvider = String(provider || '').trim().toLowerCase();
+  if (normalizedProvider === '2925') {
+    return normalizeMail2925Mode(mail2925Mode) === MAIL_2925_MODE_PROVIDE;
+  }
+  return normalizedProvider === GMAIL_PROVIDER;
 }
 
 function parseManagedAliasBaseEmail(rawValue, provider = selectMailProvider.value) {
@@ -255,31 +310,34 @@ function isManagedAliasEmail(value, baseEmail = '', provider = selectMailProvide
   return false;
 }
 
-function getManagedAliasProviderUiCopy(provider = selectMailProvider.value) {
+function getManagedAliasProviderUiCopy(provider = selectMailProvider.value, mail2925Mode = getSelectedMail2925Mode()) {
+  if (!isManagedAliasProvider(provider, mail2925Mode)) {
+    return null;
+  }
   const utils = getManagedAliasUtils();
   if (utils?.getManagedAliasProviderUiCopy) {
     return utils.getManagedAliasProviderUiCopy(provider);
   }
   if (String(provider || '').trim().toLowerCase() === GMAIL_PROVIDER) {
     return {
-      baseLabel: 'Gmail 原邮箱',
+      baseLabel: '基邮箱',
       basePlaceholder: '例如 yourname@gmail.com',
       buttonLabel: '生成',
       successVerb: '生成',
       label: 'Gmail +tag 邮箱',
       placeholder: '点击生成 Gmail +tag 邮箱，或手动填写完整邮箱',
-      hint: '先填写 Gmail 原邮箱后点“生成”，也可以直接手动填写完整的 Gmail 邮箱。',
+      hint: '先填写基邮箱后点“生成”，也可以直接手动填写完整的 Gmail 邮箱。',
     };
   }
   if (String(provider || '').trim().toLowerCase() === '2925') {
     return {
-      baseLabel: '2925 基邮箱',
+      baseLabel: '基邮箱',
       basePlaceholder: '例如 yourname@2925.com',
       buttonLabel: '生成',
       successVerb: '生成',
       label: '2925 邮箱',
       placeholder: '点击生成 2925 邮箱，或手动填写完整邮箱',
-      hint: '先填写 2925 基邮箱后点“生成”，也可以直接手动填写完整的 2925 邮箱。',
+      hint: '先填写基邮箱后点“生成”，也可以直接手动填写完整的 2925 邮箱。',
     };
   }
   return null;
@@ -296,7 +354,73 @@ function getManagedAliasBaseEmailKey(provider = selectMailProvider.value) {
   return '';
 }
 
+function isMail2925AccountPoolEnabled(state = latestState) {
+  return Boolean(state?.mail2925UseAccountPool);
+}
+
+function getPreferredMail2925PoolAccountId(state = latestState) {
+  const currentId = String(state?.currentMail2925AccountId || '').trim();
+  if (currentId && getMail2925Accounts(state).some((account) => account.id === currentId)) {
+    return currentId;
+  }
+  return '';
+}
+
+function syncMail2925PoolAccountOptions(state = latestState) {
+  if (!selectMail2925PoolAccount) {
+    return;
+  }
+
+  const accounts = getMail2925Accounts(state);
+  const selectedId = getPreferredMail2925PoolAccountId(state);
+  const options = ['<option value="">请选择号池邮箱</option>'].concat(
+    accounts.map((account) => `<option value="${escapeHtml(account.id)}">${escapeHtml(account.email || '(未命名账号)')}</option>`)
+  );
+  selectMail2925PoolAccount.innerHTML = options.join('');
+  selectMail2925PoolAccount.value = selectedId;
+}
+
+async function syncSelectedMail2925PoolAccount(options = {}) {
+  const { silent = false } = options;
+  if (!selectMail2925PoolAccount || !isMail2925AccountPoolEnabled(latestState)) {
+    return null;
+  }
+
+  const accountId = String(selectMail2925PoolAccount.value || '').trim();
+  if (!accountId) {
+    syncLatestState({ currentMail2925AccountId: null });
+    setManagedAliasBaseEmailInputForProvider('2925', latestState);
+    return null;
+  }
+
+  const response = await chrome.runtime.sendMessage({
+    type: 'SELECT_MAIL2925_ACCOUNT',
+    source: 'sidepanel',
+    payload: { accountId },
+  });
+  if (response?.error) {
+    throw new Error(response.error);
+  }
+
+  syncLatestState({
+    currentMail2925AccountId: response.account?.id || accountId,
+    ...(response.account?.email ? { mail2925BaseEmail: String(response.account.email).trim() } : {}),
+  });
+  setManagedAliasBaseEmailInputForProvider('2925', latestState);
+  if (!silent) {
+    showToast(`已切换当前 2925 号池邮箱为 ${response.account?.email || accountId}`, 'success', 1800);
+  }
+  return response.account || null;
+}
+
 function getManagedAliasBaseEmailForProvider(provider = selectMailProvider.value, state = latestState) {
+  if (String(provider || '').trim().toLowerCase() === '2925' && isMail2925AccountPoolEnabled(state)) {
+    const currentMail2925Email = getCurrentMail2925Email(state);
+    if (currentMail2925Email) {
+      return currentMail2925Email;
+    }
+  }
+
   const key = getManagedAliasBaseEmailKey(provider);
   if (!key) {
     return '';
@@ -315,11 +439,16 @@ function buildManagedAliasBaseEmailPayload(state = latestState) {
   const payload = {
     gmailBaseEmail: String(state?.gmailBaseEmail || '').trim(),
     mail2925BaseEmail: String(state?.mail2925BaseEmail || '').trim(),
+    mail2925UseAccountPool: Boolean(state?.mail2925UseAccountPool),
     emailPrefix: '',
   };
   const key = getManagedAliasBaseEmailKey();
   if (key) {
-    payload[key] = inputEmailPrefix.value.trim();
+    if (key === 'mail2925BaseEmail' && isMail2925AccountPoolEnabled(state)) {
+      payload[key] = String(state?.mail2925BaseEmail || '').trim();
+    } else {
+      payload[key] = inputEmailPrefix.value.trim();
+    }
   }
   return payload;
 }
@@ -329,10 +458,14 @@ function syncManagedAliasBaseEmailDraftFromInput(provider = selectMailProvider.v
   if (!key) {
     return;
   }
+  if (key === 'mail2925BaseEmail' && isMail2925AccountPoolEnabled(latestState)) {
+    return;
+  }
   syncLatestState({ [key]: inputEmailPrefix.value.trim() });
 }
 
 function setManagedAliasBaseEmailInputForProvider(provider = selectMailProvider.value, state = latestState) {
+  syncMail2925PoolAccountOptions(state);
   inputEmailPrefix.value = getManagedAliasBaseEmailForProvider(provider, state);
 }
 
@@ -397,6 +530,8 @@ let scheduledCountdownTimer = null;
 let configMenuOpen = false;
 let configActionInFlight = false;
 let currentReleaseSnapshot = null;
+let currentContributionContentSnapshot = null;
+let contributionContentSnapshotRequestInFlight = null;
 
 const EYE_OPEN_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>';
 const EYE_CLOSED_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 19C5 19 1 12 1 12a21.77 21.77 0 0 1 5.06-6.94"/><path d="M9.9 4.24A10.94 10.94 0 0 1 12 5c7 0 11 7 11 7a21.86 21.86 0 0 1-2.16 3.19"/><path d="M1 1l22 22"/><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/></svg>';
@@ -414,6 +549,7 @@ const normalizeLuckmailTimestampValue = window.LuckMailUtils?.normalizeTimestamp
     return Number.isFinite(timestamp) ? timestamp : 0;
   });
 const sidepanelUpdateService = window.SidepanelUpdateService;
+const contributionContentService = window.SidepanelContributionContentService;
 const DEFAULT_LUCKMAIL_PRESERVE_TAG_NAME = window.LuckMailUtils?.DEFAULT_LUCKMAIL_PRESERVE_TAG_NAME || '保留';
 const normalizeIcloudHost = window.IcloudUtils?.normalizeIcloudHost
   || ((value) => {
@@ -485,8 +621,12 @@ const LOG_LEVEL_LABELS = {
   error: '错误',
 };
 
+const CLOUDFLARE_TEMP_EMAIL_REPOSITORY_URL = 'https://github.com/dreamhunter2333/cloudflare_temp_email';
+const CLOUDFLARE_TEMP_EMAIL_BUILD_TUTORIAL_URL = 'https://linux.do/t/topic/316819';
+const CLOUDFLARE_TEMP_EMAIL_RANDOM_SUBDOMAIN_ISSUE_URL = 'https://github.com/dreamhunter2333/cloudflare_temp_email/issues/942';
+
 function usesGeneratedAliasMailProvider(provider, mail2925Mode = getSelectedMail2925Mode()) {
-  return isManagedAliasProvider(provider);
+  return isManagedAliasProvider(provider, mail2925Mode);
 }
 
 function parseGmailBaseEmail(rawValue = '') {
@@ -547,6 +687,19 @@ function resetActionModalAlert() {
   autoStartAlert.hidden = true;
   autoStartAlert.textContent = '';
   autoStartAlert.className = 'modal-alert';
+}
+
+function setActionModalMessageContent({ text = '', html = '' } = {}) {
+  if (!autoStartMessage) {
+    return;
+  }
+
+  if (html) {
+    autoStartMessage.innerHTML = html;
+    return;
+  }
+
+  autoStartMessage.textContent = text;
 }
 
 function resetActionModalButtons() {
@@ -624,7 +777,7 @@ function resolveModalChoice(choice) {
   }
 }
 
-function openActionModal({ title, message, actions, option, alert, buildResult }) {
+function openActionModal({ title, message, messageHtml, actions, option, alert, buildResult }) {
   if (!autoStartModal) {
     return Promise.resolve(null);
   }
@@ -635,7 +788,7 @@ function openActionModal({ title, message, actions, option, alert, buildResult }
 
   resetActionModalButtons();
   autoStartTitle.textContent = title;
-  autoStartMessage.textContent = message;
+  setActionModalMessageContent({ text: message, html: messageHtml });
   currentModalActions = actions || [];
   modalResultBuilder = typeof buildResult === 'function' ? buildResult : null;
   const buttonSlots = currentModalActions.length <= 2
@@ -729,6 +882,72 @@ function setPromptDismissed(storageKey, dismissed) {
   }
 }
 
+function isNewUserGuidePromptDismissed() {
+  return isPromptDismissed(NEW_USER_GUIDE_PROMPT_DISMISSED_STORAGE_KEY);
+}
+
+function setNewUserGuidePromptDismissed(dismissed) {
+  setPromptDismissed(NEW_USER_GUIDE_PROMPT_DISMISSED_STORAGE_KEY, dismissed);
+}
+
+function shouldPromptNewUserGuide() {
+  if (isNewUserGuidePromptDismissed()) {
+    return false;
+  }
+  if (!btnContributionMode || btnContributionMode.disabled) {
+    return false;
+  }
+  if (latestState?.contributionMode) {
+    return false;
+  }
+  return true;
+}
+
+function getContributionPortalUrl() {
+  return String(contributionContentService?.portalUrl || 'https://apikey.qzz.io').trim();
+}
+
+function openNewUserGuidePrompt() {
+  return openActionModal({
+    title: '新手引导',
+    message: '如果你是第一次使用，可以先查看贡献页里的公告和使用教程。点击“查看引导”会自动打开贡献页面。',
+    alert: {
+      text: '本提示仅出现一次。',
+    },
+    actions: [
+      { id: null, label: '取消', variant: 'btn-ghost' },
+      { id: 'confirm', label: '查看引导', variant: 'btn-primary' },
+    ],
+  });
+}
+
+async function maybeShowNewUserGuidePrompt() {
+  if (!shouldPromptNewUserGuide()) {
+    return false;
+  }
+
+  setNewUserGuidePromptDismissed(true);
+  const choice = await openNewUserGuidePrompt();
+  if (choice === 'confirm') {
+    openExternalUrl(getContributionPortalUrl());
+    return true;
+  }
+  return false;
+}
+
+function getDismissedContributionContentPromptVersion() {
+  return String(localStorage.getItem(CONTRIBUTION_CONTENT_PROMPT_DISMISSED_VERSION_STORAGE_KEY) || '').trim();
+}
+
+function setDismissedContributionContentPromptVersion(version) {
+  const normalized = String(version || '').trim();
+  if (normalized) {
+    localStorage.setItem(CONTRIBUTION_CONTENT_PROMPT_DISMISSED_VERSION_STORAGE_KEY, normalized);
+  } else {
+    localStorage.removeItem(CONTRIBUTION_CONTENT_PROMPT_DISMISSED_VERSION_STORAGE_KEY);
+  }
+}
+
 function isAutoSkipFailuresPromptDismissed() {
   return isPromptDismissed(AUTO_SKIP_FAILURES_PROMPT_DISMISSED_STORAGE_KEY);
 }
@@ -762,14 +981,10 @@ async function openAutoSkipFailuresConfirmModal() {
   };
 }
 
-async function openAutoRunFallbackRiskConfirmModal(totalRuns, fallbackThreadIntervalMinutes) {
-  const intervalLabel = Number.isFinite(fallbackThreadIntervalMinutes)
-    ? `${fallbackThreadIntervalMinutes} 分钟`
-    : '未设置';
-
+async function openAutoRunFallbackRiskConfirmModal(totalRuns) {
   const result = await openConfirmModalWithOption({
     title: '自动运行风险提醒',
-    message: `当前设置为 ${totalRuns} 轮自动化，已开启自动重试，线程间隔为 ${intervalLabel}。轮数过多时，可能会因为 IP 短时间注册过多而集中失败。建议控制在 ${AUTO_RUN_FALLBACK_RISK_WARNING_MIN_RUNS} 轮以下，并将线程间隔设置在 ${AUTO_RUN_FALLBACK_RISK_RECOMMENDED_THREAD_INTERVAL_MINUTES} 分钟以上。是否继续？`,
+    message: `当前轮数已经不适合单节点情况，请确保已经配置并打开节点轮询功能（若没有配置，请点击贡献/使用按钮，根据网页中使用教程进行配置），避免连续使用一个节点注册，导致出现手机号验证。`,
     confirmLabel: '继续',
   });
 
@@ -781,18 +996,23 @@ async function openAutoRunFallbackRiskConfirmModal(totalRuns, fallbackThreadInte
 
 function updateConfigMenuControls() {
   const disabled = configActionInFlight || settingsSaveInFlight;
+  const contributionModeEnabled = Boolean(latestState?.contributionMode);
+  if (contributionModeEnabled && configMenuOpen) {
+    configMenuOpen = false;
+  }
   const importLocked = disabled
+    || contributionModeEnabled
     || currentAutoRun.autoRunning
     || Object.values(getStepStatuses()).some((status) => status === 'running');
   if (btnConfigMenu) {
-    btnConfigMenu.disabled = disabled;
+    btnConfigMenu.disabled = disabled || contributionModeEnabled;
     btnConfigMenu.setAttribute('aria-expanded', String(configMenuOpen));
   }
   if (configMenu) {
-    configMenu.hidden = !configMenuOpen;
+    configMenu.hidden = contributionModeEnabled || !configMenuOpen;
   }
   if (btnExportSettings) {
-    btnExportSettings.disabled = disabled;
+    btnExportSettings.disabled = disabled || contributionModeEnabled;
   }
   if (btnImportSettings) {
     btnImportSettings.disabled = importLocked;
@@ -875,6 +1095,12 @@ function hasSavedProgress(state = latestState) {
   return Object.values(statuses).some((status) => status !== 'pending');
 }
 
+function isContributionModeSwitchBlocked(state = latestState) {
+  const statuses = getStepStatuses(state);
+  const anyRunning = Object.values(statuses).some((status) => status === 'running');
+  return anyRunning || isAutoRunLockedPhase() || isAutoRunPausedPhase() || isAutoRunScheduledPhase();
+}
+
 function shouldOfferAutoModeChoice(state = latestState) {
   return hasSavedProgress(state) && getFirstUnfinishedStep(state) !== null;
 }
@@ -928,9 +1154,17 @@ function syncAutoRunState(source = {}) {
 }
 
 function isContributionButtonLocked() {
+  const autoActive = currentAutoRun.autoRunning
+    || isAutoRunLockedPhase()
+    || isAutoRunPausedPhase()
+    || isAutoRunScheduledPhase();
+  if (autoActive) {
+    return false;
+  }
+
   const statuses = getStepStatuses();
   const anyRunning = Object.values(statuses).some((status) => status === 'running');
-  return anyRunning || isAutoRunLockedPhase() || isAutoRunPausedPhase() || isAutoRunScheduledPhase();
+  return anyRunning;
 }
 
 function isAutoRunLockedPhase() {
@@ -1025,7 +1259,7 @@ function formatAutoStepDelayInputValue(value) {
 }
 
 function getRunCountValue() {
-  return Math.min(50, Math.max(1, parseInt(inputRunCount.value, 10) || 1));
+  return Math.max(1, parseInt(inputRunCount.value, 10) || 1);
 }
 
 function updateFallbackThreadIntervalInputState() {
@@ -1307,6 +1541,18 @@ function setCloudflareTempEmailDomainEditMode(editing, options = {}) {
   }
 }
 
+function applyCloudflareTempEmailSettingsState(state = {}) {
+  inputTempEmailBaseUrl.value = state?.cloudflareTempEmailBaseUrl || '';
+  inputTempEmailAdminAuth.value = state?.cloudflareTempEmailAdminAuth || '';
+  inputTempEmailCustomAuth.value = state?.cloudflareTempEmailCustomAuth || '';
+  inputTempEmailReceiveMailbox.value = state?.cloudflareTempEmailReceiveMailbox || '';
+  if (inputTempEmailUseRandomSubdomain) {
+    inputTempEmailUseRandomSubdomain.checked = Boolean(state?.cloudflareTempEmailUseRandomSubdomain);
+  }
+  renderCloudflareTempEmailDomainOptions(state?.cloudflareTempEmailDomain || '');
+  setCloudflareTempEmailDomainEditMode(false, { clearInput: true });
+}
+
 function collectSettingsPayload() {
   const { domains, activeDomain } = getCloudflareDomainsFromState();
   const selectedCloudflareDomain = normalizeCloudflareDomainValue(
@@ -1316,6 +1562,10 @@ function collectSettingsPayload() {
   const selectedCloudflareTempEmailDomain = normalizeCloudflareTempEmailDomainValue(
     !cloudflareTempEmailDomainEditMode ? selectTempEmailDomain.value : tempEmailActiveDomain
   ) || tempEmailActiveDomain;
+  const contributionModeEnabled = Boolean(latestState?.contributionMode);
+  const mail2925UseAccountPool = typeof inputMail2925UseAccountPool !== 'undefined'
+    ? Boolean(inputMail2925UseAccountPool?.checked)
+    : Boolean(latestState?.mail2925UseAccountPool);
   return {
     panelMode: selectPanelMode.value,
     vpsUrl: inputVpsUrl.value.trim(),
@@ -1326,14 +1576,22 @@ function collectSettingsPayload() {
     sub2apiPassword: inputSub2ApiPassword.value,
     sub2apiGroupName: inputSub2ApiGroup.value.trim(),
     sub2apiDefaultProxyName: inputSub2ApiDefaultProxy.value.trim(),
-    customPassword: inputPassword.value,
+    codex2apiUrl: inputCodex2ApiUrl.value.trim(),
+    codex2apiAdminKey: inputCodex2ApiAdminKey.value.trim(),
+    ...(contributionModeEnabled ? {} : {
+      customPassword: inputPassword.value,
+    }),
     mailProvider: selectMailProvider.value,
     mail2925Mode: getSelectedMail2925Mode(),
+    mail2925UseAccountPool,
+    currentMail2925AccountId: String(latestState?.currentMail2925AccountId || '').trim(),
     emailGenerator: selectEmailGenerator.value,
     autoDeleteUsedIcloudAlias: checkboxAutoDeleteIcloud?.checked,
     icloudHostPreference: selectIcloudHostPreference?.value || 'auto',
-    accountRunHistoryTextEnabled: Boolean(inputAccountRunHistoryTextEnabled?.checked),
-    accountRunHistoryHelperBaseUrl: normalizeAccountRunHistoryHelperBaseUrlValue(inputAccountRunHistoryHelperBaseUrl?.value),
+    ...(contributionModeEnabled ? {} : {
+      accountRunHistoryTextEnabled: Boolean(inputAccountRunHistoryTextEnabled?.checked),
+      accountRunHistoryHelperBaseUrl: normalizeAccountRunHistoryHelperBaseUrlValue(inputAccountRunHistoryHelperBaseUrl?.value),
+    }),
     ...buildManagedAliasBaseEmailPayload(),
     inbucketHost: inputInbucketHost.value.trim(),
     inbucketMailbox: inputInbucketMailbox.value.trim(),
@@ -1350,6 +1608,7 @@ function collectSettingsPayload() {
     cloudflareTempEmailAdminAuth: inputTempEmailAdminAuth.value,
     cloudflareTempEmailCustomAuth: inputTempEmailCustomAuth.value,
     cloudflareTempEmailReceiveMailbox: normalizeCloudflareTempEmailReceiveMailboxValue(inputTempEmailReceiveMailbox.value),
+    cloudflareTempEmailUseRandomSubdomain: Boolean(inputTempEmailUseRandomSubdomain?.checked),
     cloudflareTempEmailDomain: selectedCloudflareTempEmailDomain,
     cloudflareTempEmailDomains: tempEmailDomains,
     autoRunSkipFailures: inputAutoSkipFailures.checked,
@@ -1458,7 +1717,9 @@ function updateAccountRunHistorySettingsUI() {
     return;
   }
 
-  rowAccountRunHistoryHelperBaseUrl.style.display = inputAccountRunHistoryTextEnabled.checked ? '' : 'none';
+  rowAccountRunHistoryHelperBaseUrl.style.display = inputAccountRunHistoryTextEnabled.checked && !latestState?.contributionMode
+    ? ''
+    : 'none';
 }
 
 function setSettingsCardLocked(locked) {
@@ -1629,6 +1890,7 @@ function applyAutoRunStatus(payload = currentAutoRun) {
   syncScheduledCountdownTicker();
   updateStopButtonState(scheduled || paused || locked || Object.values(getStepStatuses()).some(status => status === 'running'));
   updateConfigMenuControls();
+  renderContributionMode();
 }
 
 function initializeManualStepActions() {
@@ -1697,6 +1959,8 @@ function applySettingsState(state) {
   inputSub2ApiPassword.value = state?.sub2apiPassword || '';
   inputSub2ApiGroup.value = state?.sub2apiGroupName || '';
   inputSub2ApiDefaultProxy.value = state?.sub2apiDefaultProxyName || '';
+  inputCodex2ApiUrl.value = state?.codex2apiUrl || '';
+  inputCodex2ApiAdminKey.value = state?.codex2apiAdminKey || '';
   const restoredMailProvider = isCustomMailProvider(state?.mailProvider)
     || [ICLOUD_PROVIDER, 'hotmail-api', GMAIL_PROVIDER, 'luckmail-api', '163', '163-vip', '126', 'qq', 'inbucket', '2925', 'cloudflare-temp-email'].includes(String(state?.mailProvider || '').trim())
     ? String(state?.mailProvider || '163').trim()
@@ -1732,6 +1996,15 @@ function applySettingsState(state) {
   if (inputAccountRunHistoryHelperBaseUrl) {
     inputAccountRunHistoryHelperBaseUrl.value = normalizeAccountRunHistoryHelperBaseUrlValue(state?.accountRunHistoryHelperBaseUrl);
   }
+  if (inputContributionNickname) {
+    inputContributionNickname.value = state?.contributionNickname || '';
+  }
+  if (inputContributionQq) {
+    inputContributionQq.value = state?.contributionQq || '';
+  }
+  if (inputMail2925UseAccountPool) {
+    inputMail2925UseAccountPool.checked = Boolean(state?.mail2925UseAccountPool);
+  }
   setManagedAliasBaseEmailInputForProvider(restoredMailProvider, state);
   inputInbucketHost.value = state?.inbucketHost || '';
   inputInbucketMailbox.value = state?.inbucketMailbox || '';
@@ -1742,14 +2015,9 @@ function applySettingsState(state) {
   inputLuckmailBaseUrl.value = normalizeLuckmailBaseUrl(state?.luckmailBaseUrl);
   selectLuckmailEmailType.value = normalizeLuckmailEmailType(state?.luckmailEmailType);
   inputLuckmailDomain.value = state?.luckmailDomain || '';
-  inputTempEmailBaseUrl.value = state?.cloudflareTempEmailBaseUrl || '';
-  inputTempEmailAdminAuth.value = state?.cloudflareTempEmailAdminAuth || '';
-  inputTempEmailCustomAuth.value = state?.cloudflareTempEmailCustomAuth || '';
-  inputTempEmailReceiveMailbox.value = state?.cloudflareTempEmailReceiveMailbox || '';
+  applyCloudflareTempEmailSettingsState(state);
   renderCloudflareDomainOptions(state?.cloudflareDomain || '');
   setCloudflareDomainEditMode(false, { clearInput: true });
-  renderCloudflareTempEmailDomainOptions(state?.cloudflareTempEmailDomain || '');
-  setCloudflareTempEmailDomainEditMode(false, { clearInput: true });
   inputAutoSkipFailures.checked = Boolean(state?.autoRunSkipFailures);
   inputAutoSkipFailuresThreadIntervalMinutes.value = String(normalizeAutoRunThreadIntervalMinutes(state?.autoRunFallbackThreadIntervalMinutes));
   inputAutoDelayEnabled.checked = Boolean(state?.autoRunDelayEnabled);
@@ -1810,6 +2078,7 @@ async function restoreState() {
 
     updateStatusDisplay(latestState);
     updateProgressCounter();
+    renderContributionMode();
   } catch (err) {
     console.error('Failed to restore state:', err);
   }
@@ -1867,13 +2136,49 @@ function openReleaseListPage() {
   openExternalUrl(getReleaseListUrl());
 }
 
-async function openContributionUploadPage() {
-  if (isContributionButtonLocked()) {
-    throw new Error('当前流程运行中，请先停止后再打开贡献页面。');
+function buildCloudflareTempEmailUsageGuideModalConfig() {
+  const useCloudflareTempEmailProvider = String(selectMailProvider?.value || '').trim().toLowerCase() === 'cloudflare-temp-email';
+  const useCloudflareTempEmailGenerator = getSelectedEmailGenerator() === 'cloudflare-temp-email';
+  let alertText = '当前还没有把 Cloudflare Temp Email 选为邮箱服务或邮箱生成器。下面说明同时覆盖“生成邮箱”和“接收转发邮件”两种用法。';
+  if (useCloudflareTempEmailProvider && useCloudflareTempEmailGenerator) {
+    alertText = '当前同时把 Cloudflare Temp Email 用作“邮箱服务”和“邮箱生成器”。请同时配置生成邮箱和接收转发两套必填项。';
+  } else if (useCloudflareTempEmailProvider) {
+    alertText = '当前把 Cloudflare Temp Email 用作“邮箱服务”。重点填写 Temp API、Custom Auth 和 邮件接收。';
+  } else if (useCloudflareTempEmailGenerator) {
+    alertText = '当前把 Cloudflare Temp Email 用作“邮箱生成器”。重点填写 Temp API、Admin Auth 和 Temp 域名；随机子域按需开启。';
   }
 
-  openExternalUrl(CONTRIBUTION_UPLOAD_URL);
-  return true;
+  return {
+    title: 'Cloudflare Temp Email 使用教程',
+    alert: { text: alertText },
+    messageHtml: `Temp API：填写 Cloudflare Temp Email 后端地址。<br><br>
+Admin Auth：填写后端 admin auth。<br>
+仅在“邮箱生成 = Cloudflare Temp Email”时必填。<br><br>
+Custom Auth：仅当站点额外开启访问密码时填写。没有开启就留空。<br><br>
+Temp 域名：填写允许创建的基础域名。启用随机子域时，这里仍然填写基础域名。<br><br>
+随机子域：仅在“邮箱生成 = Cloudflare Temp Email”时使用。<br>
+后端需要已配置 RANDOM_SUBDOMAIN_DOMAINS。<br>
+CF DNS 需要设置 MX *，参考 <a href="${CLOUDFLARE_TEMP_EMAIL_RANDOM_SUBDOMAIN_ISSUE_URL}" target="_blank" rel="noopener noreferrer">Issue #942</a>。<br><br>
+邮件接收：仅在“邮箱服务 = Cloudflare Temp Email”时填写。<br>
+这里填写真正接收转发邮件的目标邮箱。<br><br>
+搭建教程：<a href="${CLOUDFLARE_TEMP_EMAIL_BUILD_TUTORIAL_URL}" target="_blank" rel="noopener noreferrer">LINUX DO 教程</a>。`,
+  };
+}
+
+function showCloudflareTempEmailUsageGuide() {
+  const modalConfig = buildCloudflareTempEmailUsageGuideModalConfig();
+  return openActionModal({
+    title: modalConfig.title,
+    messageHtml: modalConfig.messageHtml,
+    alert: modalConfig.alert,
+    actions: [
+      { id: 'ok', label: '知道了', variant: 'btn-primary' },
+    ],
+  });
+}
+
+function openCloudflareTempEmailRepositoryPage() {
+  openExternalUrl(CLOUDFLARE_TEMP_EMAIL_REPOSITORY_URL);
 }
 
 function createUpdateNoteList(notes = []) {
@@ -2068,8 +2373,120 @@ async function initializeReleaseInfo() {
   renderReleaseSnapshot(snapshot);
 }
 
+function getContributionUpdateHintMessage(snapshot = currentContributionContentSnapshot) {
+  if (!snapshot?.promptVersion) {
+    return '';
+  }
+
+  return '公告 / 使用教程有更新了，可点上方“贡献/使用”查看。';
+}
+
+function positionContributionUpdateHint() {
+  if (!contributionUpdateLayer || !contributionUpdateHint || !btnContributionMode) {
+    return;
+  }
+  if (contributionUpdateLayer.hidden || contributionUpdateHint.hidden) {
+    return;
+  }
+
+  const buttonRect = btnContributionMode.getBoundingClientRect();
+  const viewportWidth = Math.max(document.documentElement?.clientWidth || 0, window.innerWidth || 0);
+  const viewportHeight = Math.max(document.documentElement?.clientHeight || 0, window.innerHeight || 0);
+  const hintWidth = contributionUpdateHint.offsetWidth || 220;
+  const hintHeight = contributionUpdateHint.offsetHeight || 56;
+  const viewportPadding = 12;
+  const gap = 10;
+
+  const maxLeft = Math.max(viewportPadding, viewportWidth - hintWidth - viewportPadding);
+  const left = Math.min(Math.max(viewportPadding, Math.round(buttonRect.left)), maxLeft);
+  const shouldPlaceAbove = (buttonRect.bottom + gap + hintHeight) > (viewportHeight - viewportPadding)
+    && buttonRect.top > (hintHeight + gap + viewportPadding);
+  const top = shouldPlaceAbove
+    ? Math.max(viewportPadding, Math.round(buttonRect.top - hintHeight - gap))
+    : Math.max(viewportPadding, Math.round(buttonRect.bottom + gap));
+  const buttonCenter = Math.round(buttonRect.left + (buttonRect.width / 2));
+  const arrowOffset = Math.min(Math.max(16, buttonCenter - left), Math.max(16, hintWidth - 16));
+
+  contributionUpdateHint.style.left = `${left}px`;
+  contributionUpdateHint.style.top = `${top}px`;
+  contributionUpdateHint.style.setProperty('--contribution-update-arrow-left', `${arrowOffset}px`);
+}
+
+function shouldShowContributionUpdateHint(snapshot = currentContributionContentSnapshot) {
+  const promptVersion = String(snapshot?.promptVersion || '').trim();
+  if (!contributionUpdateLayer || !contributionUpdateHint || !contributionUpdateHintText || !btnContributionMode) {
+    return false;
+  }
+  if (!promptVersion) {
+    return false;
+  }
+  if (promptVersion === getDismissedContributionContentPromptVersion()) {
+    return false;
+  }
+  if (latestState?.contributionMode) {
+    return false;
+  }
+  return !btnContributionMode.disabled;
+}
+
+function renderContributionUpdateHint(snapshot = currentContributionContentSnapshot) {
+  if (!contributionUpdateLayer || !contributionUpdateHint) {
+    return;
+  }
+
+  const visible = shouldShowContributionUpdateHint(snapshot);
+  contributionUpdateLayer.hidden = !visible;
+  contributionUpdateHint.hidden = !visible;
+  if (!visible || !contributionUpdateHintText) {
+    return;
+  }
+
+  contributionUpdateHintText.textContent = getContributionUpdateHintMessage(snapshot);
+  if (typeof window.requestAnimationFrame === 'function') {
+    window.requestAnimationFrame(() => positionContributionUpdateHint());
+    return;
+  }
+  positionContributionUpdateHint();
+}
+
+function dismissContributionUpdateHint() {
+  const promptVersion = String(currentContributionContentSnapshot?.promptVersion || '').trim();
+  if (promptVersion) {
+    setDismissedContributionContentPromptVersion(promptVersion);
+  }
+  renderContributionUpdateHint();
+}
+
+async function refreshContributionContentHint() {
+  if (!contributionContentService?.getContentUpdateSnapshot) {
+    currentContributionContentSnapshot = null;
+    renderContributionUpdateHint();
+    return null;
+  }
+  if (contributionContentSnapshotRequestInFlight) {
+    return contributionContentSnapshotRequestInFlight;
+  }
+
+  contributionContentSnapshotRequestInFlight = contributionContentService.getContentUpdateSnapshot()
+    .then((snapshot) => {
+      currentContributionContentSnapshot = snapshot;
+      renderContributionUpdateHint(snapshot);
+      return snapshot;
+    })
+    .catch((error) => {
+      currentContributionContentSnapshot = null;
+      renderContributionUpdateHint(null);
+      throw error;
+    })
+    .finally(() => {
+      contributionContentSnapshotRequestInFlight = null;
+    });
+
+  return contributionContentSnapshotRequestInFlight;
+}
+
 function syncPasswordField(state) {
-  inputPassword.value = state.customPassword || state.password || '';
+  inputPassword.value = state?.contributionMode ? '' : (state.customPassword || state.password || '');
 }
 
 function isCustomMailProvider(provider = selectMailProvider.value) {
@@ -2193,6 +2610,37 @@ function getCurrentHotmailAccount(state = latestState) {
 
 function getCurrentHotmailEmail(state = latestState) {
   return String(getCurrentHotmailAccount(state)?.email || '').trim();
+}
+
+function getMail2925Accounts(state = latestState) {
+  return Array.isArray(state?.mail2925Accounts) ? state.mail2925Accounts : [];
+}
+
+function getCurrentMail2925Account(state = latestState) {
+  const currentId = state?.currentMail2925AccountId;
+  return getMail2925Accounts(state).find((account) => account.id === currentId) || null;
+}
+
+function getCurrentMail2925Email(state = latestState) {
+  return String(getCurrentMail2925Account(state)?.email || '').trim();
+}
+
+function syncMail2925BaseEmailFromCurrentAccount(state = latestState, options = {}) {
+  const { persist = false } = options;
+  if (!isMail2925AccountPoolEnabled(state)) {
+    return false;
+  }
+
+  const currentEmail = getCurrentMail2925Email(state);
+  if (!currentEmail || currentEmail === String(state?.mail2925BaseEmail || '').trim()) {
+    return false;
+  }
+
+  syncLatestState({ mail2925BaseEmail: currentEmail });
+  if (persist) {
+    saveSettings({ silent: true }).catch(() => {});
+  }
+  return true;
 }
 
 function getCurrentLuckmailPurchase(state = latestState) {
@@ -2334,6 +2782,8 @@ function updateMailLoginButtonState() {
 function updateMailProviderUI() {
   const use2925 = selectMailProvider.value === '2925';
   const useGmail = selectMailProvider.value === GMAIL_PROVIDER;
+  const useMail2925 = selectMailProvider.value === '2925';
+  const useMail2925AccountPool = useMail2925 && Boolean(inputMail2925UseAccountPool?.checked);
   const mail2925Mode = getSelectedMail2925Mode();
   const useGeneratedAlias = usesGeneratedAliasMailProvider(selectMailProvider.value, mail2925Mode);
   const useInbucket = selectMailProvider.value === 'inbucket';
@@ -2343,13 +2793,18 @@ function updateMailProviderUI() {
   const useIcloudProvider = isIcloudMailProvider();
   const useEmailGenerator = !useHotmail && !useLuckmail && !useGeneratedAlias && !useCustomEmail;
   const useCloudflareTempEmailProvider = selectMailProvider.value === 'cloudflare-temp-email';
-  const aliasUiCopy = useGeneratedAlias ? getManagedAliasProviderUiCopy(selectMailProvider.value) : null;
+  const aliasUiCopy = useGeneratedAlias
+    ? getManagedAliasProviderUiCopy(selectMailProvider.value, mail2925Mode)
+    : null;
   const uiCopy = getCurrentRegistrationEmailUiCopy();
   updateMailLoginButtonState();
   if (rowMail2925Mode) {
-    rowMail2925Mode.style.display = 'none';
+    rowMail2925Mode.style.display = use2925 ? '' : 'none';
   }
-  rowEmailPrefix.style.display = useGeneratedAlias ? '' : 'none';
+  if (rowMail2925PoolSettings) {
+    rowMail2925PoolSettings.style.display = useMail2925 ? '' : 'none';
+  }
+  rowEmailPrefix.style.display = useGeneratedAlias && !useMail2925AccountPool ? '' : 'none';
   const hotmailServiceMode = getSelectedHotmailServiceMode();
   rowInbucketHost.style.display = useInbucket ? '' : 'none';
   rowInbucketMailbox.style.display = useInbucket ? '' : 'none';
@@ -2360,9 +2815,13 @@ function updateMailProviderUI() {
   const showCloudflareDomain = useEmailGenerator && useCloudflare;
   const showCloudflareTempEmailSettings = useCloudflareTempEmailProvider || (useEmailGenerator && useCloudflareTempEmailGenerator);
   const showCloudflareTempEmailReceiveMailbox = useCloudflareTempEmailProvider && !useCloudflareTempEmailGenerator;
+  const showCloudflareTempEmailRandomSubdomainToggle = useEmailGenerator && useCloudflareTempEmailGenerator;
   const showCloudflareTempEmailDomain = useEmailGenerator && useCloudflareTempEmailGenerator;
   if (rowEmailGenerator) {
     rowEmailGenerator.style.display = useEmailGenerator ? '' : 'none';
+  }
+  if (cloudflareTempEmailSection) {
+    cloudflareTempEmailSection.style.display = showCloudflareTempEmailSettings ? '' : 'none';
   }
   if (icloudSection) {
     const showIcloudSection = (useEmailGenerator && useIcloud) || useIcloudProvider;
@@ -2385,6 +2844,9 @@ function updateMailProviderUI() {
   rowTempEmailAdminAuth.style.display = showCloudflareTempEmailSettings ? '' : 'none';
   rowTempEmailCustomAuth.style.display = showCloudflareTempEmailSettings ? '' : 'none';
   rowTempEmailReceiveMailbox.style.display = showCloudflareTempEmailReceiveMailbox ? '' : 'none';
+  if (rowTempEmailRandomSubdomainToggle) {
+    rowTempEmailRandomSubdomainToggle.style.display = showCloudflareTempEmailRandomSubdomainToggle ? '' : 'none';
+  }
   rowTempEmailDomain.style.display = showCloudflareTempEmailDomain ? '' : 'none';
   const { domains: tempEmailDomains } = getCloudflareTempEmailDomainsFromState();
   if (showCloudflareTempEmailDomain) {
@@ -2396,11 +2858,24 @@ function updateMailProviderUI() {
   if (hotmailSection) {
     hotmailSection.style.display = useHotmail ? '' : 'none';
   }
+  if (mail2925Section) {
+    mail2925Section.style.display = useMail2925AccountPool ? '' : 'none';
+  }
   if (luckmailSection) {
     luckmailSection.style.display = useLuckmail ? '' : 'none';
   }
   labelEmailPrefix.textContent = '邮箱前缀';
   inputEmailPrefix.placeholder = '例如 abc';
+  if (labelMail2925UseAccountPool) {
+    labelMail2925UseAccountPool.style.display = useMail2925 ? '' : 'none';
+  }
+  syncMail2925PoolAccountOptions(latestState);
+  if (selectMail2925PoolAccount) {
+    selectMail2925PoolAccount.style.display = useMail2925AccountPool ? '' : 'none';
+    selectMail2925PoolAccount.disabled = !useMail2925AccountPool || getMail2925Accounts().length === 0;
+  }
+  inputEmailPrefix.style.display = '';
+  inputEmailPrefix.readOnly = false;
   selectEmailGenerator.disabled = useHotmail || useLuckmail || useGeneratedAlias || useCustomEmail;
   if (useGmail) {
     labelEmailPrefix.textContent = 'Gmail 原邮箱';
@@ -2449,8 +2924,18 @@ function updateMailProviderUI() {
   if (autoHintText && useGeneratedAlias && aliasUiCopy?.hint) {
     autoHintText.textContent = aliasUiCopy.hint;
   }
+  if (autoHintText && useMail2925AccountPool) {
+    autoHintText.textContent = getMail2925Accounts().length
+      ? (useGeneratedAlias
+        ? '当前已启用 2925 号池模式，步骤 3 会基于下拉框选中的号池邮箱生成别名地址'
+        : '当前已启用 2925 号池模式，步骤 4 / 8 遇到登录页时会优先使用下拉框选中的账号自动登录')
+      : '当前已启用 2925 号池模式，请先在下方 2925 账号池中添加账号并选择邮箱';
+  }
   if (autoHintText && showCloudflareTempEmailReceiveMailbox) {
     autoHintText.textContent = '若注册邮箱会转发到 Cloudflare Temp Email，请在“邮件接收”中填写实际接收转发邮件的邮箱。';
+  }
+  if (autoHintText && showCloudflareTempEmailRandomSubdomainToggle && inputTempEmailUseRandomSubdomain?.checked) {
+    autoHintText.textContent = '已启用随机子域名：扩展会按当前选中的 Temp 域名提交，并额外携带 enableRandomSubdomain；是否生效取决于后端 RANDOM_SUBDOMAIN_DOMAINS 配置。';
   }
   if (useHotmail) {
     inputEmail.value = getCurrentHotmailEmail();
@@ -2458,6 +2943,9 @@ function updateMailProviderUI() {
     inputEmail.value = getCurrentLuckmailEmail();
   }
   renderHotmailAccounts();
+  if (useMail2925) {
+    renderMail2925Accounts();
+  }
   if (useLuckmail) {
     renderLuckmailPurchases();
   }
@@ -2529,18 +3017,24 @@ async function saveCloudflareTempEmailDomainSettings(domains, activeDomain, opti
 
 function updatePanelModeUI() {
   const useSub2Api = selectPanelMode.value === 'sub2api';
-  rowVpsUrl.style.display = useSub2Api ? 'none' : '';
-  rowVpsPassword.style.display = useSub2Api ? 'none' : '';
-  rowLocalCpaStep9Mode.style.display = useSub2Api ? 'none' : '';
+  const useCodex2Api = selectPanelMode.value === 'codex2api';
+  const useCpa = !useSub2Api && !useCodex2Api;
+  rowVpsUrl.style.display = useCpa ? '' : 'none';
+  rowVpsPassword.style.display = useCpa ? '' : 'none';
+  rowLocalCpaStep9Mode.style.display = useCpa ? '' : 'none';
   rowSub2ApiUrl.style.display = useSub2Api ? '' : 'none';
   rowSub2ApiEmail.style.display = useSub2Api ? '' : 'none';
   rowSub2ApiPassword.style.display = useSub2Api ? '' : 'none';
   rowSub2ApiGroup.style.display = useSub2Api ? '' : 'none';
   rowSub2ApiDefaultProxy.style.display = useSub2Api ? '' : 'none';
+  rowCodex2ApiUrl.style.display = useCodex2Api ? '' : 'none';
+  rowCodex2ApiAdminKey.style.display = useCodex2Api ? '' : 'none';
 
   const step9Btn = document.querySelector('.step-btn[data-step-key="platform-verify"]');
   if (step9Btn) {
-    step9Btn.textContent = useSub2Api ? 'SUB2API 回调验证' : 'CPA 回调验证';
+    step9Btn.textContent = useSub2Api
+      ? 'SUB2API 回调验证'
+      : (useCodex2Api ? 'Codex2API 回调验证' : 'CPA 回调验证');
   }
 }
 
@@ -2631,6 +3125,7 @@ function updateButtonStates() {
   if (checkboxAutoDeleteIcloud) checkboxAutoDeleteIcloud.disabled = disableIcloudControls;
   if (btnContributionMode) btnContributionMode.disabled = isContributionButtonLocked();
   updateStopButtonState(anyRunning || autoScheduled || isAutoRunPausedPhase() || autoLocked);
+  renderContributionMode();
 }
 
 function updateStopButtonState(active) {
@@ -2770,6 +3265,7 @@ async function fetchGeneratedEmail(options = {}) {
         generateNew: true,
         generator: selectEmailGenerator.value,
         mailProvider: selectMailProvider.value,
+        mail2925Mode: getSelectedMail2925Mode(),
         ...buildManagedAliasBaseEmailPayload(),
       },
     });
@@ -2829,7 +3325,9 @@ const hotmailManager = window.SidepanelHotmailManager?.createHotmailManager({
     btnDeleteAllHotmailAccounts,
     btnHotmailUsageGuide,
     btnImportHotmailAccounts,
+    btnToggleHotmailForm,
     btnToggleHotmailList,
+    hotmailFormShell,
     hotmailAccountsList,
     hotmailListShell,
     inputEmail,
@@ -2872,6 +3370,53 @@ const renderHotmailAccounts = hotmailManager?.renderHotmailAccounts
 const bindHotmailEvents = hotmailManager?.bindHotmailEvents
   || (() => { });
 bindHotmailEvents();
+
+const mail2925Manager = window.SidepanelMail2925Manager?.createMail2925Manager({
+  state: {
+    getLatestState: () => latestState,
+    syncLatestState,
+  },
+  dom: {
+    btnAddMail2925Account,
+    btnDeleteAllMail2925Accounts,
+    btnImportMail2925Accounts,
+    btnToggleMail2925Form,
+    btnToggleMail2925List,
+    inputMail2925Email,
+    inputMail2925Import,
+    inputMail2925Password,
+    mail2925AccountsList,
+    mail2925FormShell,
+    mail2925ListShell,
+  },
+  helpers: {
+    copyTextToClipboard,
+    escapeHtml,
+    getMail2925Accounts,
+    openConfirmModal,
+    refreshManagedAliasBaseEmail: () => {
+      syncMail2925BaseEmailFromCurrentAccount(latestState, { persist: true });
+      setManagedAliasBaseEmailInputForProvider('2925', latestState);
+    },
+    showToast,
+  },
+  runtime: {
+    sendMessage: (message) => chrome.runtime.sendMessage(message),
+  },
+  constants: {
+    copyIcon: COPY_ICON,
+    displayTimeZone: DISPLAY_TIMEZONE,
+    expandedStorageKey: 'multipage-mail2925-list-expanded',
+  },
+  mail2925Utils: window.Mail2925Utils || {},
+});
+const initMail2925ListExpandedState = mail2925Manager?.initMail2925ListExpandedState
+  || (() => { });
+const renderMail2925Accounts = mail2925Manager?.renderMail2925Accounts
+  || (() => { });
+const bindMail2925Events = mail2925Manager?.bindMail2925Events
+  || (() => { });
+bindMail2925Events();
 
 const icloudManager = window.SidepanelIcloudManager?.createIcloudManager({
   dom: {
@@ -3007,7 +3552,76 @@ const renderAccountRecords = accountRecordsManager?.render
   || (() => { });
 const bindAccountRecordEvents = accountRecordsManager?.bindEvents
   || (() => { });
+const closeAccountRecordsPanel = accountRecordsManager?.closePanel
+  || (() => { });
 bindAccountRecordEvents();
+const contributionModeManager = window.SidepanelContributionMode?.createContributionModeManager({
+  state: {
+    getLatestState: () => latestState,
+  },
+  dom: {
+    btnConfigMenu,
+    btnContributionMode,
+    inputContributionNickname,
+    inputContributionQq,
+    contributionCallbackStatus,
+    btnExitContributionMode,
+    btnOpenAccountRecords,
+    btnOpenContributionUpload,
+    btnStartContribution,
+    contributionModePanel,
+    contributionModeSummary,
+    contributionModeText,
+    contributionOauthStatus,
+    rowAccountRunHistoryHelperBaseUrl,
+    rowAccountRunHistoryTextEnabled,
+    rowCustomPassword,
+    rowLocalCpaStep9Mode,
+    rowSub2ApiDefaultProxy,
+    rowSub2ApiEmail,
+    rowSub2ApiGroup,
+    rowSub2ApiPassword,
+    rowSub2ApiUrl,
+    rowVpsPassword,
+    rowVpsUrl,
+    selectPanelMode,
+  },
+  helpers: {
+    applySettingsState,
+    closeAccountRecordsPanel,
+    closeConfigMenu,
+    getContributionNickname: () => latestState?.email || '',
+    getContributionProfile: () => ({
+      nickname: String(inputContributionNickname?.value || '').trim(),
+      qq: String(inputContributionQq?.value || '').trim(),
+    }),
+    isModeSwitchBlocked: isContributionModeSwitchBlocked,
+    openConfirmModal,
+    openExternalUrl,
+    showToast,
+    startContributionAutoRun: () => startAutoRunFromCurrentSettings(),
+    updateAccountRunHistorySettingsUI,
+    updateConfigMenuControls,
+    updatePanelModeUI,
+    updateStatusDisplay,
+  },
+  runtime: {
+    sendMessage: (message) => chrome.runtime.sendMessage(message),
+  },
+  constants: {
+    contributionOauthUrl: `${contributionContentService?.portalUrl || 'https://apikey.qzz.io'}/oauth/`,
+    contributionUploadUrl: contributionContentService?.portalUrl || 'https://apikey.qzz.io',
+  },
+});
+const baseRenderContributionMode = contributionModeManager?.render
+  || (() => { });
+const renderContributionMode = () => {
+  baseRenderContributionMode();
+  renderContributionUpdateHint();
+};
+const bindContributionModeEvents = contributionModeManager?.bindEvents
+  || (() => { });
+bindContributionModeEvents();
 renderStepsList();
 
 async function exportSettingsFile() {
@@ -3317,20 +3931,25 @@ btnConfigMenu?.addEventListener('click', (event) => {
   toggleConfigMenu();
 });
 
-btnContributionMode?.addEventListener('click', async () => {
-  try {
-    await openContributionUploadPage();
-  } catch (err) {
-    showToast(err.message, 'error');
-  }
-});
-
 btnRepoHome?.addEventListener('click', () => {
   openRepositoryHomePage();
 });
 
+btnCloudflareTempEmailUsageGuide?.addEventListener('click', () => {
+  showCloudflareTempEmailUsageGuide();
+});
+
+btnCloudflareTempEmailGithub?.addEventListener('click', () => {
+  openCloudflareTempEmailRepositoryPage();
+});
+
 extensionUpdateStatus?.addEventListener('click', () => {
   openReleaseListPage();
+});
+
+btnDismissContributionUpdateHint?.addEventListener('click', (event) => {
+  event.stopPropagation();
+  dismissContributionUpdateHint();
 });
 
 configMenu?.addEventListener('click', (event) => {
@@ -3367,59 +3986,75 @@ autoStartModal?.addEventListener('click', (event) => {
 });
 btnAutoStartClose?.addEventListener('click', () => resolveModalChoice(null));
 
+async function startAutoRunFromCurrentSettings() {
+  try {
+    await refreshContributionContentHint();
+  } catch (error) {
+    console.warn('Failed to refresh contribution content hint before auto run:', error);
+  }
+
+  const totalRuns = getRunCountValue();
+  let mode = 'restart';
+  const autoRunSkipFailures = inputAutoSkipFailures.checked;
+  const contributionNickname = String(inputContributionNickname?.value || '').trim();
+  const contributionQq = String(inputContributionQq?.value || '').trim();
+  const fallbackThreadIntervalMinutes = normalizeAutoRunThreadIntervalMinutes(
+    inputAutoSkipFailuresThreadIntervalMinutes.value
+  );
+  inputAutoSkipFailuresThreadIntervalMinutes.value = String(fallbackThreadIntervalMinutes);
+
+  if (shouldOfferAutoModeChoice()) {
+    const startStep = getFirstUnfinishedStep();
+    const runningStep = getRunningSteps()[0] ?? null;
+    const choice = await openAutoStartChoiceDialog(startStep, { runningStep });
+    if (!choice) {
+      return false;
+    }
+    mode = choice;
+  }
+
+  if (shouldWarnAutoRunFallbackRisk(totalRuns, autoRunSkipFailures)
+    && !isAutoRunFallbackRiskPromptDismissed()) {
+    const result = await openAutoRunFallbackRiskConfirmModal(totalRuns);
+    if (!result.confirmed) {
+      return false;
+    }
+    if (result.dismissPrompt) {
+      setAutoRunFallbackRiskPromptDismissed(true);
+    }
+  }
+
+  btnAutoRun.disabled = true;
+  inputRunCount.disabled = true;
+  const delayEnabled = inputAutoDelayEnabled.checked;
+  const delayMinutes = normalizeAutoDelayMinutes(inputAutoDelayMinutes.value);
+  inputAutoDelayMinutes.value = String(delayMinutes);
+  btnAutoRun.innerHTML = delayEnabled
+    ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg> 璁″垝涓?..'
+    : '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg> 杩愯涓?..';
+  const response = await chrome.runtime.sendMessage({
+    type: delayEnabled ? 'SCHEDULE_AUTO_RUN' : 'AUTO_RUN',
+    source: 'sidepanel',
+    payload: {
+      totalRuns,
+      delayMinutes,
+      autoRunSkipFailures,
+      contributionMode: Boolean(latestState?.contributionMode),
+      contributionNickname,
+      contributionQq,
+      mode,
+    },
+  });
+  if (response?.error) {
+    throw new Error(response.error);
+  }
+  return true;
+}
+
 // Auto Run
 btnAutoRun.addEventListener('click', async () => {
   try {
-    const totalRuns = getRunCountValue();
-    let mode = 'restart';
-    const autoRunSkipFailures = inputAutoSkipFailures.checked;
-    const fallbackThreadIntervalMinutes = normalizeAutoRunThreadIntervalMinutes(
-      inputAutoSkipFailuresThreadIntervalMinutes.value
-    );
-    inputAutoSkipFailuresThreadIntervalMinutes.value = String(fallbackThreadIntervalMinutes);
-
-    if (shouldOfferAutoModeChoice()) {
-      const startStep = getFirstUnfinishedStep();
-      const runningStep = getRunningSteps()[0] ?? null;
-      const choice = await openAutoStartChoiceDialog(startStep, { runningStep });
-      if (!choice) {
-        return;
-      }
-      mode = choice;
-    }
-
-    if (shouldWarnAutoRunFallbackRisk(totalRuns, autoRunSkipFailures)
-      && !isAutoRunFallbackRiskPromptDismissed()) {
-      const result = await openAutoRunFallbackRiskConfirmModal(totalRuns, fallbackThreadIntervalMinutes);
-      if (!result.confirmed) {
-        return;
-      }
-      if (result.dismissPrompt) {
-        setAutoRunFallbackRiskPromptDismissed(true);
-      }
-    }
-
-    btnAutoRun.disabled = true;
-    inputRunCount.disabled = true;
-    const delayEnabled = inputAutoDelayEnabled.checked;
-    const delayMinutes = normalizeAutoDelayMinutes(inputAutoDelayMinutes.value);
-    inputAutoDelayMinutes.value = String(delayMinutes);
-    btnAutoRun.innerHTML = delayEnabled
-      ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg> 计划中...'
-      : '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg> 运行中...';
-    const response = await chrome.runtime.sendMessage({
-      type: delayEnabled ? 'SCHEDULE_AUTO_RUN' : 'AUTO_RUN',
-      source: 'sidepanel',
-      payload: {
-        totalRuns,
-        delayMinutes,
-        autoRunSkipFailures,
-        mode,
-      },
-    });
-    if (response?.error) {
-      throw new Error(response.error);
-    }
+    await startAutoRunFromCurrentSettings();
   } catch (err) {
     setDefaultAutoRunButton();
     inputRunCount.disabled = false;
@@ -3626,6 +4261,13 @@ selectMailProvider.addEventListener('change', async () => {
   if (leavingHotmail || leavingLuckmail || leavingGeneratedAlias) {
     await clearRegistrationEmail({ silent: true }).catch(() => { });
   }
+  if (nextProvider === '2925' && Boolean(inputMail2925UseAccountPool?.checked)) {
+    syncMail2925PoolAccountOptions(latestState);
+    if (!selectMail2925PoolAccount.value && getMail2925Accounts().length > 0) {
+      selectMail2925PoolAccount.value = String(getMail2925Accounts()[0]?.id || '');
+    }
+    await syncSelectedMail2925PoolAccount({ silent: true }).catch(() => { });
+  }
   if (nextProvider === LUCKMAIL_PROVIDER) {
     queueLuckmailPurchaseRefresh();
   }
@@ -3795,6 +4437,22 @@ inputSub2ApiDefaultProxy.addEventListener('blur', () => {
   saveSettings({ silent: true }).catch(() => { });
 });
 
+inputCodex2ApiUrl.addEventListener('input', () => {
+  markSettingsDirty(true);
+  scheduleSettingsAutoSave();
+});
+inputCodex2ApiUrl.addEventListener('blur', () => {
+  saveSettings({ silent: true }).catch(() => { });
+});
+
+inputCodex2ApiAdminKey.addEventListener('input', () => {
+  markSettingsDirty(true);
+  scheduleSettingsAutoSave();
+});
+inputCodex2ApiAdminKey.addEventListener('blur', () => {
+  saveSettings({ silent: true }).catch(() => { });
+});
+
 inputEmailPrefix.addEventListener('input', () => {
   maybeClearGeneratedAliasAfterEmailPrefixChange().catch(() => { });
   syncManagedAliasBaseEmailDraftFromInput();
@@ -3804,6 +4462,36 @@ inputEmailPrefix.addEventListener('input', () => {
 inputEmailPrefix.addEventListener('blur', () => {
   maybeClearGeneratedAliasAfterEmailPrefixChange().catch(() => {});
   syncManagedAliasBaseEmailDraftFromInput();
+  saveSettings({ silent: true }).catch(() => {});
+});
+
+selectMail2925PoolAccount?.addEventListener('change', async () => {
+  try {
+    await syncSelectedMail2925PoolAccount();
+    markSettingsDirty(true);
+    saveSettings({ silent: true }).catch(() => {});
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+});
+
+inputMail2925UseAccountPool?.addEventListener('change', async () => {
+  const enabled = Boolean(inputMail2925UseAccountPool.checked);
+  syncLatestState({ mail2925UseAccountPool: enabled });
+  if (enabled) {
+    syncMail2925PoolAccountOptions(latestState);
+    if (!selectMail2925PoolAccount.value && getMail2925Accounts().length > 0) {
+      selectMail2925PoolAccount.value = String(getMail2925Accounts()[0]?.id || '');
+    }
+    try {
+      await syncSelectedMail2925PoolAccount({ silent: true });
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  }
+  setManagedAliasBaseEmailInputForProvider('2925', latestState);
+  updateMailProviderUI();
+  markSettingsDirty(true);
   saveSettings({ silent: true }).catch(() => {});
 });
 
@@ -3879,6 +4567,13 @@ inputTempEmailReceiveMailbox.addEventListener('input', () => {
 });
 inputTempEmailReceiveMailbox.addEventListener('blur', () => {
   inputTempEmailReceiveMailbox.value = normalizeCloudflareTempEmailReceiveMailboxValue(inputTempEmailReceiveMailbox.value);
+  saveSettings({ silent: true }).catch(() => { });
+});
+
+inputTempEmailUseRandomSubdomain?.addEventListener('change', () => {
+  updateMailProviderUI();
+  clearRegistrationEmail({ silent: true }).catch(() => { });
+  markSettingsDirty(true);
   saveSettings({ silent: true }).catch(() => { });
 });
 
@@ -4058,6 +4753,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       updateProgressCounter();
       updateButtonStates();
       renderHotmailAccounts();
+      renderMail2925Accounts();
       if (isLuckmailProvider()) {
         queueLuckmailPurchaseRefresh();
       }
@@ -4069,11 +4765,19 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       if (message.payload.email !== undefined) {
         inputEmail.value = message.payload.email || '';
       }
-      if (message.payload.password !== undefined) {
-        inputPassword.value = message.payload.password || '';
+      if (
+        message.payload.password !== undefined
+        || message.payload.customPassword !== undefined
+        || message.payload.contributionMode !== undefined
+      ) {
+        syncPasswordField(latestState || {});
       }
       if (message.payload.localCpaStep9Mode !== undefined) {
         setLocalCpaStep9Mode(message.payload.localCpaStep9Mode);
+      }
+      if (message.payload.panelMode !== undefined) {
+        selectPanelMode.value = message.payload.panelMode || 'cpa';
+        updatePanelModeUI();
       }
       if (message.payload.oauthUrl !== undefined) {
         displayOauthUrl.textContent = message.payload.oauthUrl || '等待中...';
@@ -4095,13 +4799,29 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       if (message.payload.cloudflareTempEmailReceiveMailbox !== undefined) {
         inputTempEmailReceiveMailbox.value = message.payload.cloudflareTempEmailReceiveMailbox || '';
       }
+      if (message.payload.cloudflareTempEmailUseRandomSubdomain !== undefined && inputTempEmailUseRandomSubdomain) {
+        inputTempEmailUseRandomSubdomain.checked = Boolean(message.payload.cloudflareTempEmailUseRandomSubdomain);
+      }
       if (message.payload.cloudflareTempEmailDomain !== undefined || message.payload.cloudflareTempEmailDomains !== undefined) {
         renderCloudflareTempEmailDomainOptions(message.payload.cloudflareTempEmailDomain || latestState?.cloudflareTempEmailDomain || '');
+      }
+      if (
+        message.payload.cloudflareTempEmailUseRandomSubdomain !== undefined
+        || message.payload.cloudflareTempEmailDomain !== undefined
+        || message.payload.cloudflareTempEmailDomains !== undefined
+      ) {
+        updateMailProviderUI();
       }
       if (message.payload.currentHotmailAccountId !== undefined || message.payload.hotmailAccounts !== undefined) {
         renderHotmailAccounts();
         if (selectMailProvider.value === 'hotmail-api') {
           inputEmail.value = getCurrentHotmailEmail();
+        }
+      }
+      if (message.payload.currentMail2925AccountId !== undefined || message.payload.mail2925Accounts !== undefined) {
+        renderMail2925Accounts();
+        if (selectMailProvider.value === '2925') {
+          setManagedAliasBaseEmailInputForProvider('2925', latestState);
         }
       }
       if (message.payload.luckmailApiKey !== undefined) {
@@ -4177,6 +4897,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           )
         );
       }
+      renderContributionMode();
       break;
     }
 
@@ -4256,6 +4977,14 @@ document.addEventListener('keydown', (event) => {
   }
 });
 
+window.addEventListener('resize', () => {
+  positionContributionUpdateHint();
+});
+
+document.addEventListener('scroll', () => {
+  positionContributionUpdateHint();
+}, true);
+
 // ============================================================
 // Init
 // ============================================================
@@ -4263,6 +4992,7 @@ document.addEventListener('keydown', (event) => {
 initializeManualStepActions();
 initTheme();
 initHotmailListExpandedState();
+initMail2925ListExpandedState();
 updateSaveButtonState();
 updateConfigMenuControls();
 setLocalCpaStep9Mode(DEFAULT_LOCAL_CPA_STEP9_MODE);
@@ -4277,4 +5007,12 @@ restoreState().then(() => {
   updatePanelModeUI();
   updateButtonStates();
   updateStatusDisplay(latestState);
+  return refreshContributionContentHint()
+    .catch((error) => {
+      console.warn('Failed to refresh contribution content hint during initialization:', error);
+      return null;
+    })
+    .then(() => maybeShowNewUserGuidePrompt());
+}).catch((err) => {
+  console.error('Failed to initialize sidepanel state:', err);
 });

@@ -1,14 +1,16 @@
 (function attachBackgroundStep8(root, factory) {
   root.MultiPageBackgroundStep8 = factory();
 })(typeof self !== 'undefined' ? self : globalThis, function createBackgroundStep8Module() {
+  const MAIL_2925_FILTER_LOOKBACK_MS = 10 * 60 * 1000;
+
   function createStep8Executor(deps = {}) {
     const {
       addLog,
       chrome,
       CLOUDFLARE_TEMP_EMAIL_PROVIDER,
       confirmCustomVerificationStepBypass,
+      ensureMail2925MailboxSession,
       ensureStep8VerificationPageReady,
-      executeStep7,
       getOAuthFlowRemainingMs,
       getOAuthFlowStepTimeoutMs,
       getMailConfig,
@@ -19,17 +21,16 @@
       isVerificationMailPollingError,
       LUCKMAIL_PROVIDER,
       resolveVerificationStep,
+      rerunStep7ForStep8Recovery,
       reuseOrCreateTab,
       setState,
-      setStepStatus,
       shouldUseCustomRegistrationEmail,
-      sleepWithStop,
       STANDARD_MAIL_VERIFICATION_RESEND_INTERVAL_MS,
       STEP7_MAIL_POLLING_RECOVERY_MAX_ATTEMPTS,
       throwIfStopped,
     } = deps;
 
-    async function getStep8ReadyTimeoutMs(actionLabel) {
+    async function getStep8ReadyTimeoutMs(actionLabel, expectedOauthUrl = '') {
       if (typeof getOAuthFlowStepTimeoutMs !== 'function') {
         return 15000;
       }
@@ -37,10 +38,11 @@
       return getOAuthFlowStepTimeoutMs(15000, {
         step: 8,
         actionLabel,
+        oauthUrl: expectedOauthUrl,
       });
     }
 
-    function getStep8RemainingTimeResolver() {
+    function getStep8RemainingTimeResolver(expectedOauthUrl = '') {
       if (typeof getOAuthFlowRemainingMs !== 'function') {
         return undefined;
       }
@@ -48,6 +50,7 @@
       return async (details = {}) => getOAuthFlowRemainingMs({
         step: 8,
         actionLabel: details.actionLabel || '登录验证码流程',
+        oauthUrl: expectedOauthUrl,
       });
     }
 
@@ -55,11 +58,51 @@
       return String(value || '').trim().toLowerCase();
     }
 
+    function getExpectedMail2925MailboxEmail(state = {}) {
+      if (Boolean(state?.mail2925UseAccountPool)) {
+        const currentAccountId = String(state?.currentMail2925AccountId || '').trim();
+        const accounts = Array.isArray(state?.mail2925Accounts) ? state.mail2925Accounts : [];
+        const currentAccount = accounts.find((account) => String(account?.id || '') === currentAccountId) || null;
+        const accountEmail = String(currentAccount?.email || '').trim().toLowerCase();
+        if (accountEmail) {
+          return accountEmail;
+        }
+      }
+
+      return String(state?.mail2925BaseEmail || '').trim().toLowerCase();
+    }
+
+    async function focusOrOpenMailTab(mail) {
+      const alive = await isTabAlive(mail.source);
+      if (alive) {
+        if (mail.navigateOnReuse) {
+          await reuseOrCreateTab(mail.source, mail.url, {
+            inject: mail.inject,
+            injectSource: mail.injectSource,
+          });
+          return;
+        }
+
+        const tabId = await getTabId(mail.source);
+        await chrome.tabs.update(tabId, { active: true });
+        return;
+      }
+
+      await reuseOrCreateTab(mail.source, mail.url, {
+        inject: mail.inject,
+        injectSource: mail.injectSource,
+      });
+    }
+
     async function runStep8Attempt(state) {
       const mail = getMailConfig(state);
       if (mail.error) throw new Error(mail.error);
 
       const stepStartedAt = Date.now();
+      const verificationFilterAfterTimestamp = mail.provider === '2925'
+        ? Math.max(0, stepStartedAt - MAIL_2925_FILTER_LOOKBACK_MS)
+        : stepStartedAt;
+      const verificationSessionKey = `8:${stepStartedAt}`;
       const authTabId = await getTabId('signup-page');
 
       if (authTabId) {
@@ -73,7 +116,7 @@
 
       throwIfStopped();
       const pageState = await ensureStep8VerificationPageReady({
-        timeoutMs: await getStep8ReadyTimeoutMs('确认登录验证码页已就绪'),
+        timeoutMs: await getStep8ReadyTimeoutMs('确认登录验证码页已就绪', state?.oauthUrl || ''),
       });
       const shouldCompareVerificationEmail = mail.provider !== '2925';
       const displayedVerificationEmail = shouldCompareVerificationEmail
@@ -106,23 +149,19 @@
         await addLog(`步骤 8：正在通过 ${mail.label} 轮询验证码...`);
       } else {
         await addLog(`步骤 8：正在打开${mail.label}...`);
-
-        const alive = await isTabAlive(mail.source);
-        if (alive) {
-          if (mail.navigateOnReuse) {
-            await reuseOrCreateTab(mail.source, mail.url, {
-              inject: mail.inject,
-              injectSource: mail.injectSource,
-            });
-          } else {
-            const tabId = await getTabId(mail.source);
-            await chrome.tabs.update(tabId, { active: true });
-          }
-        } else {
-          await reuseOrCreateTab(mail.source, mail.url, {
-            inject: mail.inject,
-            injectSource: mail.injectSource,
+        if (mail.provider === '2925' && typeof ensureMail2925MailboxSession === 'function') {
+          await ensureMail2925MailboxSession({
+            accountId: state.currentMail2925AccountId || null,
+            forceRelogin: false,
+            allowLoginWhenOnLoginPage: Boolean(state?.mail2925UseAccountPool),
+            expectedMailboxEmail: getExpectedMail2925MailboxEmail(state),
+            actionLabel: 'Step 8: ensure 2925 mailbox session',
           });
+        } else {
+          await focusOrOpenMailTab(mail);
+        }
+        if (mail.provider === '2925') {
+          await addLog(`步骤 8：将直接使用当前已登录的 ${mail.label} 轮询验证码。`, 'info');
         }
       }
 
@@ -130,27 +169,16 @@
         ...state,
         step8VerificationTargetEmail: displayedVerificationEmail || '',
       }, mail, {
-        filterAfterTimestamp: stepStartedAt,
-        getRemainingTimeMs: getStep8RemainingTimeResolver(),
+        filterAfterTimestamp: verificationFilterAfterTimestamp,
+        sessionKey: verificationSessionKey,
+        disableTimeBudgetCap: mail.provider === '2925',
+        getRemainingTimeMs: getStep8RemainingTimeResolver(state?.oauthUrl || ''),
         requestFreshCodeFirst: false,
         targetEmail: fixedTargetEmail,
         resendIntervalMs: (mail.provider === HOTMAIL_PROVIDER || mail.provider === '2925')
           ? 0
           : STANDARD_MAIL_VERIFICATION_RESEND_INTERVAL_MS,
       });
-    }
-
-    async function rerunStep7ForStep8Recovery(options = {}) {
-      const {
-        logMessage = '步骤 8：正在回到步骤 7，重新发起登录验证码流程...',
-        postStepDelayMs = 3000,
-      } = options;
-      const currentState = await getState();
-      await addLog(logMessage, 'warn');
-      await executeStep7(currentState);
-      if (postStepDelayMs > 0) {
-        await sleepWithStop(postStepDelayMs);
-      }
     }
 
     function isStep8RestartStep7Error(error) {

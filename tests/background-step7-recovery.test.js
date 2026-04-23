@@ -10,8 +10,7 @@ test('step 8 submits login verification directly without replaying step 7', asyn
   const calls = {
     ensureReady: 0,
     ensureReadyOptions: [],
-    executeStep7: 0,
-    sleep: [],
+    rerunStep7: 0,
     resolveOptions: null,
     setStates: [],
   };
@@ -32,8 +31,8 @@ test('step 8 submits login verification directly without replaying step 7', asyn
       calls.ensureReadyOptions.push(options || null);
       return { state: 'verification_page', displayedEmail: 'display.user@example.com' };
     },
-    executeStep7: async () => {
-      calls.executeStep7 += 1;
+    rerunStep7ForStep8Recovery: async () => {
+      calls.rerunStep7 += 1;
     },
     getOAuthFlowRemainingMs: async () => 5000,
     getOAuthFlowStepTimeoutMs: async (defaultTimeoutMs) => Math.min(defaultTimeoutMs, 5000),
@@ -59,9 +58,6 @@ test('step 8 submits login verification directly without replaying step 7', asyn
     },
     setStepStatus: async () => {},
     shouldUseCustomRegistrationEmail: () => false,
-    sleepWithStop: async (ms) => {
-      calls.sleep.push(ms);
-    },
     STANDARD_MAIL_VERIFICATION_RESEND_INTERVAL_MS: 25000,
     STEP7_MAIL_POLLING_RECOVERY_MAX_ATTEMPTS: 8,
     throwIfStopped: () => {},
@@ -79,8 +75,7 @@ test('step 8 submits login verification directly without replaying step 7', asyn
 
   assert.equal(calls.resolveOptions.beforeSubmit, undefined);
   assert.equal(calls.ensureReady, 1);
-  assert.equal(calls.executeStep7, 0);
-  assert.deepStrictEqual(calls.sleep, []);
+  assert.equal(calls.rerunStep7, 0);
   assert.equal(calls.resolveOptions.filterAfterTimestamp, 123456);
   assert.equal(typeof calls.resolveOptions.getRemainingTimeMs, 'function');
   assert.equal(await calls.resolveOptions.getRemainingTimeMs({ actionLabel: '登录验证码流程' }), 5000);
@@ -94,20 +89,32 @@ test('step 8 submits login verification directly without replaying step 7', asyn
   ]);
 });
 
-test('step 8 disables resend interval for 2925 mailbox polling', async () => {
+test('step 8 uses a fixed 10-minute lookback window and disables resend interval for 2925 mailbox polling', async () => {
   let capturedOptions = null;
+  let ensureCalls = 0;
+  let ensureOptions = null;
+  const tabUpdates = [];
+  const tabReuses = [];
+  const realDateNow = Date.now;
+  Date.now = () => 900000;
 
   const executor = api.createStep8Executor({
     addLog: async () => {},
     chrome: {
       tabs: {
-        update: async () => {},
+        update: async (tabId, payload) => {
+          tabUpdates.push({ tabId, payload });
+        },
       },
     },
     CLOUDFLARE_TEMP_EMAIL_PROVIDER: 'cloudflare-temp-email',
     confirmCustomVerificationStepBypass: async () => {},
+    ensureMail2925MailboxSession: async (options) => {
+      ensureCalls += 1;
+      ensureOptions = options;
+    },
     ensureStep8VerificationPageReady: async () => ({ state: 'verification_page' }),
-    executeStep7: async () => {},
+    rerunStep7ForStep8Recovery: async () => {},
     getOAuthFlowRemainingMs: async () => 8000,
     getOAuthFlowStepTimeoutMs: async (defaultTimeoutMs) => Math.min(defaultTimeoutMs, 8000),
     getMailConfig: () => ({
@@ -117,7 +124,15 @@ test('step 8 disables resend interval for 2925 mailbox polling', async () => {
       url: 'https://2925.com',
       navigateOnReuse: false,
     }),
-    getState: async () => ({ email: 'user@example.com', password: 'secret' }),
+    getState: async () => ({
+      email: 'user@example.com',
+      password: 'secret',
+      mail2925UseAccountPool: true,
+      currentMail2925AccountId: 'acc-1',
+      mail2925Accounts: [
+        { id: 'acc-1', email: 'pool-user@2925.com' },
+      ],
+    }),
     getTabId: async (sourceName) => (sourceName === 'signup-page' ? 1 : 2),
     HOTMAIL_PROVIDER: 'hotmail-api',
     isTabAlive: async () => true,
@@ -126,22 +141,45 @@ test('step 8 disables resend interval for 2925 mailbox polling', async () => {
     resolveVerificationStep: async (_step, _state, _mail, options) => {
       capturedOptions = options;
     },
-    reuseOrCreateTab: async () => {},
+    reuseOrCreateTab: async (source, url) => {
+      tabReuses.push({ source, url });
+    },
     setState: async () => {},
     setStepStatus: async () => {},
     shouldUseCustomRegistrationEmail: () => false,
-    sleepWithStop: async () => {},
     STANDARD_MAIL_VERIFICATION_RESEND_INTERVAL_MS: 25000,
     STEP7_MAIL_POLLING_RECOVERY_MAX_ATTEMPTS: 8,
     throwIfStopped: () => {},
   });
 
-  await executor.executeStep8({
-    email: 'user@example.com',
-    password: 'secret',
-    oauthUrl: 'https://oauth.example/latest',
-  });
+  try {
+    await executor.executeStep8({
+      email: 'user@example.com',
+      password: 'secret',
+      oauthUrl: 'https://oauth.example/latest',
+      mail2925UseAccountPool: true,
+      currentMail2925AccountId: 'acc-1',
+      mail2925Accounts: [
+        { id: 'acc-1', email: 'pool-user@2925.com' },
+      ],
+    });
+  } finally {
+    Date.now = realDateNow;
+  }
 
+  assert.equal(ensureCalls, 1);
+  assert.deepStrictEqual(ensureOptions, {
+    accountId: 'acc-1',
+    forceRelogin: false,
+    allowLoginWhenOnLoginPage: true,
+    expectedMailboxEmail: 'pool-user@2925.com',
+    actionLabel: 'Step 8: ensure 2925 mailbox session',
+  });
+  assert.deepStrictEqual(tabReuses, []);
+  assert.deepStrictEqual(tabUpdates, [
+    { tabId: 1, payload: { active: true } },
+  ]);
+  assert.equal(capturedOptions.filterAfterTimestamp, 300000);
   assert.equal(capturedOptions.resendIntervalMs, 0);
   assert.equal(capturedOptions.targetEmail, '');
   assert.equal(capturedOptions.beforeSubmit, undefined);
@@ -161,7 +199,7 @@ test('step 8 falls back to the run email when the verification page does not exp
     CLOUDFLARE_TEMP_EMAIL_PROVIDER: 'cloudflare-temp-email',
     confirmCustomVerificationStepBypass: async () => {},
     ensureStep8VerificationPageReady: async () => ({ state: 'verification_page', displayedEmail: '' }),
-    executeStep7: async () => {},
+    rerunStep7ForStep8Recovery: async () => {},
     getOAuthFlowRemainingMs: async () => 8000,
     getOAuthFlowStepTimeoutMs: async (defaultTimeoutMs) => Math.min(defaultTimeoutMs, 8000),
     getMailConfig: () => ({
@@ -184,7 +222,6 @@ test('step 8 falls back to the run email when the verification page does not exp
     setState: async () => {},
     setStepStatus: async () => {},
     shouldUseCustomRegistrationEmail: () => false,
-    sleepWithStop: async () => {},
     STANDARD_MAIL_VERIFICATION_RESEND_INTERVAL_MS: 25000,
     STEP7_MAIL_POLLING_RECOVERY_MAX_ATTEMPTS: 8,
     throwIfStopped: () => {},
@@ -201,7 +238,7 @@ test('step 8 falls back to the run email when the verification page does not exp
 
 test('step 8 does not rerun step 7 when verification submit lands on add-phone', async () => {
   const calls = {
-    executeStep7: 0,
+    rerunStep7: 0,
     logs: [],
   };
 
@@ -217,8 +254,8 @@ test('step 8 does not rerun step 7 when verification submit lands on add-phone',
     CLOUDFLARE_TEMP_EMAIL_PROVIDER: 'cloudflare-temp-email',
     confirmCustomVerificationStepBypass: async () => {},
     ensureStep8VerificationPageReady: async () => ({ state: 'verification_page' }),
-    executeStep7: async () => {
-      calls.executeStep7 += 1;
+    rerunStep7ForStep8Recovery: async () => {
+      calls.rerunStep7 += 1;
     },
     getOAuthFlowRemainingMs: async () => 8000,
     getOAuthFlowStepTimeoutMs: async (defaultTimeoutMs) => Math.min(defaultTimeoutMs, 8000),
@@ -242,7 +279,6 @@ test('step 8 does not rerun step 7 when verification submit lands on add-phone',
     setState: async () => {},
     setStepStatus: async () => {},
     shouldUseCustomRegistrationEmail: () => false,
-    sleepWithStop: async () => {},
     STANDARD_MAIL_VERIFICATION_RESEND_INTERVAL_MS: 25000,
     STEP7_MAIL_POLLING_RECOVERY_MAX_ATTEMPTS: 8,
     throwIfStopped: () => {},
@@ -257,6 +293,6 @@ test('step 8 does not rerun step 7 when verification submit lands on add-phone',
     /add-phone/
   );
 
-  assert.equal(calls.executeStep7, 0);
+  assert.equal(calls.rerunStep7, 0);
   assert.ok(!calls.logs.some(({ message }) => /准备从步骤 7 重新开始/.test(message)));
 });
