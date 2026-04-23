@@ -61,6 +61,8 @@
     function is163MailHost(hostname = '') {
       return hostname === 'mail.163.com'
         || hostname.endsWith('.mail.163.com')
+        || hostname === 'mail.126.com'
+        || hostname.endsWith('.mail.126.com')
         || hostname === 'webmail.vip.163.com';
     }
 
