@@ -6256,6 +6256,7 @@ const signupFlowHelpers = self.MultiPageSignupFlowHelpers?.createSignupFlowHelpe
   isGeneratedAliasProvider,
   isReusableGeneratedAliasEmail,
   isSignupEmailVerificationPageUrl,
+  isRetryableContentScriptTransportError,
   isHotmailProvider,
   isLuckmailProvider,
   isSignupPasswordPageUrl,
