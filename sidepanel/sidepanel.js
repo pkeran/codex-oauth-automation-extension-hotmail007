@@ -2785,7 +2785,43 @@ function getCustomVerificationPromptCopy(step) {
       text: `点击确认后会跳过步骤 ${step}。`,
       tone: 'danger',
     },
+    ...(step === 8 ? {
+      phoneActionLabel: '出现手机号验证',
+      phoneActionAlert: {
+        text: '如果当前页面已经进入手机号验证，可直接标记为失败并继续下一个邮箱。',
+        tone: 'danger',
+      },
+    } : {}),
   };
+}
+
+async function openCustomVerificationConfirmDialog(step) {
+  const promptCopy = getCustomVerificationPromptCopy(step);
+  if (step === 8) {
+    return openActionModal({
+      title: promptCopy.title,
+      message: promptCopy.message,
+      alert: promptCopy.alert,
+      actions: [
+        { id: null, label: '取消', variant: 'btn-ghost' },
+        { id: 'add_phone', label: promptCopy.phoneActionLabel || '出现手机号验证', variant: 'btn-outline' },
+        { id: 'confirm', label: '确认跳过', variant: 'btn-danger' },
+      ],
+      buildResult: (choice) => ({
+        confirmed: choice === 'confirm',
+        addPhoneDetected: choice === 'add_phone',
+      }),
+    });
+  }
+
+  const confirmed = await openConfirmModal({
+    title: promptCopy.title,
+    message: promptCopy.message,
+    confirmLabel: '确认跳过',
+    confirmVariant: 'btn-danger',
+    alert: promptCopy.alert,
+  });
+  return { confirmed, addPhoneDetected: false };
 }
 
 function getHotmailAccounts(state = latestState) {
@@ -4950,15 +4986,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     case 'REQUEST_CUSTOM_VERIFICATION_BYPASS_CONFIRMATION': {
       (async () => {
         const step = Number(message.payload?.step);
-        const promptCopy = getCustomVerificationPromptCopy(step);
-        const confirmed = await openConfirmModal({
-          title: promptCopy.title,
-          message: promptCopy.message,
-          confirmLabel: '确认跳过',
-          confirmVariant: 'btn-danger',
-          alert: promptCopy.alert,
-        });
-        sendResponse({ confirmed });
+        const result = await openCustomVerificationConfirmDialog(step);
+        sendResponse(result || { confirmed: false, addPhoneDetected: false });
       })().catch((err) => {
         sendResponse({ error: err.message });
       });

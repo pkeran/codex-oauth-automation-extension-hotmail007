@@ -174,3 +174,45 @@ return {
   assert.equal(api.getLockedRunCountFromEmailPool(), 3);
   assert.equal(api.getRunCountValue(), 3);
 });
+
+test('sidepanel custom verification dialog exposes add-phone action for step 8', async () => {
+  const bundle = [
+    extractFunction('getCustomVerificationPromptCopy'),
+    extractFunction('openCustomVerificationConfirmDialog'),
+  ].join('\n');
+
+  const api = new Function(`
+let openActionModalPayload = null;
+
+async function openActionModal(options) {
+  openActionModalPayload = options;
+  return options.buildResult('add_phone');
+}
+
+async function openConfirmModal() {
+  throw new Error('step 8 should use action modal');
+}
+
+${bundle}
+
+return {
+  getCustomVerificationPromptCopy,
+  openCustomVerificationConfirmDialog,
+  getOpenActionModalPayload: () => openActionModalPayload,
+};
+`)();
+
+  const prompt = api.getCustomVerificationPromptCopy(8);
+  assert.equal(prompt.phoneActionLabel, '出现手机号验证');
+
+  const result = await api.openCustomVerificationConfirmDialog(8);
+  assert.deepEqual(result, {
+    confirmed: false,
+    addPhoneDetected: true,
+  });
+
+  const modalPayload = api.getOpenActionModalPayload();
+  assert.equal(modalPayload.actions.length, 3);
+  assert.equal(modalPayload.actions[1].id, 'add_phone');
+  assert.equal(modalPayload.actions[1].label, '出现手机号验证');
+});
