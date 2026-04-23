@@ -110,6 +110,16 @@
 - `2925` 旧的“只填前缀”使用方式已经不再推荐，应该改为填写完整基邮箱
 - 如果你手动填写了与当前 `Gmail / 2925 provide` 基邮箱不匹配的完整邮箱，侧边栏会在保存或执行 Step 3 时拦截
 
+## 2026-04-23 更新补充：自定义邮箱池
+
+本次版本新增 `自定义邮箱池` 生成方式，用于把一批已经准备好的邮箱按顺序分配给自动流程：
+
+- 在 `邮箱生成` 中选择 `自定义邮箱池`
+- 在新出现的 `邮箱池` 文本框里按“每行一个邮箱”填写
+- `Auto` 运行次数会自动跟随邮箱池数量，无需再手动对齐轮数
+- 同一目标轮次的失败重试会继续复用当前轮邮箱，不会提前跳到下一个
+- 实际收码仍然走当前 `Mail` 对应的邮箱服务，因此应保证邮箱池里的地址与当前收码链路匹配
+
 ## 快速开始
 
 如果你只是想先跑通一套最稳的组合，建议直接按下面三种方案之一配置。
@@ -118,9 +128,9 @@
 
 1. `CPA` 填你的管理面板 OAuth 页面地址
 2. `Mail` 选择 `QQ Mail`、`163 Mail` 或 `163 VIP Mail`
-3. `邮箱生成` 选择 `DuckDuckGo` 或 `Cloudflare`
+3. `邮箱生成` 选择 `DuckDuckGo`、`Cloudflare` 或 `自定义邮箱池`
 4. 若你选择 `Cloudflare`，先按下文把 Cloudflare Email Routing 配好
-5. 点击 `获取` 生成邮箱，或手动粘贴一个你能收信的邮箱
+5. 若你选择 `自定义邮箱池`，就在 `邮箱池` 中按行填入邮箱；否则点击 `获取` 生成邮箱，或手动粘贴一个你能收信的邮箱
 6. 先单步验证 `Step 1 ~ Step 4`
 7. 验证没问题后再点右上角 `Auto`
 
@@ -132,7 +142,15 @@
 4. Step 1 会直接在 SUB2API 后台生成 OAuth 链接
 5. Step 10 会把 localhost 回调提交回 SUB2API，并直接创建 OpenAI 账号
 
-### 方案 C：`Hotmail 账号池`
+### 方案 C：`Codex2API + QQ / 163 / 163 VIP`
+
+1. `来源` 选择 `Codex2API`
+2. 填好 `Codex2API` 后台地址、管理密钥
+3. `Mail` 与 `邮箱生成` 的配置方式同方案 A
+4. Step 7 会直接通过 Codex2API 协议 `/api/admin/oauth/generate-auth-url` 生成 OAuth 链接
+5. Step 10 会把 localhost 回调中的 `code / state` 通过 `/api/admin/oauth/exchange-code` 直接提交给 Codex2API
+
+### 方案 D：`Hotmail 账号池`
 
 1. `Mail` 选择 `Hotmail`
 2. 在 `Hotmail 账号池` 中添加 `邮箱 / Client ID / Refresh Token`
@@ -140,7 +158,7 @@
 4. 通过后再执行步骤或 `Auto`
 5. 当前项目中，`Mail = Hotmail` 时会直接使用账号池里的邮箱作为注册邮箱，不再走 `Duck / Cloudflare` 自动生成
 
-### 方案 D：`2925 账号池`
+### 方案 E：`2925 账号池`
 
 1. `Mail` 选择 `2925`
 2. 在 `2925 账号池` 中添加 `邮箱 / 密码`
@@ -176,6 +194,20 @@ Step 1 和 Step 10 都依赖这个地址。
 - `默认代理`：可选，填写代理名称或代理 ID；留空时不使用代理
 
 插件会在 Step 1 和 Step 10 自动从 `/api/v1/admin/proxies/all` 解析这个代理，并在 OAuth 链接生成、授权码交换和账号创建请求中附带 `proxy_id`。如果名称匹配到多个代理，请改填代理 ID；留空则不会发送 `proxy_id`。
+
+### `Codex2API`
+
+当 `来源 = Codex2API` 时，需要配置：
+
+- `Codex2API`：后台账号管理页地址，默认 `http://localhost:8080/admin/accounts`
+- `管理密钥`：Codex2API 的 `Admin Secret`
+
+插件会在：
+
+- Step 7 调用 `POST /api/admin/oauth/generate-auth-url` 生成授权链接
+- Step 10 调用 `POST /api/admin/oauth/exchange-code` 完成 localhost callback 的授权码交换并创建账号
+
+这条来源是协议直连，不依赖 Codex2API 后台页面的“添加账号 / OAuth 授权 / 生成授权链接”按钮 DOM。
 
 ### `Mail`
 
@@ -327,17 +359,18 @@ Step 3 使用的注册邮箱。
 来源有两种：
 
 - 手动粘贴
-- 点击 `获取` 自动生成邮箱（DuckDuckGo 或 Cloudflare）
+- 按当前生成方式自动生成或分配邮箱（DuckDuckGo / Cloudflare / 自定义邮箱池）
 
 注意：
 
 - 若 `邮箱生成 = Cloudflare`，插件里只需要维护 `CF 域名`
+- 若 `邮箱生成 = 自定义邮箱池`，需要在 `邮箱池` 文本框中按行维护邮箱列表
 - `CF 域名` 支持保存多个，并通过下拉框切换当前要生成的域名
 - Cloudflare 侧的转发规则、Catch-all、路由目标邮箱等，都需要你自己提前在 Cloudflare 后台配置好
 - 当 `Mail = Hotmail` 时，这个输入框由账号池自动同步当前账号邮箱
 - 当 `Mail = Hotmail` 时，Step 3 会直接使用 Hotmail 账号池里的邮箱；`Duck / Cloudflare` 不参与自动邮箱生成
 - 若你准备走 `Cloudflare`，更推荐把 `Mail` 设为 `QQ / 163 / 163 VIP`；`Inbucket` 仅在它能真实接收外部邮件并完成 Cloudflare 验证时再使用
-- 当前 `Auto` 按钮只负责 DuckDuckGo 地址获取
+- `Auto` 会按当前“邮箱生成”配置自动获取或分配邮箱；若当前是 `自定义邮箱池`，则会按邮箱池顺序取用
 - 如果你使用 Inbucket，它只是验证码收件箱，不会自动生成 Inbucket 地址
 
 ### `邮箱生成 = Cloudflare` 时的配置
@@ -487,7 +520,7 @@ Cloudflare 模式下，插件不会再调用 Cloudflare API 创建路由。
 1. Step 1 打开 `https://chatgpt.com/`
 2. 根据 `Mail` 选择邮箱来源
 3. 如果 `Mail = Hotmail`，会从账号池自动分配一个可用账号
-4. 如果不是 Hotmail，则按当前“邮箱生成”配置尝试自动获取邮箱（Duck / Cloudflare / iCloud 等）
+4. 如果不是 Hotmail，则按当前“邮箱生成”配置尝试自动获取或分配邮箱（Duck / Cloudflare / iCloud / 自定义邮箱池等）
 5. Step 2 点击注册、填写邮箱，并按真实落地页进入密码页或直接进入邮箱验证码页
 6. 如果自动获取失败，暂停并等待你在侧边栏填写邮箱后点击 `Continue`
 7. 继续执行 Step 3 ~ Step 10
@@ -528,6 +561,7 @@ Cloudflare 模式下，插件不会再调用 Cloudflare API 创建路由。
 - 使用自定义密码或自动生成密码
 - 在密码页填写密码并提交注册表单
 - 后台会在真正把 Step 3 记为完成前，再确认页面是否已经推进；如果此时出现认证页 `重试` 页面，或 `/email-verification` 上的 `405 / Route Error` 重试页，会先通过共享恢复逻辑最多自动点击 5 次 `重试` 尝试恢复，再继续后续链路
+- Step 3 收尾阶段如果页面切换导致旧内容脚本失联，后台单次消息等待不会再卡住超过当前收尾预算；若最终仍未恢复，则会输出中文的步骤级错误，而不是直接暴露底层英文通信超时
 
 实际使用的密码会写入会话状态，并同步到侧边栏显示。
 

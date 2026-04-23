@@ -94,6 +94,10 @@ const rowSub2ApiGroup = document.getElementById('row-sub2api-group');
 const inputSub2ApiGroup = document.getElementById('input-sub2api-group');
 const rowSub2ApiDefaultProxy = document.getElementById('row-sub2api-default-proxy');
 const inputSub2ApiDefaultProxy = document.getElementById('input-sub2api-default-proxy');
+const rowCodex2ApiUrl = document.getElementById('row-codex2api-url');
+const inputCodex2ApiUrl = document.getElementById('input-codex2api-url');
+const rowCodex2ApiAdminKey = document.getElementById('row-codex2api-admin-key');
+const inputCodex2ApiAdminKey = document.getElementById('input-codex2api-admin-key');
 const rowCustomPassword = document.getElementById('row-custom-password');
 const selectMailProvider = document.getElementById('select-mail-provider');
 const btnMailLogin = document.getElementById('btn-mail-login');
@@ -112,10 +116,15 @@ const rowTempEmailCustomAuth = document.getElementById('row-temp-email-custom-au
 const inputTempEmailCustomAuth = document.getElementById('input-temp-email-custom-auth');
 const rowTempEmailReceiveMailbox = document.getElementById('row-temp-email-receive-mailbox');
 const inputTempEmailReceiveMailbox = document.getElementById('input-temp-email-receive-mailbox');
+const rowTempEmailRandomSubdomainToggle = document.getElementById('row-temp-email-random-subdomain-toggle');
+const inputTempEmailUseRandomSubdomain = document.getElementById('input-temp-email-use-random-subdomain');
 const rowTempEmailDomain = document.getElementById('row-temp-email-domain');
 const selectTempEmailDomain = document.getElementById('select-temp-email-domain');
 const inputTempEmailDomain = document.getElementById('input-temp-email-domain');
 const btnTempEmailDomainMode = document.getElementById('btn-temp-email-domain-mode');
+const cloudflareTempEmailSection = document.getElementById('cloudflare-temp-email-section');
+const btnCloudflareTempEmailUsageGuide = document.getElementById('btn-cloudflare-temp-email-usage-guide');
+const btnCloudflareTempEmailGithub = document.getElementById('btn-cloudflare-temp-email-github');
 const hotmailSection = document.getElementById('hotmail-section');
 const mail2925Section = document.getElementById('mail2925-section');
 const luckmailSection = document.getElementById('luckmail-section');
@@ -248,6 +257,7 @@ const DEFAULT_CPA_CALLBACK_MODE = 'step8';
 const MAIL_2925_MODE_PROVIDE = 'provide';
 const MAIL_2925_MODE_RECEIVE = 'receive';
 const DEFAULT_MAIL_2925_MODE = MAIL_2925_MODE_PROVIDE;
+const NEW_USER_GUIDE_PROMPT_DISMISSED_STORAGE_KEY = 'multipage-new-user-guide-prompt-dismissed';
 const AUTO_SKIP_FAILURES_PROMPT_DISMISSED_STORAGE_KEY = 'multipage-auto-skip-failures-prompt-dismissed';
 const AUTO_RUN_FALLBACK_RISK_PROMPT_DISMISSED_STORAGE_KEY = 'multipage-auto-run-fallback-risk-prompt-dismissed';
 const CONTRIBUTION_CONTENT_PROMPT_DISMISSED_VERSION_STORAGE_KEY = 'multipage-contribution-content-prompt-dismissed-version';
@@ -610,6 +620,10 @@ const LOG_LEVEL_LABELS = {
   error: '错误',
 };
 
+const CLOUDFLARE_TEMP_EMAIL_REPOSITORY_URL = 'https://github.com/dreamhunter2333/cloudflare_temp_email';
+const CLOUDFLARE_TEMP_EMAIL_BUILD_TUTORIAL_URL = 'https://linux.do/t/topic/316819';
+const CLOUDFLARE_TEMP_EMAIL_RANDOM_SUBDOMAIN_ISSUE_URL = 'https://github.com/dreamhunter2333/cloudflare_temp_email/issues/942';
+
 function usesGeneratedAliasMailProvider(
   provider,
   mail2925Mode = getSelectedMail2925Mode(),
@@ -683,6 +697,19 @@ function resetActionModalAlert() {
   autoStartAlert.hidden = true;
   autoStartAlert.textContent = '';
   autoStartAlert.className = 'modal-alert';
+}
+
+function setActionModalMessageContent({ text = '', html = '' } = {}) {
+  if (!autoStartMessage) {
+    return;
+  }
+
+  if (html) {
+    autoStartMessage.innerHTML = html;
+    return;
+  }
+
+  autoStartMessage.textContent = text;
 }
 
 function resetActionModalButtons() {
@@ -760,7 +787,7 @@ function resolveModalChoice(choice) {
   }
 }
 
-function openActionModal({ title, message, actions, option, alert, buildResult }) {
+function openActionModal({ title, message, messageHtml, actions, option, alert, buildResult }) {
   if (!autoStartModal) {
     return Promise.resolve(null);
   }
@@ -771,7 +798,7 @@ function openActionModal({ title, message, actions, option, alert, buildResult }
 
   resetActionModalButtons();
   autoStartTitle.textContent = title;
-  autoStartMessage.textContent = message;
+  setActionModalMessageContent({ text: message, html: messageHtml });
   currentModalActions = actions || [];
   modalResultBuilder = typeof buildResult === 'function' ? buildResult : null;
   const buttonSlots = currentModalActions.length <= 2
@@ -863,6 +890,59 @@ function setPromptDismissed(storageKey, dismissed) {
   } else {
     localStorage.removeItem(storageKey);
   }
+}
+
+function isNewUserGuidePromptDismissed() {
+  return isPromptDismissed(NEW_USER_GUIDE_PROMPT_DISMISSED_STORAGE_KEY);
+}
+
+function setNewUserGuidePromptDismissed(dismissed) {
+  setPromptDismissed(NEW_USER_GUIDE_PROMPT_DISMISSED_STORAGE_KEY, dismissed);
+}
+
+function shouldPromptNewUserGuide() {
+  if (isNewUserGuidePromptDismissed()) {
+    return false;
+  }
+  if (!btnContributionMode || btnContributionMode.disabled) {
+    return false;
+  }
+  if (latestState?.contributionMode) {
+    return false;
+  }
+  return true;
+}
+
+function getContributionPortalUrl() {
+  return String(contributionContentService?.portalUrl || 'https://apikey.qzz.io').trim();
+}
+
+function openNewUserGuidePrompt() {
+  return openActionModal({
+    title: '新手引导',
+    message: '如果你是第一次使用，可以先查看贡献页里的公告和使用教程。点击“查看引导”会自动打开贡献页面。',
+    alert: {
+      text: '本提示仅出现一次。',
+    },
+    actions: [
+      { id: null, label: '取消', variant: 'btn-ghost' },
+      { id: 'confirm', label: '查看引导', variant: 'btn-primary' },
+    ],
+  });
+}
+
+async function maybeShowNewUserGuidePrompt() {
+  if (!shouldPromptNewUserGuide()) {
+    return false;
+  }
+
+  setNewUserGuidePromptDismissed(true);
+  const choice = await openNewUserGuidePrompt();
+  if (choice === 'confirm') {
+    openExternalUrl(getContributionPortalUrl());
+    return true;
+  }
+  return false;
 }
 
 function getDismissedContributionContentPromptVersion() {
@@ -1501,6 +1581,18 @@ function setCloudflareTempEmailDomainEditMode(editing, options = {}) {
   }
 }
 
+function applyCloudflareTempEmailSettingsState(state = {}) {
+  inputTempEmailBaseUrl.value = state?.cloudflareTempEmailBaseUrl || '';
+  inputTempEmailAdminAuth.value = state?.cloudflareTempEmailAdminAuth || '';
+  inputTempEmailCustomAuth.value = state?.cloudflareTempEmailCustomAuth || '';
+  inputTempEmailReceiveMailbox.value = state?.cloudflareTempEmailReceiveMailbox || '';
+  if (inputTempEmailUseRandomSubdomain) {
+    inputTempEmailUseRandomSubdomain.checked = Boolean(state?.cloudflareTempEmailUseRandomSubdomain);
+  }
+  renderCloudflareTempEmailDomainOptions(state?.cloudflareTempEmailDomain || '');
+  setCloudflareTempEmailDomainEditMode(false, { clearInput: true });
+}
+
 function collectSettingsPayload() {
   const { domains, activeDomain } = getCloudflareDomainsFromState();
   const selectedCloudflareDomain = normalizeCloudflareDomainValue(
@@ -1524,12 +1616,15 @@ function collectSettingsPayload() {
     sub2apiPassword: inputSub2ApiPassword.value,
     sub2apiGroupName: inputSub2ApiGroup.value.trim(),
     sub2apiDefaultProxyName: inputSub2ApiDefaultProxy.value.trim(),
+    codex2apiUrl: inputCodex2ApiUrl.value.trim(),
+    codex2apiAdminKey: inputCodex2ApiAdminKey.value.trim(),
     ...(contributionModeEnabled ? {} : {
       customPassword: inputPassword.value,
     }),
     mailProvider: selectMailProvider.value,
     mail2925Mode: getSelectedMail2925Mode(),
     mail2925UseAccountPool,
+    currentMail2925AccountId: String(latestState?.currentMail2925AccountId || '').trim(),
     emailGenerator: selectEmailGenerator.value,
     customEmailPool: typeof normalizeCustomEmailPoolEntries === 'function'
       ? normalizeCustomEmailPoolEntries(inputCustomEmailPool?.value)
@@ -1556,6 +1651,7 @@ function collectSettingsPayload() {
     cloudflareTempEmailAdminAuth: inputTempEmailAdminAuth.value,
     cloudflareTempEmailCustomAuth: inputTempEmailCustomAuth.value,
     cloudflareTempEmailReceiveMailbox: normalizeCloudflareTempEmailReceiveMailboxValue(inputTempEmailReceiveMailbox.value),
+    cloudflareTempEmailUseRandomSubdomain: Boolean(inputTempEmailUseRandomSubdomain?.checked),
     cloudflareTempEmailDomain: selectedCloudflareTempEmailDomain,
     cloudflareTempEmailDomains: tempEmailDomains,
     autoRunSkipFailures: inputAutoSkipFailures.checked,
@@ -1907,6 +2003,8 @@ function applySettingsState(state) {
   inputSub2ApiPassword.value = state?.sub2apiPassword || '';
   inputSub2ApiGroup.value = state?.sub2apiGroupName || '';
   inputSub2ApiDefaultProxy.value = state?.sub2apiDefaultProxyName || '';
+  inputCodex2ApiUrl.value = state?.codex2apiUrl || '';
+  inputCodex2ApiAdminKey.value = state?.codex2apiAdminKey || '';
   const restoredMailProvider = isCustomMailProvider(state?.mailProvider)
     || [ICLOUD_PROVIDER, 'hotmail-api', GMAIL_PROVIDER, 'luckmail-api', '163', '163-vip', 'qq', 'inbucket', '2925', 'cloudflare-temp-email'].includes(String(state?.mailProvider || '').trim())
     ? String(state?.mailProvider || '163').trim()
@@ -1970,14 +2068,9 @@ function applySettingsState(state) {
   inputLuckmailBaseUrl.value = normalizeLuckmailBaseUrl(state?.luckmailBaseUrl);
   selectLuckmailEmailType.value = normalizeLuckmailEmailType(state?.luckmailEmailType);
   inputLuckmailDomain.value = state?.luckmailDomain || '';
-  inputTempEmailBaseUrl.value = state?.cloudflareTempEmailBaseUrl || '';
-  inputTempEmailAdminAuth.value = state?.cloudflareTempEmailAdminAuth || '';
-  inputTempEmailCustomAuth.value = state?.cloudflareTempEmailCustomAuth || '';
-  inputTempEmailReceiveMailbox.value = state?.cloudflareTempEmailReceiveMailbox || '';
+  applyCloudflareTempEmailSettingsState(state);
   renderCloudflareDomainOptions(state?.cloudflareDomain || '');
   setCloudflareDomainEditMode(false, { clearInput: true });
-  renderCloudflareTempEmailDomainOptions(state?.cloudflareTempEmailDomain || '');
-  setCloudflareTempEmailDomainEditMode(false, { clearInput: true });
   inputAutoSkipFailures.checked = Boolean(state?.autoRunSkipFailures);
   inputAutoSkipFailuresThreadIntervalMinutes.value = String(normalizeAutoRunThreadIntervalMinutes(state?.autoRunFallbackThreadIntervalMinutes));
   inputAutoDelayEnabled.checked = Boolean(state?.autoRunDelayEnabled);
@@ -2094,6 +2187,51 @@ function openRepositoryHomePage() {
 
 function openReleaseListPage() {
   openExternalUrl(getReleaseListUrl());
+}
+
+function buildCloudflareTempEmailUsageGuideModalConfig() {
+  const useCloudflareTempEmailProvider = String(selectMailProvider?.value || '').trim().toLowerCase() === 'cloudflare-temp-email';
+  const useCloudflareTempEmailGenerator = getSelectedEmailGenerator() === 'cloudflare-temp-email';
+  let alertText = '当前还没有把 Cloudflare Temp Email 选为邮箱服务或邮箱生成器。下面说明同时覆盖“生成邮箱”和“接收转发邮件”两种用法。';
+  if (useCloudflareTempEmailProvider && useCloudflareTempEmailGenerator) {
+    alertText = '当前同时把 Cloudflare Temp Email 用作“邮箱服务”和“邮箱生成器”。请同时配置生成邮箱和接收转发两套必填项。';
+  } else if (useCloudflareTempEmailProvider) {
+    alertText = '当前把 Cloudflare Temp Email 用作“邮箱服务”。重点填写 Temp API、Custom Auth 和 邮件接收。';
+  } else if (useCloudflareTempEmailGenerator) {
+    alertText = '当前把 Cloudflare Temp Email 用作“邮箱生成器”。重点填写 Temp API、Admin Auth 和 Temp 域名；随机子域按需开启。';
+  }
+
+  return {
+    title: 'Cloudflare Temp Email 使用教程',
+    alert: { text: alertText },
+    messageHtml: `Temp API：填写 Cloudflare Temp Email 后端地址。<br><br>
+Admin Auth：填写后端 admin auth。<br>
+仅在“邮箱生成 = Cloudflare Temp Email”时必填。<br><br>
+Custom Auth：仅当站点额外开启访问密码时填写。没有开启就留空。<br><br>
+Temp 域名：填写允许创建的基础域名。启用随机子域时，这里仍然填写基础域名。<br><br>
+随机子域：仅在“邮箱生成 = Cloudflare Temp Email”时使用。<br>
+后端需要已配置 RANDOM_SUBDOMAIN_DOMAINS。<br>
+CF DNS 需要设置 MX *，参考 <a href="${CLOUDFLARE_TEMP_EMAIL_RANDOM_SUBDOMAIN_ISSUE_URL}" target="_blank" rel="noopener noreferrer">Issue #942</a>。<br><br>
+邮件接收：仅在“邮箱服务 = Cloudflare Temp Email”时填写。<br>
+这里填写真正接收转发邮件的目标邮箱。<br><br>
+搭建教程：<a href="${CLOUDFLARE_TEMP_EMAIL_BUILD_TUTORIAL_URL}" target="_blank" rel="noopener noreferrer">LINUX DO 教程</a>。`,
+  };
+}
+
+function showCloudflareTempEmailUsageGuide() {
+  const modalConfig = buildCloudflareTempEmailUsageGuideModalConfig();
+  return openActionModal({
+    title: modalConfig.title,
+    messageHtml: modalConfig.messageHtml,
+    alert: modalConfig.alert,
+    actions: [
+      { id: 'ok', label: '知道了', variant: 'btn-primary' },
+    ],
+  });
+}
+
+function openCloudflareTempEmailRepositoryPage() {
+  openExternalUrl(CLOUDFLARE_TEMP_EMAIL_REPOSITORY_URL);
 }
 
 function createUpdateNoteList(notes = []) {
@@ -2289,11 +2427,70 @@ async function initializeReleaseInfo() {
 }
 
 function getContributionUpdateHintMessage(snapshot = currentContributionContentSnapshot) {
-  if (!snapshot?.promptVersion) {
+  const lines = getContributionUpdatePromptLines(snapshot);
+  if (!lines.length) {
     return '';
   }
+  if (lines.length === 1) {
+    return lines[0];
+  }
+  return lines.map((line, index) => `${index + 1}. ${line}`).join('\n');
+}
 
-  return '公告 / 使用教程有更新了，可点上方“贡献/使用”查看。';
+function getContributionUpdatePromptLines(snapshot = currentContributionContentSnapshot) {
+  if (!snapshot?.promptVersion) {
+    return [];
+  }
+
+  const items = Array.isArray(snapshot.items) ? snapshot.items : [];
+  const hasAnnouncementOrTutorial = items.some((item) =>
+    item
+    && item.isVisible
+    && ['announcement', 'tutorial'].includes(String(item.slug || '').trim().toLowerCase())
+  );
+  const hasQuestionnaire = items.some((item) =>
+    item
+    && item.isVisible
+    && String(item.slug || '').trim().toLowerCase() === 'questionnaire'
+  );
+
+  const lines = [];
+  if (hasAnnouncementOrTutorial) {
+    lines.push('公告 / 使用教程有更新了，可点上方“贡献/使用”查看。');
+  }
+  if (hasQuestionnaire) {
+    lines.push('有新的征求意见，请佬友共同参与选择。');
+  }
+  return lines;
+}
+
+function shouldPromptContributionUpdateBeforeAutoRun(snapshot = currentContributionContentSnapshot) {
+  const promptVersion = String(snapshot?.promptVersion || '').trim();
+  if (!promptVersion) {
+    return false;
+  }
+  if (promptVersion === getDismissedContributionContentPromptVersion()) {
+    return false;
+  }
+  return getContributionUpdatePromptLines(snapshot).length > 0;
+}
+
+async function maybeConfirmContributionUpdateBeforeAutoRun(snapshot = currentContributionContentSnapshot) {
+  if (!shouldPromptContributionUpdateBeforeAutoRun(snapshot)) {
+    return true;
+  }
+
+  const confirmed = await openConfirmModal({
+    title: '自动前提醒',
+    message: getContributionUpdateHintMessage(snapshot),
+    confirmLabel: '确定继续',
+    confirmVariant: 'btn-primary',
+  });
+  if (!confirmed) {
+    return false;
+  }
+  dismissContributionUpdateHint();
+  return true;
 }
 
 function positionContributionUpdateHint() {
@@ -2722,19 +2919,25 @@ function updateMailProviderUI() {
   const useMail2925 = selectMailProvider.value === '2925';
   const useMail2925AccountPool = useMail2925 && Boolean(inputMail2925UseAccountPool?.checked);
   const mail2925Mode = getSelectedMail2925Mode();
-  const gmailOnlyGenerators = new Set([GMAIL_ALIAS_GENERATOR, CUSTOM_EMAIL_POOL_GENERATOR]);
+  const gmailAliasGenerator = typeof GMAIL_ALIAS_GENERATOR === 'string'
+    ? GMAIL_ALIAS_GENERATOR
+    : 'gmail-alias';
+  const customEmailPoolGenerator = typeof CUSTOM_EMAIL_POOL_GENERATOR === 'string'
+    ? CUSTOM_EMAIL_POOL_GENERATOR
+    : 'custom-pool';
+  const gmailOnlyGenerators = new Set([gmailAliasGenerator, customEmailPoolGenerator]);
   Array.from(selectEmailGenerator?.options || []).forEach((option) => {
     if (!option) return;
     if (useGmail) {
       option.hidden = !gmailOnlyGenerators.has(String(option.value || '').trim().toLowerCase());
       return;
     }
-    option.hidden = String(option.value || '').trim().toLowerCase() === GMAIL_ALIAS_GENERATOR;
+    option.hidden = String(option.value || '').trim().toLowerCase() === gmailAliasGenerator;
   });
   if (useGmail && !gmailOnlyGenerators.has(String(selectEmailGenerator.value || '').trim().toLowerCase())) {
-    selectEmailGenerator.value = GMAIL_ALIAS_GENERATOR;
+    selectEmailGenerator.value = gmailAliasGenerator;
   }
-  if (!useGmail && String(selectEmailGenerator.value || '').trim().toLowerCase() === GMAIL_ALIAS_GENERATOR) {
+  if (!useGmail && String(selectEmailGenerator.value || '').trim().toLowerCase() === gmailAliasGenerator) {
     selectEmailGenerator.value = 'duck';
   }
   const selectedGenerator = getSelectedEmailGenerator();
@@ -2761,19 +2964,23 @@ function updateMailProviderUI() {
   const hotmailServiceMode = getSelectedHotmailServiceMode();
   rowInbucketHost.style.display = useInbucket ? '' : 'none';
   rowInbucketMailbox.style.display = useInbucket ? '' : 'none';
-  const useCustomEmailPool = useEmailGenerator && selectedGenerator === CUSTOM_EMAIL_POOL_GENERATOR;
+  const useCustomEmailPool = useEmailGenerator && selectedGenerator === customEmailPoolGenerator;
   const useCloudflare = selectedGenerator === 'cloudflare';
   const useIcloud = selectedGenerator === 'icloud';
   const useCloudflareTempEmailGenerator = selectedGenerator === 'cloudflare-temp-email';
   const showCloudflareDomain = useEmailGenerator && useCloudflare;
   const showCloudflareTempEmailSettings = useCloudflareTempEmailProvider || (useEmailGenerator && useCloudflareTempEmailGenerator);
   const showCloudflareTempEmailReceiveMailbox = useCloudflareTempEmailProvider && !useCloudflareTempEmailGenerator;
+  const showCloudflareTempEmailRandomSubdomainToggle = useEmailGenerator && useCloudflareTempEmailGenerator;
   const showCloudflareTempEmailDomain = useEmailGenerator && useCloudflareTempEmailGenerator;
   if (rowEmailGenerator) {
     rowEmailGenerator.style.display = useEmailGenerator ? '' : 'none';
   }
-  if (rowCustomEmailPool) {
+  if (typeof rowCustomEmailPool !== 'undefined' && rowCustomEmailPool) {
     rowCustomEmailPool.style.display = useCustomEmailPool ? '' : 'none';
+  }
+  if (cloudflareTempEmailSection) {
+    cloudflareTempEmailSection.style.display = showCloudflareTempEmailSettings ? '' : 'none';
   }
   if (icloudSection) {
     const showIcloudSection = (useEmailGenerator && useIcloud) || useIcloudProvider;
@@ -2796,6 +3003,9 @@ function updateMailProviderUI() {
   rowTempEmailAdminAuth.style.display = showCloudflareTempEmailSettings ? '' : 'none';
   rowTempEmailCustomAuth.style.display = showCloudflareTempEmailSettings ? '' : 'none';
   rowTempEmailReceiveMailbox.style.display = showCloudflareTempEmailReceiveMailbox ? '' : 'none';
+  if (rowTempEmailRandomSubdomainToggle) {
+    rowTempEmailRandomSubdomainToggle.style.display = showCloudflareTempEmailRandomSubdomainToggle ? '' : 'none';
+  }
   rowTempEmailDomain.style.display = showCloudflareTempEmailDomain ? '' : 'none';
   const { domains: tempEmailDomains } = getCloudflareTempEmailDomainsFromState();
   if (showCloudflareTempEmailDomain) {
@@ -2888,6 +3098,9 @@ function updateMailProviderUI() {
   if (autoHintText && showCloudflareTempEmailReceiveMailbox && !useCustomEmailPool) {
     autoHintText.textContent = '若注册邮箱会转发到 Cloudflare Temp Email，请在“邮件接收”中填写实际接收转发邮件的邮箱。';
   }
+  if (autoHintText && showCloudflareTempEmailRandomSubdomainToggle && inputTempEmailUseRandomSubdomain?.checked) {
+    autoHintText.textContent = '已启用随机子域名：扩展会按当前选中的 Temp 域名提交，并额外携带 enableRandomSubdomain；是否生效取决于后端 RANDOM_SUBDOMAIN_DOMAINS 配置。';
+  }
   if (useHotmail) {
     inputEmail.value = getCurrentHotmailEmail();
   } else if (useLuckmail) {
@@ -2896,7 +3109,9 @@ function updateMailProviderUI() {
   if (useCustomEmailPool) {
     syncRunCountFromCustomEmailPool();
   }
-  inputRunCount.disabled = currentAutoRun.autoRunning || useCustomEmailPool;
+  if (typeof inputRunCount !== 'undefined' && inputRunCount) {
+    inputRunCount.disabled = currentAutoRun.autoRunning || useCustomEmailPool;
+  }
   renderHotmailAccounts();
   if (useMail2925) {
     renderMail2925Accounts();
@@ -2972,18 +3187,24 @@ async function saveCloudflareTempEmailDomainSettings(domains, activeDomain, opti
 
 function updatePanelModeUI() {
   const useSub2Api = selectPanelMode.value === 'sub2api';
-  rowVpsUrl.style.display = useSub2Api ? 'none' : '';
-  rowVpsPassword.style.display = useSub2Api ? 'none' : '';
-  rowLocalCpaStep9Mode.style.display = useSub2Api ? 'none' : '';
+  const useCodex2Api = selectPanelMode.value === 'codex2api';
+  const useCpa = !useSub2Api && !useCodex2Api;
+  rowVpsUrl.style.display = useCpa ? '' : 'none';
+  rowVpsPassword.style.display = useCpa ? '' : 'none';
+  rowLocalCpaStep9Mode.style.display = useCpa ? '' : 'none';
   rowSub2ApiUrl.style.display = useSub2Api ? '' : 'none';
   rowSub2ApiEmail.style.display = useSub2Api ? '' : 'none';
   rowSub2ApiPassword.style.display = useSub2Api ? '' : 'none';
   rowSub2ApiGroup.style.display = useSub2Api ? '' : 'none';
   rowSub2ApiDefaultProxy.style.display = useSub2Api ? '' : 'none';
+  rowCodex2ApiUrl.style.display = useCodex2Api ? '' : 'none';
+  rowCodex2ApiAdminKey.style.display = useCodex2Api ? '' : 'none';
 
   const step9Btn = document.querySelector('.step-btn[data-step-key="platform-verify"]');
   if (step9Btn) {
-    step9Btn.textContent = useSub2Api ? 'SUB2API 回调验证' : 'CPA 回调验证';
+    step9Btn.textContent = useSub2Api
+      ? 'SUB2API 回调验证'
+      : (useCodex2Api ? 'Codex2API 回调验证' : 'CPA 回调验证');
   }
 }
 
@@ -3215,6 +3436,11 @@ async function fetchGeneratedEmail(options = {}) {
         generator: selectEmailGenerator.value,
         mailProvider: selectMailProvider.value,
         mail2925Mode: getSelectedMail2925Mode(),
+        ...(getSelectedEmailGenerator() === CUSTOM_EMAIL_POOL_GENERATOR
+          ? {
+              customEmailPool: normalizeCustomEmailPoolEntries(inputCustomEmailPool?.value),
+            }
+          : {}),
         ...buildManagedAliasBaseEmailPayload(),
       },
     });
@@ -3884,6 +4110,14 @@ btnRepoHome?.addEventListener('click', () => {
   openRepositoryHomePage();
 });
 
+btnCloudflareTempEmailUsageGuide?.addEventListener('click', () => {
+  showCloudflareTempEmailUsageGuide();
+});
+
+btnCloudflareTempEmailGithub?.addEventListener('click', () => {
+  openCloudflareTempEmailRepositoryPage();
+});
+
 extensionUpdateStatus?.addEventListener('click', () => {
   openReleaseListPage();
 });
@@ -3928,10 +4162,16 @@ autoStartModal?.addEventListener('click', (event) => {
 btnAutoStartClose?.addEventListener('click', () => resolveModalChoice(null));
 
 async function startAutoRunFromCurrentSettings() {
+  let contributionSnapshot = null;
   try {
-    await refreshContributionContentHint();
+    contributionSnapshot = await refreshContributionContentHint();
   } catch (error) {
     console.warn('Failed to refresh contribution content hint before auto run:', error);
+  }
+
+  const confirmedContributionUpdate = await maybeConfirmContributionUpdateBeforeAutoRun(contributionSnapshot);
+  if (!confirmedContributionUpdate) {
+    return false;
   }
 
   if (typeof settingsDirty !== 'undefined' && settingsDirty && typeof saveSettings === 'function') {
@@ -4393,6 +4633,22 @@ inputSub2ApiDefaultProxy.addEventListener('blur', () => {
   saveSettings({ silent: true }).catch(() => { });
 });
 
+inputCodex2ApiUrl.addEventListener('input', () => {
+  markSettingsDirty(true);
+  scheduleSettingsAutoSave();
+});
+inputCodex2ApiUrl.addEventListener('blur', () => {
+  saveSettings({ silent: true }).catch(() => { });
+});
+
+inputCodex2ApiAdminKey.addEventListener('input', () => {
+  markSettingsDirty(true);
+  scheduleSettingsAutoSave();
+});
+inputCodex2ApiAdminKey.addEventListener('blur', () => {
+  saveSettings({ silent: true }).catch(() => { });
+});
+
 inputEmailPrefix.addEventListener('input', () => {
   maybeClearGeneratedAliasAfterEmailPrefixChange().catch(() => { });
   syncManagedAliasBaseEmailDraftFromInput();
@@ -4525,6 +4781,13 @@ inputTempEmailReceiveMailbox.addEventListener('input', () => {
 });
 inputTempEmailReceiveMailbox.addEventListener('blur', () => {
   inputTempEmailReceiveMailbox.value = normalizeCloudflareTempEmailReceiveMailboxValue(inputTempEmailReceiveMailbox.value);
+  saveSettings({ silent: true }).catch(() => { });
+});
+
+inputTempEmailUseRandomSubdomain?.addEventListener('change', () => {
+  updateMailProviderUI();
+  clearRegistrationEmail({ silent: true }).catch(() => { });
+  markSettingsDirty(true);
   saveSettings({ silent: true }).catch(() => { });
 });
 
@@ -4750,8 +5013,18 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       if (message.payload.cloudflareTempEmailReceiveMailbox !== undefined) {
         inputTempEmailReceiveMailbox.value = message.payload.cloudflareTempEmailReceiveMailbox || '';
       }
+      if (message.payload.cloudflareTempEmailUseRandomSubdomain !== undefined && inputTempEmailUseRandomSubdomain) {
+        inputTempEmailUseRandomSubdomain.checked = Boolean(message.payload.cloudflareTempEmailUseRandomSubdomain);
+      }
       if (message.payload.cloudflareTempEmailDomain !== undefined || message.payload.cloudflareTempEmailDomains !== undefined) {
         renderCloudflareTempEmailDomainOptions(message.payload.cloudflareTempEmailDomain || latestState?.cloudflareTempEmailDomain || '');
+      }
+      if (
+        message.payload.cloudflareTempEmailUseRandomSubdomain !== undefined
+        || message.payload.cloudflareTempEmailDomain !== undefined
+        || message.payload.cloudflareTempEmailDomains !== undefined
+      ) {
+        updateMailProviderUI();
       }
       if (message.payload.currentHotmailAccountId !== undefined || message.payload.hotmailAccounts !== undefined) {
         renderHotmailAccounts();
@@ -4948,7 +5221,12 @@ restoreState().then(() => {
   updatePanelModeUI();
   updateButtonStates();
   updateStatusDisplay(latestState);
-  return refreshContributionContentHint();
+  return refreshContributionContentHint()
+    .catch((error) => {
+      console.warn('Failed to refresh contribution content hint during initialization:', error);
+      return null;
+    })
+    .then(() => maybeShowNewUserGuidePrompt());
 }).catch((err) => {
   console.error('Failed to initialize sidepanel state:', err);
 });
