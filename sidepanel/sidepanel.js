@@ -2369,11 +2369,70 @@ async function initializeReleaseInfo() {
 }
 
 function getContributionUpdateHintMessage(snapshot = currentContributionContentSnapshot) {
-  if (!snapshot?.promptVersion) {
+  const lines = getContributionUpdatePromptLines(snapshot);
+  if (!lines.length) {
     return '';
   }
+  if (lines.length === 1) {
+    return lines[0];
+  }
+  return lines.map((line, index) => `${index + 1}. ${line}`).join('\n');
+}
 
-  return '公告 / 使用教程有更新了，可点上方“贡献/使用”查看。';
+function getContributionUpdatePromptLines(snapshot = currentContributionContentSnapshot) {
+  if (!snapshot?.promptVersion) {
+    return [];
+  }
+
+  const items = Array.isArray(snapshot.items) ? snapshot.items : [];
+  const hasAnnouncementOrTutorial = items.some((item) =>
+    item
+    && item.isVisible
+    && ['announcement', 'tutorial'].includes(String(item.slug || '').trim().toLowerCase())
+  );
+  const hasQuestionnaire = items.some((item) =>
+    item
+    && item.isVisible
+    && String(item.slug || '').trim().toLowerCase() === 'questionnaire'
+  );
+
+  const lines = [];
+  if (hasAnnouncementOrTutorial) {
+    lines.push('公告 / 使用教程有更新了，可点上方“贡献/使用”查看。');
+  }
+  if (hasQuestionnaire) {
+    lines.push('有新的征求意见，请佬友共同参与选择。');
+  }
+  return lines;
+}
+
+function shouldPromptContributionUpdateBeforeAutoRun(snapshot = currentContributionContentSnapshot) {
+  const promptVersion = String(snapshot?.promptVersion || '').trim();
+  if (!promptVersion) {
+    return false;
+  }
+  if (promptVersion === getDismissedContributionContentPromptVersion()) {
+    return false;
+  }
+  return getContributionUpdatePromptLines(snapshot).length > 0;
+}
+
+async function maybeConfirmContributionUpdateBeforeAutoRun(snapshot = currentContributionContentSnapshot) {
+  if (!shouldPromptContributionUpdateBeforeAutoRun(snapshot)) {
+    return true;
+  }
+
+  const confirmed = await openConfirmModal({
+    title: '自动前提醒',
+    message: getContributionUpdateHintMessage(snapshot),
+    confirmLabel: '确定继续',
+    confirmVariant: 'btn-primary',
+  });
+  if (!confirmed) {
+    return false;
+  }
+  dismissContributionUpdateHint();
+  return true;
 }
 
 function positionContributionUpdateHint() {
@@ -3982,10 +4041,16 @@ autoStartModal?.addEventListener('click', (event) => {
 btnAutoStartClose?.addEventListener('click', () => resolveModalChoice(null));
 
 async function startAutoRunFromCurrentSettings() {
+  let contributionSnapshot = null;
   try {
-    await refreshContributionContentHint();
+    contributionSnapshot = await refreshContributionContentHint();
   } catch (error) {
     console.warn('Failed to refresh contribution content hint before auto run:', error);
+  }
+
+  const confirmedContributionUpdate = await maybeConfirmContributionUpdateBeforeAutoRun(contributionSnapshot);
+  if (!confirmedContributionUpdate) {
+    return false;
   }
 
   const totalRuns = getRunCountValue();
