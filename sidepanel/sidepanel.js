@@ -629,8 +629,6 @@ const LOG_LEVEL_LABELS = {
 };
 
 const CLOUDFLARE_TEMP_EMAIL_REPOSITORY_URL = 'https://github.com/dreamhunter2333/cloudflare_temp_email';
-const CLOUDFLARE_TEMP_EMAIL_BUILD_TUTORIAL_URL = 'https://linux.do/t/topic/316819';
-const CLOUDFLARE_TEMP_EMAIL_RANDOM_SUBDOMAIN_ISSUE_URL = 'https://github.com/dreamhunter2333/cloudflare_temp_email/issues/942';
 
 function usesGeneratedAliasMailProvider(
   provider,
@@ -2257,45 +2255,12 @@ function openReleaseListPage() {
   openExternalUrl(getReleaseListUrl());
 }
 
-function buildCloudflareTempEmailUsageGuideModalConfig() {
-  const useCloudflareTempEmailProvider = String(selectMailProvider?.value || '').trim().toLowerCase() === 'cloudflare-temp-email';
-  const useCloudflareTempEmailGenerator = getSelectedEmailGenerator() === 'cloudflare-temp-email';
-  let alertText = '当前还没有把 Cloudflare Temp Email 选为邮箱服务或邮箱生成器。下面说明同时覆盖“生成邮箱”和“接收转发邮件”两种用法。';
-  if (useCloudflareTempEmailProvider && useCloudflareTempEmailGenerator) {
-    alertText = '当前同时把 Cloudflare Temp Email 用作“邮箱服务”和“邮箱生成器”。请同时配置生成邮箱和接收转发两套必填项。';
-  } else if (useCloudflareTempEmailProvider) {
-    alertText = '当前把 Cloudflare Temp Email 用作“邮箱服务”。重点填写 Temp API、Custom Auth 和 邮件接收。';
-  } else if (useCloudflareTempEmailGenerator) {
-    alertText = '当前把 Cloudflare Temp Email 用作“邮箱生成器”。重点填写 Temp API、Admin Auth 和 Temp 域名；随机子域按需开启。';
+function openCloudflareTempEmailUsageGuidePage() {
+  const targetUrl = getContributionPortalUrl();
+  if (!targetUrl) {
+    return;
   }
-
-  return {
-    title: 'Cloudflare Temp Email 使用教程',
-    alert: { text: alertText },
-    messageHtml: `Temp API：填写 Cloudflare Temp Email 后端地址。<br><br>
-Admin Auth：填写后端 admin auth。<br>
-仅在“邮箱生成 = Cloudflare Temp Email”时必填。<br><br>
-Custom Auth：仅当站点额外开启访问密码时填写。没有开启就留空。<br><br>
-Temp 域名：填写允许创建的基础域名。启用随机子域时，这里仍然填写基础域名。<br><br>
-随机子域：仅在“邮箱生成 = Cloudflare Temp Email”时使用。<br>
-后端需要已配置 RANDOM_SUBDOMAIN_DOMAINS。<br>
-CF DNS 需要设置 MX *，参考 <a href="${CLOUDFLARE_TEMP_EMAIL_RANDOM_SUBDOMAIN_ISSUE_URL}" target="_blank" rel="noopener noreferrer">Issue #942</a>。<br><br>
-邮件接收：仅在“邮箱服务 = Cloudflare Temp Email”时填写。<br>
-这里填写真正接收转发邮件的目标邮箱。<br><br>
-搭建教程：<a href="${CLOUDFLARE_TEMP_EMAIL_BUILD_TUTORIAL_URL}" target="_blank" rel="noopener noreferrer">LINUX DO 教程</a>。`,
-  };
-}
-
-function showCloudflareTempEmailUsageGuide() {
-  const modalConfig = buildCloudflareTempEmailUsageGuideModalConfig();
-  return openActionModal({
-    title: modalConfig.title,
-    messageHtml: modalConfig.messageHtml,
-    alert: modalConfig.alert,
-    actions: [
-      { id: 'ok', label: '知道了', variant: 'btn-primary' },
-    ],
-  });
+  openExternalUrl(targetUrl);
 }
 
 function openCloudflareTempEmailRepositoryPage() {
@@ -4243,7 +4208,7 @@ btnRepoHome?.addEventListener('click', () => {
 });
 
 btnCloudflareTempEmailUsageGuide?.addEventListener('click', () => {
-  showCloudflareTempEmailUsageGuide();
+  openCloudflareTempEmailUsageGuidePage();
 });
 
 btnCloudflareTempEmailGithub?.addEventListener('click', () => {
