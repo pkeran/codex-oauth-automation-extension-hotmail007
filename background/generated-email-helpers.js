@@ -283,8 +283,9 @@
         return fetchManagedAliasEmail(mergedState, options);
       }
       if (generator === 'icloud') {
+        const stateFetchMode = String(mergedState.icloudFetchMode || '').trim().toLowerCase();
         return fetchIcloudHideMyEmail({
-          generateNew: Boolean(options.generateNew),
+          generateNew: Boolean(options.generateNew) || stateFetchMode === 'always_new',
         });
       }
       if (generator === 'cloudflare') {

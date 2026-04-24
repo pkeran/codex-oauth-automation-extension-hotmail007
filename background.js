@@ -5992,7 +5992,7 @@ async function ensureAutoEmailReady(targetRun, totalRuns, attemptRuns) {
         await addLog(`${generatorLabel}：正在进行第 ${attempt}/${EMAIL_FETCH_MAX_ATTEMPTS} 次自动获取重试...`, 'warn');
       }
       const generatedEmail = await fetchGeneratedEmail(currentState, {
-        generateNew: generator !== 'icloud',
+        generateNew: generator !== 'icloud' || normalizeIcloudFetchMode(currentState.icloudFetchMode) === 'always_new',
         generator,
       });
       await addLog(
@@ -6141,7 +6141,7 @@ async function ensureAutoEmailReady(targetRun, totalRuns, attemptRuns) {
         await addLog(`${generatorLabel}：正在进行第 ${attempt}/${EMAIL_FETCH_MAX_ATTEMPTS} 次自动获取重试...`, 'warn');
       }
       const generatedEmail = await fetchGeneratedEmail(currentState, {
-        generateNew: generator !== 'icloud',
+        generateNew: generator !== 'icloud' || normalizeIcloudFetchMode(currentState.icloudFetchMode) === 'always_new',
         generator,
       });
       await addLog(
