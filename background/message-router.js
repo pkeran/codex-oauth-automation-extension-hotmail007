@@ -151,6 +151,18 @@
           if (payload.email) {
             await setEmailState(payload.email);
           }
+          if (payload.skipRegistrationFlow) {
+            const latestState = await getState();
+            for (const skipStep of [3, 4, 5]) {
+              const status = latestState.stepStatuses?.[skipStep];
+              if (status === 'running' || status === 'completed' || status === 'manual_completed') {
+                continue;
+              }
+              await setStepStatus(skipStep, 'skipped');
+            }
+            await addLog('步骤 2：检测到当前已登录会话，已自动跳过步骤 3/4/5，流程将直接进入步骤 6。', 'warn');
+            break;
+          }
           if (payload.skippedPasswordStep) {
             const latestState = await getState();
             const step3Status = latestState.stepStatuses?.[3];
