@@ -114,7 +114,7 @@ function isLikelyMailItemNode(node) {
     return false;
   }
 
-  return /发件人|验证码|verification|chatgpt|openai|code/i.test(summaryText);
+  return /发件人|验证码|verification|chatgpt|openai|code|log-?in/i.test(summaryText);
 }
 
 function findMailItems() {
@@ -391,7 +391,7 @@ function selectOpenedMailTextCandidate(item, candidates = [], options = {}) {
     if (sender && lower.includes(sender)) {
       return true;
     }
-    return Boolean(extractVerificationCode(candidate) && /chatgpt|openai|verification|验证码|login code/i.test(lower));
+    return Boolean(extractVerificationCode(candidate) && /chatgpt|openai|verification|验证码|log-?in\s+code/i.test(lower));
   }) || source[0] || '';
 
   const filteredCandidates = candidates.filter((candidate) => !excludedSet.has(normalizeText(candidate)));
@@ -703,6 +703,9 @@ async function refreshInbox() {
 function extractVerificationCode(text) {
   const matchCn = text.match(/(?:代码为|验证码[^0-9]*?)[\s：:]*(\d{6})/);
   if (matchCn) return matchCn[1];
+
+  const matchOpenAiLogin = text.match(/(?:chatgpt\s+log-?in\s+code|enter\s+this\s+code)[^0-9]{0,24}(\d{6})/i);
+  if (matchOpenAiLogin) return matchOpenAiLogin[1];
 
   const matchEn = text.match(/code[:\s]+is[:\s]+(\d{6})|code[:\s]+(\d{6})/i);
   if (matchEn) return matchEn[1] || matchEn[2];

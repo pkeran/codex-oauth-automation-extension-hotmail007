@@ -181,6 +181,7 @@ test('shouldClearHotmailCurrentSelection returns true only when account becomes 
 test('extractVerificationCode returns first six-digit code from multilingual mail text', () => {
   assert.equal(extractVerificationCode('你的 ChatGPT 验证码为 370794，请勿泄露。'), '370794');
   assert.equal(extractVerificationCode('Your verification code is 654321.'), '654321');
+  assert.equal(extractVerificationCode('ChatGPT Log-in Code\nIf that was you, enter this code:\n\n982219'), '982219');
   assert.equal(extractVerificationCode('No code here'), null);
 });
 
@@ -201,6 +202,15 @@ test('extractVerificationCodeFromMessage reads code from the latest message subj
       from: { emailAddress: { address: 'noreply@openai.com' } },
     }),
     '654321'
+  );
+
+  assert.equal(
+    extractVerificationCodeFromMessage({
+      subject: 'ChatGPT Log-in Code',
+      bodyPreview: 'We noticed a suspicious log-in on your account. If that was you, enter this code:\n\n982219',
+      from: { emailAddress: { address: 'noreply@openai.com' } },
+    }),
+    '982219'
   );
 });
 

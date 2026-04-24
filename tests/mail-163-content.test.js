@@ -340,6 +340,20 @@ return { openMailAndGetMessageText, mailItem };
   assert.doesNotMatch(text, /111111/);
 });
 
+test('extractVerificationCode matches the new suspicious log-in mail body', () => {
+  const bundle = [
+    extractFunction('extractVerificationCode'),
+  ].join('\n');
+
+  const api = new Function(`
+${bundle}
+return { extractVerificationCode };
+`)();
+
+  const bodyText = 'ChatGPT Log-in Code\nWe noticed a suspicious log-in on your account. If that was you, enter this code:\n\n982219';
+  assert.equal(api.extractVerificationCode(bodyText), '982219');
+});
+
 test('handlePollEmail ignores same-minute old snapshot mail before fallback', async () => {
   const bundle = [
     extractFunction('normalizeText'),
