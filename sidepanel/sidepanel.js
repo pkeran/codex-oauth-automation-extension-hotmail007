@@ -140,6 +140,7 @@ const btnIcloudLoginDone = document.getElementById('btn-icloud-login-done');
 const btnIcloudRefresh = document.getElementById('btn-icloud-refresh');
 const btnIcloudDeleteUsed = document.getElementById('btn-icloud-delete-used');
 const selectIcloudHostPreference = document.getElementById('select-icloud-host-preference');
+const selectIcloudFetchMode = document.getElementById('select-icloud-fetch-mode');
 const checkboxAutoDeleteIcloud = document.getElementById('checkbox-auto-delete-icloud');
 const inputIcloudSearch = document.getElementById('input-icloud-search');
 const selectIcloudFilter = document.getElementById('select-icloud-filter');

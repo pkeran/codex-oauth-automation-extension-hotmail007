@@ -12,6 +12,13 @@ test('sidepanel loads icloud manager before sidepanel bootstrap', () => {
   assert.ok(icloudManagerIndex < sidepanelIndex);
 });
 
+test('sidepanel source binds the icloud fetch mode control before using it', () => {
+  const source = fs.readFileSync('sidepanel/sidepanel.js', 'utf8');
+
+  assert.match(source, /const selectIcloudFetchMode = document\.getElementById\('select-icloud-fetch-mode'\);/);
+  assert.match(source, /selectIcloudFetchMode\?\.addEventListener\('change'/);
+});
+
 test('icloud manager exposes a factory and renders empty state', () => {
   const source = fs.readFileSync('sidepanel/icloud-manager.js', 'utf8');
   const windowObject = {};
