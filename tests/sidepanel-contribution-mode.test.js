@@ -402,7 +402,8 @@ test('contribution mode manager enters mode, starts main auto flow, polls contri
       },
     },
     constants: {
-      contributionUploadUrl: 'https://apikey.qzz.io',
+      contributionPortalUrl: 'https://apikey.qzz.io',
+      contributionUploadUrl: 'https://apikey.qzz.io/upload',
       pollIntervalMs: 2500,
     },
   });
@@ -452,7 +453,7 @@ test('contribution mode manager enters mode, starts main auto flow, polls contri
   assert.equal(dom.contributionModeSummary.textContent, '\u5df2\u63d0\u4ea4\u56de\u8c03\uff0c\u7b49\u5f85 CPA \u786e\u8ba4');
 
   dom.btnOpenContributionUpload.listeners.click();
-  assert.deepStrictEqual(openedUrls, ['https://apikey.qzz.io', 'https://apikey.qzz.io']);
+  assert.deepStrictEqual(openedUrls, ['https://apikey.qzz.io', 'https://apikey.qzz.io/upload']);
 
   await dom.btnExitContributionMode.listeners.click();
   manager.render();
