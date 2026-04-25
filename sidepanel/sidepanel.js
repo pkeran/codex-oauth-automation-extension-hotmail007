@@ -99,6 +99,12 @@ const inputCodex2ApiUrl = document.getElementById('input-codex2api-url');
 const rowCodex2ApiAdminKey = document.getElementById('row-codex2api-admin-key');
 const inputCodex2ApiAdminKey = document.getElementById('input-codex2api-admin-key');
 const rowCustomPassword = document.getElementById('row-custom-password');
+const rowPlusMode = document.getElementById('row-plus-mode');
+const inputPlusModeEnabled = document.getElementById('input-plus-mode-enabled');
+const rowPaypalEmail = document.getElementById('row-paypal-email');
+const inputPaypalEmail = document.getElementById('input-paypal-email');
+const rowPaypalPassword = document.getElementById('row-paypal-password');
+const inputPaypalPassword = document.getElementById('input-paypal-password');
 const selectMailProvider = document.getElementById('select-mail-provider');
 const btnMailLogin = document.getElementById('btn-mail-login');
 const rowCustomMailProviderPool = document.getElementById('row-custom-mail-provider-pool');
@@ -244,11 +250,12 @@ const btnAutoStartCancel = document.getElementById('btn-auto-start-cancel');
 const btnAutoStartRestart = document.getElementById('btn-auto-start-restart');
 const btnAutoStartContinue = document.getElementById('btn-auto-start-continue');
 const autoHintText = document.querySelector('.auto-hint');
-const stepDefinitions = (window.MultiPageStepDefinitions?.getSteps?.() || []).sort((left, right) => left.order - right.order);
-const STEP_IDS = stepDefinitions.map((step) => Number(step.id)).filter(Number.isFinite);
-const STEP_DEFAULT_STATUSES = Object.fromEntries(STEP_IDS.map((stepId) => [stepId, 'pending']));
-const SKIPPABLE_STEPS = new Set(STEP_IDS);
 const stepsList = document.querySelector('.steps-list');
+let currentPlusModeEnabled = false;
+let stepDefinitions = getStepDefinitionsForMode(false);
+let STEP_IDS = stepDefinitions.map((step) => Number(step.id)).filter(Number.isFinite);
+let STEP_DEFAULT_STATUSES = Object.fromEntries(STEP_IDS.map((stepId) => [stepId, 'pending']));
+let SKIPPABLE_STEPS = new Set(STEP_IDS);
 const AUTO_DELAY_MIN_MINUTES = 1;
 const AUTO_DELAY_MAX_MINUTES = 1440;
 const AUTO_DELAY_DEFAULT_MINUTES = 30;
@@ -269,8 +276,28 @@ const DEFAULT_MAIL_2925_MODE = MAIL_2925_MODE_PROVIDE;
 const NEW_USER_GUIDE_PROMPT_DISMISSED_STORAGE_KEY = 'multipage-new-user-guide-prompt-dismissed';
 const AUTO_SKIP_FAILURES_PROMPT_DISMISSED_STORAGE_KEY = 'multipage-auto-skip-failures-prompt-dismissed';
 const AUTO_RUN_FALLBACK_RISK_PROMPT_DISMISSED_STORAGE_KEY = 'multipage-auto-run-fallback-risk-prompt-dismissed';
+const AUTO_RUN_PLUS_RISK_PROMPT_DISMISSED_STORAGE_KEY = 'multipage-auto-run-plus-risk-prompt-dismissed';
+
+function getStepDefinitionsForMode(plusModeEnabled = false) {
+  return (window.MultiPageStepDefinitions?.getSteps?.({ plusModeEnabled }) || [])
+    .sort((left, right) => {
+      const leftOrder = Number.isFinite(left.order) ? left.order : left.id;
+      const rightOrder = Number.isFinite(right.order) ? right.order : right.id;
+      if (leftOrder !== rightOrder) return leftOrder - rightOrder;
+      return left.id - right.id;
+    });
+}
+
+function rebuildStepDefinitionState(plusModeEnabled = false) {
+  currentPlusModeEnabled = Boolean(plusModeEnabled);
+  stepDefinitions = getStepDefinitionsForMode(currentPlusModeEnabled);
+  STEP_IDS = stepDefinitions.map((step) => Number(step.id)).filter(Number.isFinite);
+  STEP_DEFAULT_STATUSES = Object.fromEntries(STEP_IDS.map((stepId) => [stepId, 'pending']));
+  SKIPPABLE_STEPS = new Set(STEP_IDS);
+}
 const CONTRIBUTION_CONTENT_PROMPT_DISMISSED_VERSION_STORAGE_KEY = 'multipage-contribution-content-prompt-dismissed-version';
 const AUTO_RUN_FALLBACK_RISK_WARNING_MIN_RUNS = 3;
+const AUTO_RUN_PLUS_RISK_WARNING_MAX_SAFE_RUNS = 3;
 const HOTMAIL_SERVICE_MODE_REMOTE = 'remote';
 const HOTMAIL_SERVICE_MODE_LOCAL = 'local';
 const ICLOUD_PROVIDER = 'icloud';
@@ -995,8 +1022,21 @@ function setAutoRunFallbackRiskPromptDismissed(dismissed) {
   setPromptDismissed(AUTO_RUN_FALLBACK_RISK_PROMPT_DISMISSED_STORAGE_KEY, dismissed);
 }
 
+function isAutoRunPlusRiskPromptDismissed() {
+  return isPromptDismissed(AUTO_RUN_PLUS_RISK_PROMPT_DISMISSED_STORAGE_KEY);
+}
+
+function setAutoRunPlusRiskPromptDismissed(dismissed) {
+  setPromptDismissed(AUTO_RUN_PLUS_RISK_PROMPT_DISMISSED_STORAGE_KEY, dismissed);
+}
+
 function shouldWarnAutoRunFallbackRisk(totalRuns, autoRunSkipFailures) {
   return totalRuns >= AUTO_RUN_FALLBACK_RISK_WARNING_MIN_RUNS;
+}
+
+function shouldWarnPlusAutoRunRisk(totalRuns, plusModeEnabled) {
+  return Boolean(plusModeEnabled)
+    && Math.floor(Number(totalRuns) || 0) > AUTO_RUN_PLUS_RISK_WARNING_MAX_SAFE_RUNS;
 }
 
 async function openAutoSkipFailuresConfirmModal() {
@@ -1017,6 +1057,19 @@ async function openAutoRunFallbackRiskConfirmModal(totalRuns) {
     title: '自动运行风险提醒',
     message: `当前轮数已经不适合单节点情况，请确保已经配置并打开节点轮询功能（若没有配置，请点击贡献/使用按钮，根据网页中使用教程进行配置），避免连续使用一个节点注册，导致出现手机号验证。`,
     confirmLabel: '继续',
+  });
+
+  return {
+    confirmed: result.confirmed,
+    dismissPrompt: result.optionChecked,
+  };
+}
+
+async function openPlusAutoRunRiskConfirmModal(totalRuns) {
+  const result = await openConfirmModalWithOption({
+    title: 'Plus 自动轮数提醒',
+    message: `Plus 模式下当前设置为 ${totalRuns} 轮。轮数过多可能造成 PayPal 或账号快速封号。建议够用就好：我注册了几个使用，没多注册，完全足够使用，并且没有封号。这个模式下只要可以注册成功就能使用，所以不要贪杯哦。`,
+    confirmLabel: '我知道了，继续',
   });
 
   return {
@@ -1100,7 +1153,8 @@ function isDoneStatus(status) {
 }
 
 function getStepStatuses(state = latestState) {
-  return { ...STEP_DEFAULT_STATUSES, ...(state?.stepStatuses || {}) };
+  const merged = { ...STEP_DEFAULT_STATUSES, ...(state?.stepStatuses || {}) };
+  return Object.fromEntries(STEP_IDS.map((stepId) => [stepId, merged[stepId] || 'pending']));
 }
 
 function getFirstUnfinishedStep(state = latestState) {
@@ -1690,6 +1744,15 @@ function collectSettingsPayload() {
     sub2apiDefaultProxyName: inputSub2ApiDefaultProxy.value.trim(),
     codex2apiUrl: inputCodex2ApiUrl.value.trim(),
     codex2apiAdminKey: inputCodex2ApiAdminKey.value.trim(),
+    plusModeEnabled: typeof inputPlusModeEnabled !== 'undefined' && inputPlusModeEnabled
+      ? Boolean(inputPlusModeEnabled.checked)
+      : Boolean(latestState?.plusModeEnabled),
+    paypalEmail: typeof inputPaypalEmail !== 'undefined' && inputPaypalEmail
+      ? inputPaypalEmail.value.trim()
+      : String(latestState?.paypalEmail || ''),
+    paypalPassword: typeof inputPaypalPassword !== 'undefined' && inputPaypalPassword
+      ? inputPaypalPassword.value
+      : String(latestState?.paypalPassword || ''),
     ...(contributionModeEnabled ? {} : {
       customPassword: inputPassword.value,
     }),
@@ -1924,6 +1987,21 @@ function updatePhoneVerificationSettingsUI() {
   });
 }
 
+function updatePlusModeUI() {
+  const enabled = typeof inputPlusModeEnabled !== 'undefined' && inputPlusModeEnabled
+    ? Boolean(inputPlusModeEnabled.checked)
+    : false;
+  [
+    typeof rowPaypalEmail !== 'undefined' ? rowPaypalEmail : null,
+    typeof rowPaypalPassword !== 'undefined' ? rowPaypalPassword : null,
+  ].forEach((row) => {
+    if (!row) {
+      return;
+    }
+    row.style.display = enabled ? '' : 'none';
+  });
+}
+
 function setSettingsCardLocked(locked) {
   if (!settingsCard) {
     return;
@@ -2104,6 +2182,9 @@ function applyAutoRunStatus(payload = currentAutoRun) {
 
 function initializeManualStepActions() {
   document.querySelectorAll('.step-row').forEach((row) => {
+    if (row.querySelector('.step-actions')) {
+      return;
+    }
     const step = Number(row.dataset.step);
     const statusEl = row.querySelector('.step-status');
     if (!statusEl) return;
@@ -2147,6 +2228,21 @@ function renderStepsList() {
   if (stepsProgress) {
     stepsProgress.textContent = `0 / ${STEP_IDS.length}`;
   }
+
+  initializeManualStepActions();
+  updateProgressCounter();
+  updateButtonStates();
+}
+
+function syncStepDefinitionsForMode(plusModeEnabled = false, options = {}) {
+  const nextPlusModeEnabled = Boolean(plusModeEnabled);
+  const shouldRender = Boolean(options.render) || nextPlusModeEnabled !== currentPlusModeEnabled;
+  if (!shouldRender) {
+    return;
+  }
+
+  rebuildStepDefinitionState(nextPlusModeEnabled);
+  renderStepsList();
 }
 
 // ============================================================
@@ -2154,11 +2250,23 @@ function renderStepsList() {
 // ============================================================
 
 function applySettingsState(state) {
+  if (typeof syncStepDefinitionsForMode === 'function') {
+    syncStepDefinitionsForMode(Boolean(state?.plusModeEnabled), { render: true });
+  }
   syncLatestState(state);
   syncAutoRunState(state);
 
   inputEmail.value = state?.email || '';
   syncPasswordField(state || {});
+  if (typeof inputPlusModeEnabled !== 'undefined' && inputPlusModeEnabled) {
+    inputPlusModeEnabled.checked = Boolean(state?.plusModeEnabled);
+  }
+  if (typeof inputPaypalEmail !== 'undefined' && inputPaypalEmail) {
+    inputPaypalEmail.value = state?.paypalEmail || '';
+  }
+  if (typeof inputPaypalPassword !== 'undefined' && inputPaypalPassword) {
+    inputPaypalPassword.value = state?.paypalPassword || '';
+  }
   inputVpsUrl.value = state?.vpsUrl || '';
   inputVpsPassword.value = state?.vpsPassword || '';
   setLocalCpaStep9Mode(state?.localCpaStep9Mode);
@@ -2277,6 +2385,9 @@ function applySettingsState(state) {
   updateFallbackThreadIntervalInputState();
   updateAccountRunHistorySettingsUI();
   updatePhoneVerificationSettingsUI();
+  if (typeof updatePlusModeUI === 'function') {
+    updatePlusModeUI();
+  }
   updatePanelModeUI();
   updateMailProviderUI();
   if (isLuckmailProvider(state?.mailProvider)) {
@@ -2882,6 +2993,7 @@ function getCustomMailProviderUiCopy() {
 
 function getCustomVerificationPromptCopy(step) {
   const verificationLabel = step === 4 ? '注册验证码' : '登录验证码';
+  const isLoginVerificationStep = step === 8 || step === 11;
   return {
     title: `手动处理${verificationLabel}`,
     message: `当前邮箱服务为“自定义邮箱”。请先在页面中手动输入${verificationLabel}，并确认已经进入下一页面后，再点击确认。`,
@@ -2889,7 +3001,7 @@ function getCustomVerificationPromptCopy(step) {
       text: `点击确认后会跳过步骤 ${step}。`,
       tone: 'danger',
     },
-    ...(step === 8 ? {
+    ...(isLoginVerificationStep ? {
       phoneActionLabel: '出现手机号验证',
       phoneActionAlert: {
         text: '如果当前页面已经进入手机号验证，可直接标记为失败并继续下一个邮箱。',
@@ -2901,7 +3013,7 @@ function getCustomVerificationPromptCopy(step) {
 
 async function openCustomVerificationConfirmDialog(step) {
   const promptCopy = getCustomVerificationPromptCopy(step);
-  if (step === 8) {
+  if (step === 8 || step === 11) {
     return openActionModal({
       title: promptCopy.title,
       message: promptCopy.message,
@@ -4435,6 +4547,20 @@ async function startAutoRunFromCurrentSettings() {
     }
   }
 
+  const plusModeEnabled = typeof inputPlusModeEnabled !== 'undefined' && inputPlusModeEnabled
+    ? Boolean(inputPlusModeEnabled.checked)
+    : Boolean(currentPlusModeEnabled || latestState?.plusModeEnabled);
+  if (shouldWarnPlusAutoRunRisk(totalRuns, plusModeEnabled)
+    && !isAutoRunPlusRiskPromptDismissed()) {
+    const result = await openPlusAutoRunRiskConfirmModal(totalRuns);
+    if (!result.confirmed) {
+      return false;
+    }
+    if (result.dismissPrompt) {
+      setAutoRunPlusRiskPromptDismissed(true);
+    }
+  }
+
   btnAutoRun.disabled = true;
   inputRunCount.disabled = true;
   const delayEnabled = inputAutoDelayEnabled.checked;
@@ -4649,6 +4775,23 @@ inputPassword.addEventListener('input', () => {
 });
 inputPassword.addEventListener('blur', () => {
   saveSettings({ silent: true }).catch(() => { });
+});
+
+inputPlusModeEnabled?.addEventListener('change', () => {
+  updatePlusModeUI();
+  syncStepDefinitionsForMode(Boolean(inputPlusModeEnabled.checked), { render: true });
+  markSettingsDirty(true);
+  saveSettings({ silent: true }).catch(() => { });
+});
+
+[inputPaypalEmail, inputPaypalPassword].forEach((input) => {
+  input?.addEventListener('input', () => {
+    markSettingsDirty(true);
+    scheduleSettingsAutoSave();
+  });
+  input?.addEventListener('blur', () => {
+    saveSettings({ silent: true }).catch(() => { });
+  });
 });
 
 selectMailProvider.addEventListener('change', async () => {
