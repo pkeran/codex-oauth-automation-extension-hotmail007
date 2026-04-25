@@ -202,6 +202,29 @@ function findInputByFieldText(patterns, options = {}) {
   }) || null;
 }
 
+function getDirectFieldHintText(el) {
+  const id = el?.id || '';
+  const labels = [];
+  if (id) {
+    labels.push(...Array.from(document.querySelectorAll(`label[for="${CSS.escape(id)}"]`)).map((label) => label.textContent));
+  }
+  const wrappingLabel = el?.closest?.('label');
+  if (wrappingLabel) {
+    labels.push(wrappingLabel.textContent);
+  }
+  return normalizeText([
+    getActionText(el),
+    ...labels,
+  ].filter(Boolean).join(' '));
+}
+
+function isNonAddressSearchInput(input) {
+  const directText = getDirectFieldHintText(input);
+  const type = String(input?.getAttribute?.('type') || input?.type || '').trim().toLowerCase();
+  return /name|email|e-mail|phone|tel|password|coupon|promo|country|region|postal|zip|city|state|province|card|card\s*number|expiry|expiration|security|cvc|cvv|cc-/i.test(directText)
+    || ['email', 'tel', 'password'].includes(type);
+}
+
 function isDocumentLevelContainer(el) {
   return !el
     || el === document.documentElement
@@ -432,9 +455,9 @@ async function selectPayPalPaymentMethod() {
   });
   console.info('[MultiPage:plus-checkout] PayPal target selected', summarizeElementForDebug(target));
   simulateClick(target);
-  await sleep(1000);
+  log('Plus Checkout：已点击 PayPal 付款方式，正在确认选中状态。');
 
-  if (!isPayPalPaymentMethodActive()) {
+  if (!await waitForPayPalPaymentMethodActive()) {
     const diagnostics = writePayPalDiagnostics('点击 PayPal 后页面仍未进入 PayPal 账单表单', 'error');
     throw new Error(`Plus Checkout：已尝试点击 PayPal，但页面未切换到 PayPal 表单。请提供控制台 PayPal diagnostics 结构。候选数量：${diagnostics.paypalCandidates.length}，银行卡字段仍可见：${diagnostics.cardFieldsVisible ? '是' : '否'}。`);
   }
@@ -484,6 +507,9 @@ function readCountryText() {
 
 function isLikelyAddressSearchInput(input) {
   const text = getFieldText(input);
+  if (isNonAddressSearchInput(input)) {
+    return false;
+  }
   if (/name|email|e-mail|phone|tel|password|coupon|promo|country|region|postal|zip|city|state|province|card|card\s*number|expiry|expiration|security|cvc|cvv|cc-|全名|姓名|邮箱|电话|密码|国家|地区|邮编|城市|省|州|银行卡|卡号|有效期|安全码/i.test(text)) {
     return false;
   }
@@ -533,10 +559,19 @@ function hasSelectedPayPalControl() {
 }
 
 function isPayPalPaymentMethodActive() {
-  if (hasSelectedPayPalControl()) {
-    return true;
+  return hasSelectedPayPalControl();
+}
+
+async function waitForPayPalPaymentMethodActive(timeoutMs = 5000) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    throwIfStopped();
+    if (isPayPalPaymentMethodActive()) {
+      return true;
+    }
+    await sleep(250);
   }
-  return getPayPalSearchCandidates().length > 0 && !hasCreditCardFields();
+  return false;
 }
 
 async function findAddressSearchInput() {
@@ -547,7 +582,7 @@ async function findAddressSearchInput() {
     ], {
       exclude: (input) => /city|state|province|postal|zip|country|城市|省|州|邮编|国家|地区/i.test(getFieldText(input)),
     });
-    if (direct) return direct;
+    if (direct && !isNonAddressSearchInput(direct)) return direct;
     const candidates = getVisibleTextInputs().filter(isLikelyAddressSearchInput);
     return candidates[0] || null;
   }, {

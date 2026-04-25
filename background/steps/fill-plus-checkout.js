@@ -125,9 +125,6 @@
     }
 
     async function inspectCheckoutFrame(tabId, frame) {
-      if (frame.ready === false) {
-        return { frame, error: 'content-script-not-ready' };
-      }
       try {
         const result = await sendFrameMessage(tabId, frame.frameId, {
           type: 'PLUS_CHECKOUT_GET_STATE',
@@ -137,9 +134,11 @@
         if (result?.error) {
           return { frame, error: result.error };
         }
-        return { frame, result: result || {} };
+        return { frame: { ...frame, ready: true }, result: result || {} };
       } catch (error) {
-        return { frame, error: error?.message || String(error || '') };
+        const readyError = frame.ready === false ? 'content-script-not-ready' : '';
+        const message = error?.message || String(error || '');
+        return { frame, error: readyError ? `${readyError}: ${message}` : message };
       }
     }
 

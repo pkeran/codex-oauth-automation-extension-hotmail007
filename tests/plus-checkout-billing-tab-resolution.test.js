@@ -67,11 +67,15 @@ function createExecutorHarness({ frames, stateByFrame, readyByFrame = {} }) {
         sendMessage: async (tabId, message, options = {}) => {
           const frameId = Number.isInteger(options.frameId) ? options.frameId : 0;
           events.messages.push({ tabId, message, frameId });
+          const hasConfiguredState = Object.prototype.hasOwnProperty.call(stateByFrame, frameId);
           if (message.type === 'PING') {
             if (readyByFrame[frameId] === false) {
               throw new Error('No receiving end');
             }
             return { ok: true, source: 'plus-checkout' };
+          }
+          if (readyByFrame[frameId] === false && !hasConfiguredState) {
+            throw new Error('No receiving end');
           }
           if (message.type === 'PLUS_CHECKOUT_GET_STATE') {
             return stateByFrame[frameId] || { hasPayPal: false, paypalCandidates: [] };
@@ -156,6 +160,34 @@ test('Plus checkout billing sends the billing command to the iframe that contain
   assert.equal(fillMessage.frameId, 8);
   assert.equal(subscribeMessage.frameId, 0);
   assert.equal(events.logs.some((entry) => /checkout iframe/.test(entry.message)), true);
+  assert.equal(events.completed[0].step, 7);
+});
+
+test('Plus checkout billing still inspects a frame when ping readiness is stale', async () => {
+  const { events, executor } = createExecutorHarness({
+    frames: [
+      { frameId: 0, url: 'https://chatgpt.com/checkout/openai_ie/cs_test' },
+      { frameId: 7, url: 'https://js.stripe.com/v3/elements-inner-payment.html' },
+      { frameId: 8, url: 'https://js.stripe.com/v3/elements-inner-address.html' },
+    ],
+    stateByFrame: {
+      0: {
+        hasPayPal: true,
+        paypalCandidates: [{ tag: 'button', text: 'PayPal' }],
+        hasSubscribeButton: true,
+      },
+      7: { hasPayPal: false, paypalCandidates: [] },
+      8: { hasPayPal: false, paypalCandidates: [], billingFieldsVisible: true },
+    },
+    readyByFrame: {
+      0: false,
+    },
+  });
+
+  await executor.executePlusCheckoutBilling({});
+
+  const selectMessage = events.messages.find((entry) => entry.message.type === 'PLUS_CHECKOUT_SELECT_PAYPAL');
+  assert.equal(selectMessage.frameId, 0);
   assert.equal(events.completed[0].step, 7);
 });
 
