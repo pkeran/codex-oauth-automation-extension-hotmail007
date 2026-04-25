@@ -9,13 +9,21 @@ function loadModule() {
   return new Function('self', `${source}; return self.MultiPageBackgroundPayPalApprove;`)(self);
 }
 
-function createExecutor({ pageStates, submitResults, tabUrls = [] }) {
+function createExecutor({
+  pageStates,
+  submitResults,
+  tabUrls = [],
+  getTabId = async (source) => (source === 'paypal-flow' ? 1 : null),
+  isTabAlive = async () => true,
+  queryTabs = [],
+}) {
   const api = loadModule();
   const events = {
     completed: [],
     logs: [],
     messages: [],
     submittedPayloads: [],
+    updatedTabs: [],
   };
   const stateQueue = [...pageStates];
   const submitQueue = [...submitResults];
@@ -28,15 +36,20 @@ function createExecutor({ pageStates, submitResults, tabUrls = [] }) {
     },
     chrome: {
       tabs: {
-        get: async () => {
+        get: async (tabId = 1) => {
           if (urlQueue.length) {
             lastUrl = urlQueue.shift();
           }
           return {
-            id: 1,
+            id: tabId,
             status: 'complete',
             url: lastUrl,
           };
+        },
+        query: async () => queryTabs,
+        update: async (tabId, updateInfo) => {
+          events.updatedTabs.push({ tabId, updateInfo });
+          return {};
         },
       },
     },
@@ -44,8 +57,8 @@ function createExecutor({ pageStates, submitResults, tabUrls = [] }) {
       events.completed.push({ step, payload });
     },
     ensureContentScriptReadyOnTabUntilStopped: async () => {},
-    getTabId: async (source) => (source === 'paypal-flow' ? 1 : null),
-    isTabAlive: async () => true,
+    getTabId,
+    isTabAlive,
     sendTabMessageUntilStopped: async (_tabId, _source, message) => {
       events.messages.push(message.type);
       if (message.type === 'PAYPAL_GET_STATE') {
@@ -90,6 +103,38 @@ test('PayPal approve keeps original combined email and password login path', asy
   });
 
   assert.equal(events.submittedPayloads.length, 1);
+  assert.deepEqual(events.completed.map((item) => item.step), [8]);
+  assert.equal(events.messages.includes('PAYPAL_CLICK_APPROVE'), true);
+});
+
+test('PayPal approve discovers an already open unregistered PayPal tab', async () => {
+  const { executor, events } = createExecutor({
+    pageStates: [
+      { needsLogin: false, approveReady: true },
+    ],
+    submitResults: [],
+    getTabId: async () => null,
+    isTabAlive: async () => false,
+    queryTabs: [
+      {
+        id: 7,
+        active: true,
+        currentWindow: true,
+        url: 'https://www.paypal.com/pay/?token=BA-demo',
+      },
+    ],
+    tabUrls: [
+      'https://www.paypal.com/pay/?token=BA-demo',
+    ],
+  });
+
+  await executor.executePayPalApprove({
+    paypalEmail: 'user@example.com',
+    paypalPassword: 'secret',
+  });
+
+  assert.deepEqual(events.updatedTabs, [{ tabId: 7, updateInfo: { active: true } }]);
+  assert.equal(events.logs.some(({ message }) => /发现 PayPal 页面/.test(message)), true);
   assert.deepEqual(events.completed.map((item) => item.step), [8]);
   assert.equal(events.messages.includes('PAYPAL_CLICK_APPROVE'), true);
 });

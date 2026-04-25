@@ -27,6 +27,11 @@
       if (paypalTabId && await isTabAlive(PAYPAL_SOURCE)) {
         return paypalTabId;
       }
+      const discoveredPayPalTabId = await findOpenPayPalTabId();
+      if (discoveredPayPalTabId) {
+        await addLog('步骤 8：已从当前浏览器标签中发现 PayPal 页面，正在接管继续执行。', 'info');
+        return discoveredPayPalTabId;
+      }
       const checkoutTabId = await getTabId(PLUS_CHECKOUT_SOURCE);
       if (checkoutTabId) {
         return checkoutTabId;
@@ -36,6 +41,27 @@
         return storedTabId;
       }
       throw new Error('步骤 8：未找到 PayPal 标签页，请先完成步骤 7。');
+    }
+
+    async function findOpenPayPalTabId() {
+      if (!chrome?.tabs?.query) {
+        return 0;
+      }
+
+      const tabs = await chrome.tabs.query({}).catch(() => []);
+      const candidates = (Array.isArray(tabs) ? tabs : [])
+        .filter((tab) => Number.isInteger(tab?.id) && isPayPalUrl(tab.url || ''));
+      if (!candidates.length) {
+        return 0;
+      }
+
+      const match = candidates.find((tab) => tab.active && tab.currentWindow)
+        || candidates.find((tab) => tab.active)
+        || candidates[0];
+      if (match?.id && chrome?.tabs?.update) {
+        await chrome.tabs.update(match.id, { active: true }).catch(() => {});
+      }
+      return match?.id || 0;
     }
 
     async function ensurePayPalReady(tabId, logMessage = '') {

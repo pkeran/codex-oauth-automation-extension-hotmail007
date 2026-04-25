@@ -70,6 +70,22 @@ async function waitForDocumentComplete() {
 
 function isVisibleElement(el) {
   if (!el) return false;
+  let node = el;
+  while (node && node.nodeType === 1) {
+    if (node.hidden || node.getAttribute?.('aria-hidden') === 'true' || node.getAttribute?.('inert') !== null) {
+      return false;
+    }
+    const nodeStyle = window.getComputedStyle(node);
+    if (
+      nodeStyle.display === 'none'
+      || nodeStyle.visibility === 'hidden'
+      || nodeStyle.visibility === 'collapse'
+      || Number(nodeStyle.opacity) === 0
+    ) {
+      return false;
+    }
+    node = node.parentElement;
+  }
   const style = window.getComputedStyle(el);
   const rect = el.getBoundingClientRect();
   return style.display !== 'none'
@@ -117,7 +133,7 @@ function findInputByPatterns(patterns) {
   const inputs = getVisibleControls('input')
     .filter((input) => {
       const type = String(input.getAttribute('type') || input.type || '').trim().toLowerCase();
-      return !['hidden', 'checkbox', 'radio', 'submit', 'button', 'file'].includes(type);
+      return isEnabledControl(input) && !['hidden', 'checkbox', 'radio', 'submit', 'button', 'file'].includes(type);
     });
   return inputs.find((input) => {
     const text = getActionText(input);
@@ -142,6 +158,21 @@ function findLoginNextButton() {
     /next|continue|login|log\s*in|sign\s*in/i,
     /下一步|继续|登录|登入/i,
   ]);
+}
+
+function findEmailNextButton() {
+  return findClickableByText([
+    /next|btn\s*next|btnnext/i,
+    /下一页|下一步/i,
+  ]);
+}
+
+function findPasswordLoginButton() {
+  const button = findClickableByText([
+    /login|log\s*in|sign\s*in/i,
+    /登录|登入/i,
+  ]);
+  return button && button !== findEmailNextButton() ? button : null;
 }
 
 function findApproveButton() {
@@ -185,6 +216,11 @@ function hasPasskeyPrompt() {
 }
 
 function getPayPalLoginPhase(emailInput, passwordInput) {
+  const emailNextButton = findEmailNextButton();
+  const passwordLoginButton = findPasswordLoginButton();
+  if (emailInput && emailNextButton && isEnabledControl(emailNextButton) && (!passwordInput || !passwordLoginButton)) {
+    return 'email';
+  }
   if (emailInput && passwordInput) return 'login_combined';
   if (passwordInput) return 'password';
   if (emailInput) return 'email';
@@ -202,13 +238,26 @@ async function submitPayPalLogin(payload = {}) {
 
   let passwordInput = findPasswordInput();
   const emailInput = findEmailInput();
+  const emailNextButton = findEmailNextButton();
+
+  if (emailInput && emailNextButton && isEnabledControl(emailNextButton) && (!passwordInput || !findPasswordLoginButton())) {
+    if (normalizeText(emailInput.value || '') !== email) {
+      fillInput(emailInput, email);
+    }
+    simulateClick(emailNextButton);
+    return {
+      submitted: false,
+      phase: 'email_submitted',
+      awaiting: 'password_page',
+    };
+  }
 
   if (!passwordInput && emailInput && email) {
     if (normalizeText(emailInput.value || '') !== email) {
       fillInput(emailInput, email);
     }
     const nextButton = await waitUntil(() => {
-      const button = findLoginNextButton();
+      const button = findEmailNextButton() || findLoginNextButton();
       return button && isEnabledControl(button) ? button : null;
     }, {
       intervalMs: 250,
