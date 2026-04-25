@@ -8261,8 +8261,8 @@ async function executeContributionStep10(state) {
   while (Date.now() - startedAt < timeoutMs) {
     const status = String(latestState.contributionStatus || '').trim().toLowerCase();
     if (contributionOAuthManager?.isContributionFinalStatus?.(status)) {
-      if (status === 'auto_approved' || status === 'manual_review_required') {
-        await addLog(`步骤 10：贡献流程已结束，最终状态：${latestState.contributionStatusMessage || status}`, status === 'auto_approved' ? 'ok' : 'warn');
+      if (status === 'auto_approved') {
+        await addLog(`步骤 10：贡献流程已结束，最终状态：${latestState.contributionStatusMessage || status}`, 'ok');
         await completeStepFromBackground(10, {
           contributionStatus: status,
           contributionStatusMessage: latestState.contributionStatusMessage || '',

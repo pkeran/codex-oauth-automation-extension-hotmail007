@@ -3,7 +3,7 @@
 })(typeof self !== 'undefined' ? self : globalThis, function createBackgroundContributionOAuthModule() {
   const API_BASE_URL = 'https://apikey.qzz.io/oauth/api';
   const ACTIVE_STATUSES = new Set(['started', 'waiting', 'processing']);
-  const FINAL_STATUSES = new Set(['auto_approved', 'auto_rejected', 'manual_review_required', 'expired', 'error']);
+  const FINAL_STATUSES = new Set(['auto_approved', 'auto_rejected', 'expired', 'error']);
   const CALLBACK_FINAL_STATUSES = new Set(['submitted']);
   const CALLBACK_WAITING_STATUSES = new Set(['idle', 'waiting', 'captured', 'failed', 'submitting']);
 
@@ -64,9 +64,6 @@
         case 'auto_rejected':
         case 'rejected':
           return 'auto_rejected';
-        case 'manual_review_required':
-        case 'manual_review':
-          return 'manual_review_required';
         case 'expired':
         case 'timeout':
           return 'expired';
@@ -119,8 +116,6 @@
           return '贡献成功，CPA 已确认';
         case 'auto_rejected':
           return '贡献未通过确认';
-        case 'manual_review_required':
-          return '已提交，等待人工处理';
         case 'expired':
           return '贡献会话已超时';
         case 'error':
