@@ -546,6 +546,21 @@ return {
   ]);
 });
 
+test('extractVerificationCode strict mode matches the new suspicious log-in mail body', () => {
+  const bundle = [
+    extractFunction('extractVerificationCode'),
+  ].join('\n');
+
+  const api = new Function(`
+${bundle}
+return { extractVerificationCode };
+`)();
+
+  const bodyText = 'ChatGPT Log-in Code\nWe noticed a suspicious log-in on your account. If that was you, enter this code:\n\n982219';
+  assert.equal(api.extractVerificationCode(bodyText, true), '982219');
+  assert.equal(api.extractVerificationCode(bodyText, false), '982219');
+});
+
 test('openMailAndGetMessageText always returns to inbox after opening a 2925 message', async () => {
   const bundle = [
     extractFunction('returnToInbox'),

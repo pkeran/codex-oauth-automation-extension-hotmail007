@@ -670,7 +670,7 @@ function matchesMailFilters(text, senderFilters, subjectFilters) {
 
 function extractVerificationCode(text, strictChatGPTCodeOnly = false) {
   if (strictChatGPTCodeOnly) {
-    const strictMatch = String(text || '').match(/your\s+chatgpt\s+code\s+is\s+(\d{6})/i);
+    const strictMatch = String(text || '').match(/(?:your\s+chatgpt\s+code\s+is|(?:chatgpt\s+log-?in\s+code|suspicious\s+log-?in)[\s\S]{0,120}enter\s+this\s+code)[^0-9]{0,24}(\d{6})/i);
     return strictMatch ? strictMatch[1] : null;
   }
 
@@ -678,6 +678,9 @@ function extractVerificationCode(text, strictChatGPTCodeOnly = false) {
 
   const matchCn = normalized.match(/(?:代码为|验证码[^0-9]*?)[\s：:]*(\d{6})/);
   if (matchCn) return matchCn[1];
+
+  const matchOpenAiLogin = normalized.match(/(?:chatgpt\s+log-?in\s+code|enter\s+this\s+code)[^0-9]{0,24}(\d{6})/i);
+  if (matchOpenAiLogin) return matchOpenAiLogin[1];
 
   const matchChatGPT = normalized.match(/your\s+chatgpt\s+code\s+is\s+(\d{6})/i);
   if (matchChatGPT) return matchChatGPT[1];

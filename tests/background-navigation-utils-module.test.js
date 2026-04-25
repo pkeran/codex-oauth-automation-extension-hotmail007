@@ -16,6 +16,26 @@ test('navigation utils module exposes a factory', () => {
   assert.equal(typeof api?.createNavigationUtils, 'function');
 });
 
+test('navigation utils treat 126 mail hosts as part of the shared NetEase mail family', () => {
+  const source = fs.readFileSync('background/navigation-utils.js', 'utf8');
+  const globalScope = {};
+  const moduleApi = new Function('self', `${source}; return self.MultiPageBackgroundNavigationUtils;`)(globalScope);
+  const navigationUtils = moduleApi.createNavigationUtils({
+    DEFAULT_SUB2API_URL: 'https://example.com/admin/accounts',
+    normalizeLocalCpaStep9Mode: value => value,
+  });
+
+  assert.equal(navigationUtils.is163MailHost('mail.126.com'), true);
+  assert.equal(
+    navigationUtils.matchesSourceUrlFamily(
+      'mail-163',
+      'https://mail.126.com/js6/main.jsp',
+      'https://mail.163.com/js6/main.jsp'
+    ),
+    true
+  );
+});
+
 test('navigation utils support codex2api mode and url normalization', () => {
   const source = fs.readFileSync('background/navigation-utils.js', 'utf8');
   const globalScope = {};

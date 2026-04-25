@@ -754,6 +754,7 @@ function normalizeMailProvider(value = '') {
     case CLOUDFLARE_TEMP_EMAIL_PROVIDER:
     case '163':
     case '163-vip':
+    case '126':
     case 'qq':
     case 'inbucket':
     case '2925':
@@ -3856,6 +3857,8 @@ function is163MailHost(hostname = '') {
   }
   return hostname === 'mail.163.com'
     || hostname.endsWith('.mail.163.com')
+    || hostname === 'mail.126.com'
+    || hostname.endsWith('.mail.126.com')
     || hostname === 'webmail.vip.163.com';
 }
 
@@ -5956,7 +5959,7 @@ async function ensureAutoEmailReady(targetRun, totalRuns, attemptRuns) {
       if (!currentState.emailPrefix) {
         throw new Error('Gmail 原邮箱未设置，请先在侧边栏填写。');
       }
-      await addLog(`=== 鐩爣 ${targetRun}/${totalRuns} 杞細Gmail +tag 妯″紡宸插惎鐢紝灏嗗湪姝ラ 3 鑷姩鐢熸垚閭锛堢 ${attemptRuns} 娆″皾璇曪級===`, 'info');
+      await addLog(`=== 目标 ${targetRun}/${totalRuns} 轮：Gmail +tag 模式已启用，将在步骤 3 自动生成邮箱（第 ${attemptRuns} 次尝试）===`, 'info');
       return null;
     }
     if (!currentState.emailPrefix) {
@@ -6903,6 +6906,9 @@ function getMailConfig(state) {
   }
   if (provider === '163-vip') {
     return { source: 'mail-163', url: 'https://webmail.vip.163.com/js6/main.jsp?df=mail163_letter#module=mbox.ListModule%7C%7B%22fid%22%3A1%2C%22order%22%3A%22date%22%2C%22desc%22%3Atrue%7D', label: '163 VIP 邮箱' };
+  }
+  if (provider === '126') {
+    return { source: 'mail-163', url: 'https://mail.126.com/js6/main.jsp?df=mail163_letter#module=mbox.ListModule%7C%7B%22fid%22%3A1%2C%22order%22%3A%22date%22%2C%22desc%22%3Atrue%7D', label: '126 邮箱' };
   }
   if (provider === 'inbucket') {
     const host = normalizeInbucketOrigin(state.inbucketHost);
