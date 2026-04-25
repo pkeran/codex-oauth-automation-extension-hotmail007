@@ -35,3 +35,28 @@ test('navigation utils support codex2api mode and url normalization', () => {
   assert.equal(utils.getPanelMode({ panelMode: 'codex2api' }), 'codex2api');
   assert.equal(utils.getPanelModeLabel('codex2api'), 'Codex2API');
 });
+
+test('navigation utils recognize the iCloud mail tab family on both supported hosts', () => {
+  const source = fs.readFileSync('background/navigation-utils.js', 'utf8');
+  const globalScope = {};
+
+  const api = new Function('self', `${source}; return self.MultiPageBackgroundNavigationUtils;`)(globalScope);
+  const utils = api.createNavigationUtils({
+    DEFAULT_CODEX2API_URL: 'http://localhost:8080/admin/accounts',
+    DEFAULT_SUB2API_URL: 'https://sub.example.com/admin/accounts',
+    normalizeLocalCpaStep9Mode: (value) => value,
+  });
+
+  assert.equal(
+    utils.matchesSourceUrlFamily('icloud-mail', 'https://www.icloud.com/mail/', 'https://www.icloud.com/mail/'),
+    true
+  );
+  assert.equal(
+    utils.matchesSourceUrlFamily('icloud-mail', 'https://www.icloud.com.cn/mail/', 'https://www.icloud.com.cn/mail/'),
+    true
+  );
+  assert.equal(
+    utils.matchesSourceUrlFamily('icloud-mail', 'https://mail.google.com/mail/u/0/#inbox', 'https://www.icloud.com/mail/'),
+    false
+  );
+});

@@ -5,6 +5,7 @@
     const {
       addLog,
       chrome,
+      closeConflictingTabsForSource,
       CLOUDFLARE_TEMP_EMAIL_PROVIDER,
       completeStepFromBackground,
       confirmCustomVerificationStepBypassRequest,
@@ -392,13 +393,38 @@
       }
     }
 
+    async function closeIcloudMailboxTabAfterSuccess(step, mail) {
+      if (mail?.source !== 'icloud-mail') {
+        return;
+      }
+
+      const tabId = typeof getTabId === 'function'
+        ? await getTabId(mail.source)
+        : null;
+
+      if (Number.isInteger(tabId)) {
+        await chrome.tabs.remove(tabId).catch(() => {});
+        await addLog(`步骤 ${step}：已关闭 iCloud 邮箱标签页，避免长期累积。`, 'info');
+        return;
+      }
+
+      if (typeof closeConflictingTabsForSource === 'function' && mail.url) {
+        await closeConflictingTabsForSource(mail.source, mail.url).catch(() => {});
+      }
+    }
+
     function triggerPostSuccessMailboxCleanup(step, mail) {
-      if (mail?.provider !== '2925') {
+      if (mail?.provider !== '2925' && mail?.source !== 'icloud-mail') {
         return;
       }
 
       Promise.resolve().then(async () => {
         try {
+          if (mail?.source === 'icloud-mail') {
+            await closeIcloudMailboxTabAfterSuccess(step, mail);
+            return;
+          }
+
           await sendToMailContentScriptResilient(
             mail,
             {

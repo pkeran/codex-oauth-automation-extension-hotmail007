@@ -280,6 +280,77 @@ test('verification flow skips 2925 mailbox preclear when using a fixed signup ma
   assert.deepStrictEqual(mailMessages, ['POLL_EMAIL', 'DELETE_ALL_EMAILS']);
 });
 
+test('verification flow closes the tracked iCloud mail tab after a successful verification submit', async () => {
+  const removedTabIds = [];
+  const logMessages = [];
+
+  const helpers = api.createVerificationFlowHelpers({
+    addLog: async (message) => {
+      logMessages.push(message);
+    },
+    chrome: {
+      tabs: {
+        update: async () => {},
+        remove: async (tabId) => {
+          removedTabIds.push(tabId);
+        },
+      },
+    },
+    closeConflictingTabsForSource: async () => {
+      throw new Error('should not use family cleanup when tracked tab exists');
+    },
+    CLOUDFLARE_TEMP_EMAIL_PROVIDER: 'cloudflare-temp-email',
+    completeStepFromBackground: async () => {},
+    confirmCustomVerificationStepBypassRequest: async () => ({ confirmed: true }),
+    getHotmailVerificationPollConfig: () => ({}),
+    getHotmailVerificationRequestTimestamp: () => 0,
+    getState: async () => ({}),
+    getTabId: async (source) => (source === 'icloud-mail' ? 91 : 1),
+    HOTMAIL_PROVIDER: 'hotmail-api',
+    isStopError: () => false,
+    LUCKMAIL_PROVIDER: 'luckmail-api',
+    MAIL_2925_VERIFICATION_INTERVAL_MS: 15000,
+    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 15,
+    pollCloudflareTempEmailVerificationCode: async () => ({}),
+    pollHotmailVerificationCode: async () => ({}),
+    pollLuckmailVerificationCode: async () => ({}),
+    sendToContentScript: async (_source, message) => {
+      if (message.type === 'FILL_CODE') {
+        return {};
+      }
+      return {};
+    },
+    sendToMailContentScriptResilient: async () => ({
+      code: '654321',
+      emailTimestamp: 123,
+    }),
+    setState: async () => {},
+    setStepStatus: async () => {},
+    sleepWithStop: async () => {},
+    throwIfStopped: () => {},
+    VERIFICATION_POLL_MAX_ROUNDS: 5,
+  });
+
+  await helpers.resolveVerificationStep(
+    4,
+    {
+      email: 'user@example.com',
+      lastSignupCode: null,
+    },
+    {
+      source: 'icloud-mail',
+      url: 'https://www.icloud.com/mail/',
+      label: 'iCloud 邮箱',
+    },
+    {}
+  );
+
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.deepStrictEqual(removedTabIds, [91]);
+  assert.ok(logMessages.some((message) => message.includes('已关闭 iCloud 邮箱标签页')));
+});
+
 test('verification flow completes step 8 and flags phone verification when add-phone appears after login code submit', async () => {
   const events = [];
 

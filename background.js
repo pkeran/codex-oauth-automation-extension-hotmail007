@@ -6492,6 +6492,7 @@ const signupFlowHelpers = self.MultiPageSignupFlowHelpers?.createSignupFlowHelpe
 const verificationFlowHelpers = self.MultiPageBackgroundVerificationFlow?.createVerificationFlowHelpers({
   addLog,
   chrome,
+  closeConflictingTabsForSource,
   CLOUDFLARE_TEMP_EMAIL_PROVIDER,
   completeStepFromBackground,
   confirmCustomVerificationStepBypassRequest: (step) => chrome.runtime.sendMessage({
