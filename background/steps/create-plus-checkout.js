@@ -4,6 +4,7 @@
   const PLUS_CHECKOUT_SOURCE = 'plus-checkout';
   const PLUS_CHECKOUT_ENTRY_URL = 'https://chatgpt.com/';
   const PLUS_CHECKOUT_INJECT_FILES = ['content/utils.js', 'content/plus-checkout.js'];
+  const PLUS_CHECKOUT_POST_CREATE_WAIT_MS = 20000;
 
   function createPlusCheckoutCreateExecutor(deps = {}) {
     const {
@@ -63,6 +64,9 @@
         plusCheckoutCountry: result.country || 'DE',
         plusCheckoutCurrency: result.currency || 'EUR',
       });
+
+      await addLog('步骤 6：Plus Checkout 页面已就绪，固定等待 20 秒后继续下一步。', 'info');
+      await sleepWithStop(PLUS_CHECKOUT_POST_CREATE_WAIT_MS);
 
       await completeStepFromBackground(6, {
         plusCheckoutCountry: result.country || 'DE',
