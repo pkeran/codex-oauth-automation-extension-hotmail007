@@ -84,7 +84,7 @@ test('step 2 keeps password flow when landing on password page', async () => {
   ]);
 });
 
-test('step 2 falls back to already-logged-in branch when auth entry recovery fails on chatgpt home', async () => {
+test('step 2 stops with an explicit error instead of silently skipping 3/4/5 on chatgpt home', async () => {
   const completedPayloads = [];
   const logs = [];
 
@@ -117,10 +117,18 @@ test('step 2 falls back to already-logged-in branch when auth entry recovery fai
     SIGNUP_PAGE_INJECT_FILES: [],
   });
 
-  await executor.executeStep2({ email: 'user@example.com' });
+  await assert.rejects(
+    () => executor.executeStep2({ email: 'user@example.com' }),
+    /3\/4\/5/
+  );
 
-  assert.equal(completedPayloads.length, 1);
-  assert.deepStrictEqual(completedPayloads[0], {
+  assert.deepStrictEqual(completedPayloads, []);
+  assert.ok(logs.some((item) => /3\/4\/5/.test(item.message)));
+  return;
+  if (false) await executor.executeStep2({ email: 'user@example.com' });
+
+  if (false) assert.equal(completedPayloads.length, 1);
+  if (false) assert.deepStrictEqual(completedPayloads[0], {
     step: 2,
     payload: {
       email: 'user@example.com',

@@ -85,6 +85,9 @@
       const reasonText = getErrorMessage(reasonMessage);
       const reasonSuffix = reasonText ? `（触发原因：${reasonText}）` : '';
       await addLog(`步骤 2：检测到当前会话已登录 ChatGPT，已跳过注册链路（步骤 3/4/5），将直接进入步骤 6。${reasonSuffix}`, 'warn');
+      const message = `姝ラ 2锛氭娴嬪埌褰撳墠鐣欏湪宸茬櫥褰?ChatGPT 棣栭〉锛屽凡闃绘鑷姩璺宠繃姝ラ 3/4/5銆傝鍏堟墽琛屾楠?1 娓呯悊浼氳瘽鍚庨噸璇曘€?${reasonSuffix}`;
+      await addLog(message, 'error');
+      throw new Error(message);
       await completeStepFromBackground(2, {
         email: resolvedEmail,
         nextSignupState: 'already_logged_in_home',
@@ -93,6 +96,19 @@
         skipRegistrationFlow: true,
       });
       return true;
+    }
+
+    async function failStep2OnLoggedInSession(tabId, reasonMessage = '') {
+      const currentUrl = await getTabUrl(tabId);
+      if (!isLikelyLoggedInChatgptHomeUrl(currentUrl)) {
+        return false;
+      }
+
+      const reasonText = getErrorMessage(reasonMessage);
+      const reasonSuffix = reasonText ? `（触发原因：${reasonText}）` : '';
+      const message = `步骤 2：检测到当前停留在已登录 ChatGPT 首页，已阻止自动跳过步骤 3/4/5。请先执行步骤 1 清理会话后重试。${reasonSuffix}`;
+      await addLog(message, 'error');
+      throw new Error(message);
     }
 
     async function submitSignupEmail(resolvedEmail, options = {}) {
@@ -142,7 +158,7 @@
           signupTabId = (await ensureSignupAuthEntryPageReady(2)).tabId;
         } catch (entryError) {
           const entryErrorMessage = getErrorMessage(entryError);
-          if (await completeStep2AsLoggedInSession(signupTabId, resolvedEmail, entryErrorMessage)) {
+          if (await failStep2OnLoggedInSession(signupTabId, entryErrorMessage)) {
             return;
           }
           await addLog('步骤 2：切换认证入口失败，正在重新打开官网入口并重试提交邮箱...', 'warn');
@@ -170,7 +186,7 @@
           if (step2Result?.error) {
             const retryErrorMessage = getErrorMessage(step2Result.error);
             if (isSignupEntryUnavailableErrorMessage(retryErrorMessage)) {
-              if (await completeStep2AsLoggedInSession(signupTabId, resolvedEmail, retryErrorMessage)) {
+              if (await failStep2OnLoggedInSession(signupTabId, retryErrorMessage)) {
                 return;
               }
               await addLog('步骤 2：认证入口仍不可用，正在重新进入官网注册入口再重试一次...', 'warn');
@@ -198,7 +214,7 @@
         if (
           (isSignupEntryUnavailableErrorMessage(finalErrorMessage)
             || isRetryableStep2TransportErrorMessage(finalErrorMessage))
-          && await completeStep2AsLoggedInSession(signupTabId, resolvedEmail, finalErrorMessage)
+          && await failStep2OnLoggedInSession(signupTabId, finalErrorMessage)
         ) {
           return;
         }
