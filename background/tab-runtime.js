@@ -286,6 +286,52 @@
       }
     }
 
+    async function waitForTabStableComplete(tabId, options = {}) {
+      const {
+        timeoutMs = 30000,
+        retryDelayMs = 300,
+        stableMs = 1000,
+        initialDelayMs = 0,
+      } = options;
+      const start = Date.now();
+      let lastUrl = '';
+      let lastStatus = '';
+      let stableStartedAt = 0;
+      let lastTab = null;
+
+      if (initialDelayMs > 0) {
+        await sleepOrStop(initialDelayMs);
+      }
+
+      while (Date.now() - start < timeoutMs) {
+        throwIfStopped();
+        try {
+          lastTab = await chrome.tabs.get(tabId);
+        } catch {
+          return null;
+        }
+
+        const currentUrl = String(lastTab?.url || '');
+        const currentStatus = String(lastTab?.status || '');
+        if (currentStatus === 'complete') {
+          if (currentUrl !== lastUrl || currentStatus !== lastStatus || !stableStartedAt) {
+            stableStartedAt = Date.now();
+          }
+          if (Date.now() - stableStartedAt >= stableMs) {
+            return lastTab;
+          }
+        } else {
+          stableStartedAt = 0;
+        }
+
+        lastUrl = currentUrl;
+        lastStatus = currentStatus;
+        await sleepOrStop(retryDelayMs);
+      }
+
+      return lastTab;
+    }
+
     async function ensureContentScriptReadyOnTab(source, tabId, options = {}) {
       const {
         inject = null,
@@ -721,6 +767,7 @@
       sendToMailContentScriptResilient,
       summarizeMessageResultForDebug,
       waitForTabComplete,
+      waitForTabStableComplete,
       waitForTabUrlFamily,
       waitForTabUrlMatch,
     };

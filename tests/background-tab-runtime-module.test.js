@@ -133,3 +133,58 @@ test('tab runtime waitForTabComplete aborts promptly when stop is requested', as
     /Flow stopped\./
   );
 });
+
+test('tab runtime waitForTabStableComplete waits through a late navigation after an initial complete state', async () => {
+  const source = fs.readFileSync('background/tab-runtime.js', 'utf8');
+  const globalScope = {};
+  const api = new Function('self', `${source}; return self.MultiPageBackgroundTabRuntime;`)(globalScope);
+
+  let getCalls = 0;
+  const runtime = api.createTabRuntime({
+    LOG_PREFIX: '[test]',
+    addLog: async () => {},
+    chrome: {
+      tabs: {
+        get: async () => {
+          getCalls += 1;
+          if (getCalls === 1) {
+            return {
+              id: 9,
+              url: 'https://auth.openai.com/u/signup/profile',
+              status: 'complete',
+            };
+          }
+          if (getCalls === 2) {
+            return {
+              id: 9,
+              url: 'https://chatgpt.com/',
+              status: 'loading',
+            };
+          }
+          return {
+            id: 9,
+            url: 'https://chatgpt.com/',
+            status: 'complete',
+          };
+        },
+        query: async () => [],
+      },
+    },
+    getSourceLabel: (sourceName) => sourceName || 'unknown',
+    getState: async () => ({ tabRegistry: {}, sourceLastUrls: {} }),
+    matchesSourceUrlFamily: () => false,
+    setState: async () => {},
+    throwIfStopped: () => {},
+  });
+
+  const result = await runtime.waitForTabStableComplete(9, {
+    timeoutMs: 2000,
+    retryDelayMs: 5,
+    stableMs: 5,
+    initialDelayMs: 1,
+  });
+
+  assert.equal(result?.url, 'https://chatgpt.com/');
+  assert.equal(result?.status, 'complete');
+  assert.ok(getCalls >= 4);
+});

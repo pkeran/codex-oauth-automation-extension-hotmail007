@@ -3972,6 +3972,10 @@ async function waitForTabComplete(tabId, options = {}) {
   return tabRuntime.waitForTabComplete(tabId, options);
 }
 
+async function waitForTabStableComplete(tabId, options = {}) {
+  return tabRuntime.waitForTabStableComplete(tabId, options);
+}
+
 async function ensureContentScriptReadyOnTab(source, tabId, options = {}) {
   return tabRuntime.ensureContentScriptReadyOnTab(source, tabId, options);
 }
@@ -5598,10 +5602,12 @@ async function executeStepAndWait(step, delayAfter = 2000) {
   if (step === 5) {
     const signupTabId = await getTabId('signup-page');
     if (signupTabId) {
-      await addLog('自动运行：步骤 5 已收到完成信号，正在等待当前页面完成加载...', 'info');
-      await waitForTabComplete(signupTabId, {
-        timeoutMs: 15000,
+      await addLog('自动运行：步骤 5 已收到完成信号，正在等待当前页面完成加载并稳定...', 'info');
+      await waitForTabStableComplete(signupTabId, {
+        timeoutMs: 30000,
         retryDelayMs: 300,
+        stableMs: 1000,
+        initialDelayMs: 800,
       });
     }
   }
