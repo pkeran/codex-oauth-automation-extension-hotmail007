@@ -64,3 +64,19 @@ return { detectScriptSource };
     'mail-163'
   );
 });
+
+test('detectScriptSource maps 126 mail subdomains to the shared 163 mail source', () => {
+  const bundle = [extractFunction('detectScriptSource')].join('\n');
+  const api = new Function(`
+${bundle}
+return { detectScriptSource };
+`)();
+
+  assert.equal(
+    api.detectScriptSource({
+      url: 'https://app.mail.126.com/js6/main.jsp',
+      hostname: 'app.mail.126.com',
+    }),
+    'mail-163'
+  );
+});

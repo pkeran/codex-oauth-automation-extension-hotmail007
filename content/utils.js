@@ -15,6 +15,7 @@ function detectScriptSource({
     || hostname.endsWith('.mail.163.com')
     || hostname === 'webmail.vip.163.com'
     || hostname === 'mail.126.com'
+    || hostname.endsWith('.mail.126.com')
   ) return 'mail-163';
   if (hostname === 'mail.google.com') return 'gmail-mail';
   if (hostname === 'www.icloud.com' || hostname === 'www.icloud.com.cn') return 'icloud-mail';
