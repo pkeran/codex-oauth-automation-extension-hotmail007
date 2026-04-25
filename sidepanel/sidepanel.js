@@ -276,6 +276,7 @@ const DEFAULT_MAIL_2925_MODE = MAIL_2925_MODE_PROVIDE;
 const NEW_USER_GUIDE_PROMPT_DISMISSED_STORAGE_KEY = 'multipage-new-user-guide-prompt-dismissed';
 const AUTO_SKIP_FAILURES_PROMPT_DISMISSED_STORAGE_KEY = 'multipage-auto-skip-failures-prompt-dismissed';
 const AUTO_RUN_FALLBACK_RISK_PROMPT_DISMISSED_STORAGE_KEY = 'multipage-auto-run-fallback-risk-prompt-dismissed';
+const AUTO_RUN_PLUS_RISK_PROMPT_DISMISSED_STORAGE_KEY = 'multipage-auto-run-plus-risk-prompt-dismissed';
 
 function getStepDefinitionsForMode(plusModeEnabled = false) {
   return (window.MultiPageStepDefinitions?.getSteps?.({ plusModeEnabled }) || [])
@@ -296,6 +297,7 @@ function rebuildStepDefinitionState(plusModeEnabled = false) {
 }
 const CONTRIBUTION_CONTENT_PROMPT_DISMISSED_VERSION_STORAGE_KEY = 'multipage-contribution-content-prompt-dismissed-version';
 const AUTO_RUN_FALLBACK_RISK_WARNING_MIN_RUNS = 3;
+const AUTO_RUN_PLUS_RISK_WARNING_MAX_SAFE_RUNS = 3;
 const HOTMAIL_SERVICE_MODE_REMOTE = 'remote';
 const HOTMAIL_SERVICE_MODE_LOCAL = 'local';
 const ICLOUD_PROVIDER = 'icloud';
@@ -1020,8 +1022,21 @@ function setAutoRunFallbackRiskPromptDismissed(dismissed) {
   setPromptDismissed(AUTO_RUN_FALLBACK_RISK_PROMPT_DISMISSED_STORAGE_KEY, dismissed);
 }
 
+function isAutoRunPlusRiskPromptDismissed() {
+  return isPromptDismissed(AUTO_RUN_PLUS_RISK_PROMPT_DISMISSED_STORAGE_KEY);
+}
+
+function setAutoRunPlusRiskPromptDismissed(dismissed) {
+  setPromptDismissed(AUTO_RUN_PLUS_RISK_PROMPT_DISMISSED_STORAGE_KEY, dismissed);
+}
+
 function shouldWarnAutoRunFallbackRisk(totalRuns, autoRunSkipFailures) {
   return totalRuns >= AUTO_RUN_FALLBACK_RISK_WARNING_MIN_RUNS;
+}
+
+function shouldWarnPlusAutoRunRisk(totalRuns, plusModeEnabled) {
+  return Boolean(plusModeEnabled)
+    && Math.floor(Number(totalRuns) || 0) > AUTO_RUN_PLUS_RISK_WARNING_MAX_SAFE_RUNS;
 }
 
 async function openAutoSkipFailuresConfirmModal() {
@@ -1042,6 +1057,19 @@ async function openAutoRunFallbackRiskConfirmModal(totalRuns) {
     title: '自动运行风险提醒',
     message: `当前轮数已经不适合单节点情况，请确保已经配置并打开节点轮询功能（若没有配置，请点击贡献/使用按钮，根据网页中使用教程进行配置），避免连续使用一个节点注册，导致出现手机号验证。`,
     confirmLabel: '继续',
+  });
+
+  return {
+    confirmed: result.confirmed,
+    dismissPrompt: result.optionChecked,
+  };
+}
+
+async function openPlusAutoRunRiskConfirmModal(totalRuns) {
+  const result = await openConfirmModalWithOption({
+    title: 'Plus 自动轮数提醒',
+    message: `Plus 模式下当前设置为 ${totalRuns} 轮。轮数过多可能造成 PayPal 或账号快速封号。建议够用就好：我注册了几个使用，没多注册，完全足够使用，并且没有封号。这个模式下只要可以注册成功就能使用，所以不要贪杯哦。`,
+    confirmLabel: '我知道了，继续',
   });
 
   return {
@@ -4516,6 +4544,20 @@ async function startAutoRunFromCurrentSettings() {
     }
     if (result.dismissPrompt) {
       setAutoRunFallbackRiskPromptDismissed(true);
+    }
+  }
+
+  const plusModeEnabled = typeof inputPlusModeEnabled !== 'undefined' && inputPlusModeEnabled
+    ? Boolean(inputPlusModeEnabled.checked)
+    : Boolean(currentPlusModeEnabled || latestState?.plusModeEnabled);
+  if (shouldWarnPlusAutoRunRisk(totalRuns, plusModeEnabled)
+    && !isAutoRunPlusRiskPromptDismissed()) {
+    const result = await openPlusAutoRunRiskConfirmModal(totalRuns);
+    if (!result.confirmed) {
+      return false;
+    }
+    if (result.dismissPrompt) {
+      setAutoRunPlusRiskPromptDismissed(true);
     }
   }
 
