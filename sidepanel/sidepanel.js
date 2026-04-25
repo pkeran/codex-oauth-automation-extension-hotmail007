@@ -140,6 +140,7 @@ const btnIcloudLoginDone = document.getElementById('btn-icloud-login-done');
 const btnIcloudRefresh = document.getElementById('btn-icloud-refresh');
 const btnIcloudDeleteUsed = document.getElementById('btn-icloud-delete-used');
 const selectIcloudHostPreference = document.getElementById('select-icloud-host-preference');
+const selectIcloudFetchMode = document.getElementById('select-icloud-fetch-mode');
 const checkboxAutoDeleteIcloud = document.getElementById('checkbox-auto-delete-icloud');
 const inputIcloudSearch = document.getElementById('input-icloud-search');
 const selectIcloudFilter = document.getElementById('select-icloud-filter');
@@ -527,6 +528,7 @@ let currentAutoRun = {
 let settingsDirty = false;
 let settingsSaveInFlight = false;
 let settingsAutoSaveTimer = null;
+let settingsSaveRevision = 0;
 let cloudflareDomainEditMode = false;
 let cloudflareTempEmailDomainEditMode = false;
 let modalChoiceResolver = null;
@@ -562,6 +564,10 @@ const normalizeIcloudHost = window.IcloudUtils?.normalizeIcloudHost
     const normalized = String(value || '').trim().toLowerCase();
     return normalized === 'icloud.com' || normalized === 'icloud.com.cn' ? normalized : '';
   });
+const normalizeIcloudFetchMode = (value) => {
+  const normalized = String(value || '').trim().toLowerCase();
+  return normalized === 'always_new' ? 'always_new' : 'reuse_existing';
+};
 const getIcloudLoginUrlForHost = window.IcloudUtils?.getIcloudLoginUrlForHost
   || ((host) => host === 'icloud.com.cn' ? 'https://www.icloud.com.cn/' : (host === 'icloud.com' ? 'https://www.icloud.com/' : ''));
 
@@ -628,8 +634,6 @@ const LOG_LEVEL_LABELS = {
 };
 
 const CLOUDFLARE_TEMP_EMAIL_REPOSITORY_URL = 'https://github.com/dreamhunter2333/cloudflare_temp_email';
-const CLOUDFLARE_TEMP_EMAIL_BUILD_TUTORIAL_URL = 'https://linux.do/t/topic/316819';
-const CLOUDFLARE_TEMP_EMAIL_RANDOM_SUBDOMAIN_ISSUE_URL = 'https://github.com/dreamhunter2333/cloudflare_temp_email/issues/942';
 
 function usesGeneratedAliasMailProvider(
   provider,
@@ -1649,6 +1653,9 @@ function collectSettingsPayload() {
     !cloudflareTempEmailDomainEditMode ? selectTempEmailDomain.value : tempEmailActiveDomain
   ) || tempEmailActiveDomain;
   const contributionModeEnabled = Boolean(latestState?.contributionMode);
+  const icloudFetchModeRawValue = typeof selectIcloudFetchMode !== 'undefined'
+    ? String(selectIcloudFetchMode?.value || '')
+    : '';
   const mail2925UseAccountPool = typeof inputMail2925UseAccountPool !== 'undefined'
     ? Boolean(inputMail2925UseAccountPool?.checked)
     : Boolean(latestState?.mail2925UseAccountPool);
@@ -1680,6 +1687,9 @@ function collectSettingsPayload() {
       : [],
     autoDeleteUsedIcloudAlias: checkboxAutoDeleteIcloud?.checked,
     icloudHostPreference: selectIcloudHostPreference?.value || 'auto',
+    icloudFetchMode: (icloudFetchModeRawValue.trim().toLowerCase() === 'always_new'
+      ? 'always_new'
+      : 'reuse_existing'),
     ...(contributionModeEnabled ? {} : {
       accountRunHistoryTextEnabled: Boolean(inputAccountRunHistoryTextEnabled?.checked),
       accountRunHistoryHelperBaseUrl: normalizeAccountRunHistoryHelperBaseUrlValue(inputAccountRunHistoryHelperBaseUrl?.value),
@@ -1858,6 +1868,9 @@ async function clearRegistrationEmail(options = {}) {
 
 function markSettingsDirty(isDirty = true) {
   settingsDirty = isDirty;
+  if (isDirty) {
+    settingsSaveRevision += 1;
+  }
   updateSaveButtonState();
 }
 
@@ -1883,6 +1896,7 @@ async function saveSettings(options = {}) {
   }
 
   const payload = collectSettingsPayload();
+  const saveRevision = settingsSaveRevision;
   settingsSaveInFlight = true;
   updateSaveButtonState();
 
@@ -1897,11 +1911,13 @@ async function saveSettings(options = {}) {
       throw new Error(response.error);
     }
 
-    if (response?.state) {
+    if (response?.state && saveRevision === settingsSaveRevision) {
       applySettingsState(response.state);
     } else {
       syncLatestState(payload);
-      markSettingsDirty(false);
+      if (saveRevision === settingsSaveRevision) {
+        markSettingsDirty(false);
+      }
       updatePanelModeUI();
       updateMailProviderUI();
       updateButtonStates();
@@ -2086,6 +2102,9 @@ function applySettingsState(state) {
       ? 'icloud.com'
       : (String(state?.icloudHostPreference || '').trim().toLowerCase() === 'icloud.com.cn' ? 'icloud.com.cn' : 'auto');
   }
+  if (selectIcloudFetchMode) {
+    selectIcloudFetchMode.value = normalizeIcloudFetchMode(state?.icloudFetchMode);
+  }
   if (checkboxAutoDeleteIcloud) {
     checkboxAutoDeleteIcloud.checked = Boolean(state?.autoDeleteUsedIcloudAlias);
   }
@@ -2241,45 +2260,12 @@ function openReleaseListPage() {
   openExternalUrl(getReleaseListUrl());
 }
 
-function buildCloudflareTempEmailUsageGuideModalConfig() {
-  const useCloudflareTempEmailProvider = String(selectMailProvider?.value || '').trim().toLowerCase() === 'cloudflare-temp-email';
-  const useCloudflareTempEmailGenerator = getSelectedEmailGenerator() === 'cloudflare-temp-email';
-  let alertText = '当前还没有把 Cloudflare Temp Email 选为邮箱服务或邮箱生成器。下面说明同时覆盖“生成邮箱”和“接收转发邮件”两种用法。';
-  if (useCloudflareTempEmailProvider && useCloudflareTempEmailGenerator) {
-    alertText = '当前同时把 Cloudflare Temp Email 用作“邮箱服务”和“邮箱生成器”。请同时配置生成邮箱和接收转发两套必填项。';
-  } else if (useCloudflareTempEmailProvider) {
-    alertText = '当前把 Cloudflare Temp Email 用作“邮箱服务”。重点填写 Temp API、Custom Auth 和 邮件接收。';
-  } else if (useCloudflareTempEmailGenerator) {
-    alertText = '当前把 Cloudflare Temp Email 用作“邮箱生成器”。重点填写 Temp API、Admin Auth 和 Temp 域名；随机子域按需开启。';
+function openCloudflareTempEmailUsageGuidePage() {
+  const targetUrl = getContributionPortalUrl();
+  if (!targetUrl) {
+    return;
   }
-
-  return {
-    title: 'Cloudflare Temp Email 使用教程',
-    alert: { text: alertText },
-    messageHtml: `Temp API：填写 Cloudflare Temp Email 后端地址。<br><br>
-Admin Auth：填写后端 admin auth。<br>
-仅在“邮箱生成 = Cloudflare Temp Email”时必填。<br><br>
-Custom Auth：仅当站点额外开启访问密码时填写。没有开启就留空。<br><br>
-Temp 域名：填写允许创建的基础域名。启用随机子域时，这里仍然填写基础域名。<br><br>
-随机子域：仅在“邮箱生成 = Cloudflare Temp Email”时使用。<br>
-后端需要已配置 RANDOM_SUBDOMAIN_DOMAINS。<br>
-CF DNS 需要设置 MX *，参考 <a href="${CLOUDFLARE_TEMP_EMAIL_RANDOM_SUBDOMAIN_ISSUE_URL}" target="_blank" rel="noopener noreferrer">Issue #942</a>。<br><br>
-邮件接收：仅在“邮箱服务 = Cloudflare Temp Email”时填写。<br>
-这里填写真正接收转发邮件的目标邮箱。<br><br>
-搭建教程：<a href="${CLOUDFLARE_TEMP_EMAIL_BUILD_TUTORIAL_URL}" target="_blank" rel="noopener noreferrer">LINUX DO 教程</a>。`,
-  };
-}
-
-function showCloudflareTempEmailUsageGuide() {
-  const modalConfig = buildCloudflareTempEmailUsageGuideModalConfig();
-  return openActionModal({
-    title: modalConfig.title,
-    messageHtml: modalConfig.messageHtml,
-    alert: modalConfig.alert,
-    actions: [
-      { id: 'ok', label: '知道了', variant: 'btn-primary' },
-    ],
-  });
+  openExternalUrl(targetUrl);
 }
 
 function openCloudflareTempEmailRepositoryPage() {
@@ -3401,6 +3387,12 @@ function updateButtonStates() {
   if (btnIcloudRefresh) btnIcloudRefresh.disabled = disableIcloudControls;
   if (btnIcloudDeleteUsed) btnIcloudDeleteUsed.disabled = disableIcloudControls || !hasDeletableUsedIcloudAliases();
   if (selectIcloudHostPreference) selectIcloudHostPreference.disabled = disableIcloudControls;
+  if (selectIcloudFetchMode) {
+    const allowIcloudFetchMode = getSelectedEmailGenerator() === ICLOUD_PROVIDER
+      && !isCustomMailProvider()
+      && !isManagedAliasProvider();
+    selectIcloudFetchMode.disabled = disableIcloudControls || !allowIcloudFetchMode;
+  }
   if (checkboxAutoDeleteIcloud) checkboxAutoDeleteIcloud.disabled = disableIcloudControls;
   if (btnContributionMode) btnContributionMode.disabled = isContributionButtonLocked();
   updateStopButtonState(anyRunning || autoScheduled || isAutoRunPausedPhase() || autoLocked);
@@ -3893,8 +3885,9 @@ const contributionModeManager = window.SidepanelContributionMode?.createContribu
     sendMessage: (message) => chrome.runtime.sendMessage(message),
   },
   constants: {
-    contributionOauthUrl: `${contributionContentService?.portalUrl || 'https://apikey.qzz.io'}/oauth/`,
-    contributionUploadUrl: contributionContentService?.portalUrl || 'https://apikey.qzz.io',
+    contributionOauthUrl: `${String(contributionContentService?.portalUrl || 'https://apikey.qzz.io').replace(/\/+$/, '')}/oauth/`,
+    contributionPortalUrl: String(contributionContentService?.portalUrl || 'https://apikey.qzz.io').replace(/\/+$/, ''),
+    contributionUploadUrl: `${String(contributionContentService?.portalUrl || 'https://apikey.qzz.io').replace(/\/+$/, '')}/upload`,
   },
 });
 const baseRenderContributionMode = contributionModeManager?.render
@@ -4220,7 +4213,7 @@ btnRepoHome?.addEventListener('click', () => {
 });
 
 btnCloudflareTempEmailUsageGuide?.addEventListener('click', () => {
-  showCloudflareTempEmailUsageGuide();
+  openCloudflareTempEmailUsageGuidePage();
 });
 
 btnCloudflareTempEmailGithub?.addEventListener('click', () => {
@@ -4617,6 +4610,11 @@ selectIcloudHostPreference?.addEventListener('change', () => {
   if (getSelectedEmailGenerator() === 'icloud') {
     queueIcloudAliasRefresh();
   }
+});
+
+selectIcloudFetchMode?.addEventListener('change', () => {
+  markSettingsDirty(true);
+  saveSettings({ silent: true }).catch(() => { });
 });
 
 checkboxAutoDeleteIcloud?.addEventListener('change', () => {
@@ -5187,6 +5185,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         selectIcloudHostPreference.value = hostPreference === 'icloud.com'
           ? 'icloud.com'
           : (hostPreference === 'icloud.com.cn' ? 'icloud.com.cn' : 'auto');
+      }
+      if (message.payload.icloudFetchMode !== undefined && selectIcloudFetchMode) {
+        selectIcloudFetchMode.value = normalizeIcloudFetchMode(message.payload.icloudFetchMode);
       }
       if (message.payload.autoRunSkipFailures !== undefined) {
         inputAutoSkipFailures.checked = Boolean(message.payload.autoRunSkipFailures);

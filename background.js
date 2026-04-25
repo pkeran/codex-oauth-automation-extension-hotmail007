@@ -272,6 +272,7 @@ const PERSISTED_SETTING_DEFAULTS = {
   customEmailPool: [],
   autoDeleteUsedIcloudAlias: false,
   icloudHostPreference: 'auto',
+  icloudFetchMode: 'reuse_existing',
   accountRunHistoryTextEnabled: false,
   accountRunHistoryHelperBaseUrl: DEFAULT_ACCOUNT_RUN_HISTORY_HELPER_BASE_URL,
   gmailBaseEmail: '',
@@ -674,6 +675,11 @@ function normalizeEmailGenerator(value = '') {
   return 'duck';
 }
 
+function normalizeIcloudFetchMode(value = '') {
+  const normalized = String(value || '').trim().toLowerCase();
+  return normalized === 'always_new' ? 'always_new' : 'reuse_existing';
+}
+
 function normalizeCustomEmailPool(value = []) {
   const source = Array.isArray(value)
     ? value
@@ -979,6 +985,8 @@ function normalizePersistentSettingValue(key, value) {
       return Boolean(value);
     case 'icloudHostPreference':
       return normalizeIcloudHost(value) || 'auto';
+    case 'icloudFetchMode':
+      return normalizeIcloudFetchMode(value);
     case 'accountRunHistoryHelperBaseUrl':
       return normalizeAccountRunHistoryHelperBaseUrl(value);
     case 'gmailBaseEmail':
@@ -3106,6 +3114,16 @@ async function pollLuckmailVerificationCode(step, state, pollPayload = {}) {
     excludeCodes: pollPayload.excludeCodes || [],
   };
 
+  const initialCursor = normalizeLuckmailMailCursor((await getState()).currentLuckmailMailCursor);
+  if (!initialCursor.messageId && !initialCursor.receivedAt) {
+    const mailList = await client.user.getTokenMails(purchase.token);
+    const baselineCursor = buildLuckmailBaselineCursor(mailList?.mails || []);
+    await setLuckmailMailCursorState(baselineCursor);
+    if (baselineCursor?.messageId || baselineCursor?.receivedAt) {
+      await addLog(`步骤 ${step}：LuckMail 已保存当前邮箱旧邮件快照，后续仅使用新收到的验证码。`, 'info');
+    }
+  }
+
   let lastError = null;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     throwIfStopped();
@@ -3449,10 +3467,16 @@ async function validateIcloudSession(setupUrl) {
   return data;
 }
 
-async function resolveIcloudPremiumMailService() {
+async function resolveIcloudPremiumMailService(options = {}) {
   const errors = [];
   const state = await getState();
-  const setupUrls = await getPreferredIcloudSetupUrls(state);
+  const explicitHost = normalizeIcloudHost(options?.hostPreference || options?.preferredHost || '');
+  const setupUrls = explicitHost
+    ? (() => {
+        const forcedSetupUrl = getIcloudSetupUrlForHost(explicitHost);
+        return forcedSetupUrl ? [forcedSetupUrl] : [];
+      })()
+    : await getPreferredIcloudSetupUrls(state);
 
   for (const setupUrl of setupUrls) {
     try {
@@ -3481,17 +3505,19 @@ function getIcloudAliasLabel() {
   return `MultiPage ${dateStr}`;
 }
 
-async function checkIcloudSession() {
-  return withIcloudLoginHelp('检查 iCloud 会话', async () => {
-    const { setupUrl } = await resolveIcloudPremiumMailService();
+async function checkIcloudSession(options = {}) {
+  const actionLabel = String(options?.actionLabel || '检查 iCloud 会话').trim() || '检查 iCloud 会话';
+  const { actionLabel: _ignoredActionLabel, ...resolveOptions } = options || {};
+  return withIcloudLoginHelp(actionLabel, async () => {
+    const { setupUrl } = await resolveIcloudPremiumMailService(resolveOptions);
     await addLog(`iCloud：会话校验通过（${new URL(setupUrl).host}）`, 'ok');
     return { ok: true, setupUrl };
   });
 }
 
-async function listIcloudAliases() {
+async function listIcloudAliases(options = {}) {
   return withIcloudLoginHelp('加载 iCloud 隐私邮箱列表', async () => {
-    const { serviceUrl } = await resolveIcloudPremiumMailService();
+    const { serviceUrl } = await resolveIcloudPremiumMailService(options);
     const response = await icloudRequest('GET', `${serviceUrl}/v2/hme/list`);
     const state = await getState();
     return normalizeIcloudAliasList(response, {
@@ -3581,9 +3607,10 @@ async function deleteUsedIcloudAliases() {
   return { deleted, skipped };
 }
 
-async function fetchIcloudHideMyEmail() {
+async function fetchIcloudHideMyEmail(options = {}) {
   return withIcloudLoginHelp('获取 iCloud 隐私邮箱', async () => {
     throwIfStopped();
+    const generateNew = Boolean(options?.generateNew);
     await addLog('iCloud：正在校验当前浏览器登录状态...', 'info');
 
     const { serviceUrl, setupUrl } = await resolveIcloudPremiumMailService();
@@ -3596,12 +3623,16 @@ async function fetchIcloudHideMyEmail() {
       preservedEmails: getPreservedAliasMap(state),
     });
 
-    const reusableAlias = pickReusableIcloudAlias(existingAliases);
-    if (reusableAlias) {
-      await setEmailState(reusableAlias.email);
-      await addLog(`iCloud：复用未使用别名 ${reusableAlias.email}`, 'ok');
-      broadcastIcloudAliasesChanged({ reason: 'selected', email: reusableAlias.email });
-      return reusableAlias.email;
+    if (!generateNew) {
+      const reusableAlias = pickReusableIcloudAlias(existingAliases);
+      if (reusableAlias) {
+        await setEmailState(reusableAlias.email);
+        await addLog(`iCloud：复用未使用别名 ${reusableAlias.email}`, 'ok');
+        broadcastIcloudAliasesChanged({ reason: 'selected', email: reusableAlias.email });
+        return reusableAlias.email;
+      }
+    } else {
+      await addLog('iCloud：已启用“始终创建新别名”，本次将跳过复用。', 'info');
     }
 
     await addLog('iCloud：没有可复用别名，开始生成新的 Hide My Email 地址...', 'warn');
@@ -5973,7 +6004,10 @@ async function ensureAutoEmailReady(targetRun, totalRuns, attemptRuns) {
       if (attempt > 1) {
         await addLog(`${generatorLabel}：正在进行第 ${attempt}/${EMAIL_FETCH_MAX_ATTEMPTS} 次自动获取重试...`, 'warn');
       }
-      const generatedEmail = await fetchGeneratedEmail(currentState, { generateNew: true, generator });
+      const generatedEmail = await fetchGeneratedEmail(currentState, {
+        generateNew: generator !== 'icloud' || normalizeIcloudFetchMode(currentState.icloudFetchMode) === 'always_new',
+        generator,
+      });
       await addLog(
         `=== 目标 ${targetRun}/${totalRuns} 轮：${generatorLabel}已就绪：${generatedEmail}（第 ${attemptRuns} 次尝试，第 ${attempt}/${EMAIL_FETCH_MAX_ATTEMPTS} 次获取）===`,
         'ok'
@@ -6119,7 +6153,10 @@ async function ensureAutoEmailReady(targetRun, totalRuns, attemptRuns) {
       if (attempt > 1) {
         await addLog(`${generatorLabel}：正在进行第 ${attempt}/${EMAIL_FETCH_MAX_ATTEMPTS} 次自动获取重试...`, 'warn');
       }
-      const generatedEmail = await fetchGeneratedEmail(currentState, { generateNew: true, generator });
+      const generatedEmail = await fetchGeneratedEmail(currentState, {
+        generateNew: generator !== 'icloud' || normalizeIcloudFetchMode(currentState.icloudFetchMode) === 'always_new',
+        generator,
+      });
       await addLog(
         `=== 目标 ${targetRun}/${totalRuns} 轮：${generatorLabel}已就绪：${generatedEmail}（第 ${attemptRuns} 次尝试，第 ${attempt}/${EMAIL_FETCH_MAX_ATTEMPTS} 次获取）===`,
         'ok'
@@ -6204,9 +6241,15 @@ async function runAutoSequenceFromStep(startStep, context = {}) {
   let restartFromStep1WithCurrentEmail = false;
   let step = Math.max(currentStartStep, 4);
   while (step <= LAST_STEP_ID) {
+    const latestState = await getState();
+    const currentStatus = latestState.stepStatuses?.[step] || 'pending';
+    if (isStepDoneStatus(currentStatus)) {
+      await addLog(`自动运行：步骤 ${step} 当前状态为 ${currentStatus}，将直接继续后续流程。`, 'info');
+      step += 1;
+      continue;
+    }
     try {
       await executeStepAndWait(step, AUTO_STEP_DELAYS[step]);
-      const latestState = await getState();
       step += 1;
     } catch (err) {
       if (isStopError(err)) {
@@ -6445,6 +6488,7 @@ const verificationFlowHelpers = self.MultiPageBackgroundVerificationFlow?.create
   getTabId,
   HOTMAIL_PROVIDER,
   isMail2925LimitReachedError,
+  isRetryableContentScriptTransportError,
   isStopError,
   LUCKMAIL_PROVIDER,
   MAIL_2925_VERIFICATION_INTERVAL_MS,
@@ -6453,6 +6497,7 @@ const verificationFlowHelpers = self.MultiPageBackgroundVerificationFlow?.create
   pollHotmailVerificationCode,
   pollLuckmailVerificationCode,
   sendToContentScript,
+  sendToContentScriptResilient,
   sendToMailContentScriptResilient,
   setState,
   setStepStatus,
@@ -6470,6 +6515,7 @@ const step2Executor = self.MultiPageBackgroundStep2?.createStep2Executor({
   chrome,
   completeStepFromBackground,
   ensureContentScriptReadyOnTab,
+  ensureSignupAuthEntryPageReady,
   ensureSignupEntryPageReady,
   ensureSignupPostEmailPageReadyInTab,
   getTabId,
@@ -6490,12 +6536,24 @@ const step3Executor = self.MultiPageBackgroundStep3?.createStep3Executor({
   setState,
   SIGNUP_PAGE_INJECT_FILES,
 });
+
+async function ensureIcloudMailSessionForVerification(options = {}) {
+  const flowState = options?.state || await getState().catch(() => ({}));
+  const hostPreference = getConfiguredIcloudHostPreference(flowState)
+    || normalizeIcloudHost(flowState?.preferredIcloudHost);
+  return checkIcloudSession({
+    ...(hostPreference ? { hostPreference } : {}),
+    actionLabel: options?.actionLabel || '检查 iCloud 会话',
+  });
+}
+
 const step4Executor = self.MultiPageBackgroundStep4?.createStep4Executor({
   addLog,
   chrome,
   completeStepFromBackground,
   confirmCustomVerificationStepBypass: verificationFlowHelpers.confirmCustomVerificationStepBypass,
   ensureMail2925MailboxSession,
+  ensureIcloudMailSession: ensureIcloudMailSessionForVerification,
   getMailConfig,
   getTabId,
   HOTMAIL_PROVIDER,
@@ -6542,6 +6600,7 @@ const step8Executor = self.MultiPageBackgroundStep8?.createStep8Executor({
   CLOUDFLARE_TEMP_EMAIL_PROVIDER,
   confirmCustomVerificationStepBypass: verificationFlowHelpers.confirmCustomVerificationStepBypass,
   ensureMail2925MailboxSession,
+  ensureIcloudMailSession: ensureIcloudMailSessionForVerification,
   ensureStep8VerificationPageReady,
   getOAuthFlowRemainingMs,
   getOAuthFlowStepTimeoutMs,
@@ -6721,6 +6780,10 @@ async function openSignupEntryTab(step = 1) {
 }
 
 async function ensureSignupEntryPageReady(step = 1) {
+  return signupFlowHelpers.ensureSignupEntryPageReady(step);
+}
+
+async function ensureSignupAuthEntryPageReady(step = 1) {
   return signupFlowHelpers.ensureSignupEntryPageReady(step);
 }
 
