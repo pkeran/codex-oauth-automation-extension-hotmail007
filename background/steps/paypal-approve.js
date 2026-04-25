@@ -4,6 +4,8 @@
   const PAYPAL_SOURCE = 'paypal-flow';
   const PLUS_CHECKOUT_SOURCE = 'plus-checkout';
   const PAYPAL_INJECT_FILES = ['content/utils.js', 'content/paypal-flow.js'];
+  const PAYPAL_LOGIN_TRANSITION_TIMEOUT_MS = 30000;
+  const PAYPAL_LOGIN_TRANSITION_POLL_MS = 500;
 
   function createPayPalApproveExecutor(deps = {}) {
     const {
@@ -87,6 +89,89 @@
       if (result?.error) {
         throw new Error(result.error);
       }
+      return result || {};
+    }
+
+    function isPayPalUrl(url = '') {
+      return /paypal\./i.test(String(url || ''));
+    }
+
+    function isPayPalPasswordState(pageState = {}) {
+      return Boolean(pageState.hasPasswordInput)
+        || pageState.loginPhase === 'password'
+        || pageState.loginPhase === 'login_combined';
+    }
+
+    async function waitForPayPalPostLoginDecision(tabId, actionResult = {}) {
+      const phase = String(actionResult?.phase || '').trim();
+      const startedAt = Date.now();
+
+      while (Date.now() - startedAt < PAYPAL_LOGIN_TRANSITION_TIMEOUT_MS) {
+        const tab = await chrome.tabs.get(tabId).catch(() => null);
+        if (!tab) {
+          throw new Error('步骤 8：PayPal 标签页已关闭，无法继续识别登录后的页面。');
+        }
+
+        const currentUrl = tab.url || '';
+        if (!currentUrl) {
+          await sleepWithStop(PAYPAL_LOGIN_TRANSITION_POLL_MS);
+          continue;
+        }
+        if (currentUrl && !isPayPalUrl(currentUrl)) {
+          return {
+            outcome: 'left_paypal',
+            url: currentUrl,
+          };
+        }
+
+        if (tab.status !== 'complete') {
+          await sleepWithStop(PAYPAL_LOGIN_TRANSITION_POLL_MS);
+          continue;
+        }
+
+        await ensurePayPalReady(
+          tabId,
+          phase === 'email_submitted'
+            ? '步骤 8：PayPal 账号已提交，正在识别下一页...'
+            : '步骤 8：PayPal 密码已提交，正在识别跳转结果...'
+        );
+        const pageState = await getPayPalState(tabId);
+
+        if (pageState.hasPasskeyPrompt) {
+          return {
+            outcome: 'prompt',
+            pageState,
+          };
+        }
+
+        if (pageState.approveReady) {
+          return {
+            outcome: 'approve_ready',
+            pageState,
+          };
+        }
+
+        if (phase === 'email_submitted' && isPayPalPasswordState(pageState)) {
+          return {
+            outcome: 'password_ready',
+            pageState,
+          };
+        }
+
+        if (phase === 'password_submitted' && !pageState.needsLogin) {
+          return {
+            outcome: 'post_login_state',
+            pageState,
+          };
+        }
+
+        await sleepWithStop(PAYPAL_LOGIN_TRANSITION_POLL_MS);
+      }
+
+      return {
+        outcome: 'timeout',
+        phase,
+      };
     }
 
     async function clickApprove(tabId) {
@@ -109,7 +194,7 @@
       let loggedWaiting = false;
       while (true) {
         const currentUrl = (await chrome.tabs.get(tabId).catch(() => null))?.url || '';
-        if (currentUrl && !/paypal\./i.test(currentUrl)) {
+        if (currentUrl && !isPayPalUrl(currentUrl)) {
           await addLog('步骤 8：PayPal 已跳转离开授权页，准备进入回跳确认。', 'ok');
           break;
         }
@@ -118,9 +203,22 @@
         const pageState = await getPayPalState(tabId);
 
         if (pageState.needsLogin) {
-          await submitLogin(tabId, state);
-          await waitForTabCompleteUntilStopped(tabId);
-          await sleepWithStop(1000);
+          const submitResult = await submitLogin(tabId, state);
+          const decision = await waitForPayPalPostLoginDecision(tabId, submitResult);
+          if (decision.outcome === 'left_paypal') {
+            await addLog('步骤 8：PayPal 登录后已跳转离开登录/授权页，继续进入回跳确认。', 'ok');
+            break;
+          }
+          if (decision.outcome === 'password_ready') {
+            await addLog('步骤 8：PayPal 账号页提交后已识别到密码页，继续填写密码。', 'info');
+          } else if (decision.outcome === 'approve_ready') {
+            await addLog('步骤 8：PayPal 登录后已识别到授权确认页，继续点击授权。', 'info');
+          } else if (decision.outcome === 'prompt') {
+            await addLog('步骤 8：PayPal 登录后已识别到提示弹窗，继续处理弹窗。', 'info');
+          } else if (decision.outcome === 'timeout') {
+            await addLog('步骤 8：PayPal 登录动作后暂未识别到新页面，重新检查当前页面状态。', 'warn');
+          }
+          loggedWaiting = false;
           continue;
         }
 

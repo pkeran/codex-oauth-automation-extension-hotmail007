@@ -48,11 +48,16 @@ async function handlePayPalCommand(message) {
 
 async function waitUntil(predicate, options = {}) {
   const intervalMs = Math.max(50, Math.floor(Number(options.intervalMs) || 250));
+  const timeoutMs = Math.max(0, Math.floor(Number(options.timeoutMs) || 0));
+  const startedAt = Date.now();
   while (true) {
     throwIfStopped();
     const value = await predicate();
     if (value) {
       return value;
+    }
+    if (timeoutMs > 0 && Date.now() - startedAt >= timeoutMs) {
+      throw new Error(options.timeoutMessage || 'PayPal page timed out waiting for target state.');
     }
     await sleep(intervalMs);
   }
@@ -179,6 +184,13 @@ function hasPasskeyPrompt() {
   return findPasskeyPromptButtons().length > 0;
 }
 
+function getPayPalLoginPhase(emailInput, passwordInput) {
+  if (emailInput && passwordInput) return 'login_combined';
+  if (passwordInput) return 'password';
+  if (emailInput) return 'email';
+  return '';
+}
+
 async function submitPayPalLogin(payload = {}) {
   await waitForDocumentComplete();
 
@@ -192,19 +204,34 @@ async function submitPayPalLogin(payload = {}) {
   const emailInput = findEmailInput();
 
   if (!passwordInput && emailInput && email) {
-    fillInput(emailInput, email);
-    const nextButton = findLoginNextButton();
-    if (nextButton && isEnabledControl(nextButton)) {
-      simulateClick(nextButton);
+    if (normalizeText(emailInput.value || '') !== email) {
+      fillInput(emailInput, email);
     }
-    passwordInput = await waitUntil(() => findPasswordInput(), { intervalMs: 250 });
+    const nextButton = await waitUntil(() => {
+      const button = findLoginNextButton();
+      return button && isEnabledControl(button) ? button : null;
+    }, {
+      intervalMs: 250,
+      timeoutMs: 8000,
+      timeoutMessage: 'PayPal email page did not expose a clickable next/continue button.',
+    });
+    simulateClick(nextButton);
+    return {
+      submitted: false,
+      phase: 'email_submitted',
+      awaiting: 'password_page',
+    };
   } else if (!passwordInput && emailInput && !email) {
     throw new Error('PayPal 账号为空，请先在侧边栏配置。');
-  } else if (emailInput && email && !String(emailInput.value || '').trim()) {
+  } else if (emailInput && email && normalizeText(emailInput.value || '') !== email) {
     fillInput(emailInput, email);
   }
 
-  passwordInput = passwordInput || await waitUntil(() => findPasswordInput(), { intervalMs: 250 });
+  passwordInput = passwordInput || await waitUntil(() => findPasswordInput(), {
+    intervalMs: 250,
+    timeoutMs: 8000,
+    timeoutMessage: 'PayPal password page did not expose a password input.',
+  });
   fillInput(passwordInput, password);
   await sleep(1000);
 
@@ -214,10 +241,18 @@ async function submitPayPalLogin(payload = {}) {
       /登录|登入|继续/i,
     ]);
     return button && isEnabledControl(button) ? button : null;
-  }, { intervalMs: 250 });
+  }, {
+    intervalMs: 250,
+    timeoutMs: 8000,
+    timeoutMessage: 'PayPal password page did not expose a clickable login/continue button.',
+  });
 
   simulateClick(loginButton);
-  return { submitted: true };
+  return {
+    submitted: true,
+    phase: 'password_submitted',
+    awaiting: 'redirect_or_approval',
+  };
 }
 
 async function dismissPayPalPrompts() {
@@ -261,10 +296,12 @@ function inspectPayPalState() {
   const emailInput = findEmailInput();
   const passwordInput = findPasswordInput();
   const approveButton = findApproveButton();
+  const loginPhase = getPayPalLoginPhase(emailInput, passwordInput);
   return {
     url: location.href,
     readyState: document.readyState,
-    needsLogin: Boolean(emailInput || passwordInput),
+    needsLogin: Boolean(loginPhase),
+    loginPhase,
     hasEmailInput: Boolean(emailInput),
     hasPasswordInput: Boolean(passwordInput),
     approveReady: Boolean(approveButton && isEnabledControl(approveButton)),
