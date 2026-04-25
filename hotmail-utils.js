@@ -38,6 +38,9 @@
     const matchCn = source.match(/(?:代码为|验证码[^0-9]*?)[\s：:]*(\d{6})/i);
     if (matchCn) return matchCn[1];
 
+    const matchOpenAiLogin = source.match(/(?:chatgpt\s+log-?in\s+code|enter\s+this\s+code)[^0-9]{0,24}(\d{6})/i);
+    if (matchOpenAiLogin) return matchOpenAiLogin[1];
+
     const matchEn = source.match(/code(?:\s+is|[\s:])+(\d{6})/i);
     if (matchEn) return matchEn[1];
 

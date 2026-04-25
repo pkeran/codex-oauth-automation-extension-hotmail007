@@ -602,6 +602,11 @@ const MAIL_PROVIDER_LOGIN_CONFIGS = {
     url: 'https://webmail.vip.163.com/',
     buttonLabel: '登录',
   },
+  '126': {
+    label: '126 邮箱',
+    url: 'https://mail.126.com/',
+    buttonLabel: '登录',
+  },
   qq: {
     label: 'QQ 邮箱',
     url: 'https://wx.mail.qq.com/',
@@ -2166,7 +2171,7 @@ function applySettingsState(state) {
   inputCodex2ApiUrl.value = state?.codex2apiUrl || '';
   inputCodex2ApiAdminKey.value = state?.codex2apiAdminKey || '';
   const restoredMailProvider = isCustomMailProvider(state?.mailProvider)
-    || [ICLOUD_PROVIDER, 'hotmail-api', GMAIL_PROVIDER, 'luckmail-api', '163', '163-vip', 'qq', 'inbucket', '2925', 'cloudflare-temp-email'].includes(String(state?.mailProvider || '').trim())
+    || [ICLOUD_PROVIDER, 'hotmail-api', GMAIL_PROVIDER, 'luckmail-api', '163', '163-vip', '126', 'qq', 'inbucket', '2925', 'cloudflare-temp-email'].includes(String(state?.mailProvider || '').trim())
     ? String(state?.mailProvider || '163').trim()
     : (String(state?.emailGenerator || '').trim().toLowerCase() === 'custom'
       || String(state?.emailGenerator || '').trim().toLowerCase() === 'manual'
