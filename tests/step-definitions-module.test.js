@@ -44,14 +44,15 @@ test('step definitions module exposes ordered normal and Plus step metadata', ()
       'paypal-approve',
       'plus-checkout-return',
       'oauth-login',
+      'fetch-login-code',
       'confirm-oauth',
       'platform-verify',
     ]
   );
   assert.equal(plusSteps.some((step) => step.key === 'clear-login-cookies'), false);
-  assert.equal(plusSteps.some((step) => step.key === 'fetch-login-code'), false);
-  assert.deepStrictEqual(api.getStepIds({ plusModeEnabled: true }), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
-  assert.equal(api.getLastStepId({ plusModeEnabled: true }), 12);
+  assert.equal(plusSteps.some((step) => step.key === 'fetch-login-code'), true);
+  assert.deepStrictEqual(api.getStepIds({ plusModeEnabled: true }), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
+  assert.equal(api.getLastStepId({ plusModeEnabled: true }), 13);
 });
 
 test('sidepanel html loads shared step definitions before sidepanel bootstrap', () => {

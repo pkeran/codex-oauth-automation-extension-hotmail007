@@ -32,21 +32,25 @@
     }
 
     function getConfirmStepForVisibleStep(visibleStep) {
-      return visibleStep === 12 ? 11 : 9;
+      return visibleStep >= 13 ? 12 : 9;
     }
 
-    function parseLocalhostCallback(rawUrl) {
+    function getAuthLoginStepForVisibleStep(visibleStep) {
+      return visibleStep >= 13 ? 10 : 7;
+    }
+
+    function parseLocalhostCallback(rawUrl, visibleStep = 10, confirmStep = 9) {
       let parsed;
       try {
         parsed = new URL(rawUrl);
       } catch {
-        throw new Error('步骤 10 捕获到的 localhost OAuth 回调地址格式无效，请重新执行步骤 9。');
+        throw new Error(`步骤 ${visibleStep} 捕获到的 localhost OAuth 回调地址格式无效，请重新执行步骤 ${confirmStep}。`);
       }
 
       const code = normalizeString(parsed.searchParams.get('code'));
       const state = normalizeString(parsed.searchParams.get('state'));
       if (!code || !state) {
-        throw new Error('步骤 10 捕获到的 localhost OAuth 回调地址缺少 code 或 state，请重新执行步骤 9。');
+        throw new Error(`步骤 ${visibleStep} 捕获到的 localhost OAuth 回调地址缺少 code 或 state，请重新执行步骤 ${confirmStep}。`);
       }
 
       return {
@@ -191,16 +195,16 @@
         throw new Error(`缺少 localhost 回调地址，请先完成步骤 ${confirmStep}。`);
       }
       if (!state.codex2apiSessionId) {
-        throw new Error(`缺少 Codex2API 会话信息，请重新执行步骤 ${visibleStep === 12 ? 10 : 7}。`);
+        throw new Error(`缺少 Codex2API 会话信息，请重新执行步骤 ${getAuthLoginStepForVisibleStep(visibleStep)}。`);
       }
       if (!normalizeString(state.codex2apiAdminKey)) {
         throw new Error('尚未配置 Codex2API 管理密钥，请先在侧边栏填写。');
       }
 
-      const callback = parseLocalhostCallback(state.localhostUrl);
+      const callback = parseLocalhostCallback(state.localhostUrl, visibleStep, confirmStep);
       const expectedState = normalizeString(state.codex2apiOAuthState);
       if (expectedState && expectedState !== callback.state) {
-        throw new Error('Codex2API 回调 state 与当前授权会话不匹配，请重新执行步骤 7。');
+        throw new Error(`Codex2API 回调 state 与当前授权会话不匹配，请重新执行步骤 ${getAuthLoginStepForVisibleStep(visibleStep)}。`);
       }
 
       const codex2apiUrl = normalizeCodex2ApiUrl(state.codex2apiUrl);

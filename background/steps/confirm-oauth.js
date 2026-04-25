@@ -38,10 +38,14 @@
       return visibleStep > 0 ? visibleStep : fallback;
     }
 
+    function getAuthLoginStepForVisibleStep(visibleStep) {
+      return visibleStep >= 12 ? 10 : 7;
+    }
+
     async function executeStep9(state) {
       const visibleStep = getVisibleStep(state, 9);
       if (!state.oauthUrl) {
-        const authLoginStep = visibleStep === 11 ? 10 : 7;
+        const authLoginStep = getAuthLoginStepForVisibleStep(visibleStep);
         throw new Error(`缺少登录用 OAuth 链接，请先完成步骤 ${authLoginStep}。`);
       }
 

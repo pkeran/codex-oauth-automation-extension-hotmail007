@@ -2965,6 +2965,7 @@ function getCustomMailProviderUiCopy() {
 
 function getCustomVerificationPromptCopy(step) {
   const verificationLabel = step === 4 ? '注册验证码' : '登录验证码';
+  const isLoginVerificationStep = step === 8 || step === 11;
   return {
     title: `手动处理${verificationLabel}`,
     message: `当前邮箱服务为“自定义邮箱”。请先在页面中手动输入${verificationLabel}，并确认已经进入下一页面后，再点击确认。`,
@@ -2972,7 +2973,7 @@ function getCustomVerificationPromptCopy(step) {
       text: `点击确认后会跳过步骤 ${step}。`,
       tone: 'danger',
     },
-    ...(step === 8 ? {
+    ...(isLoginVerificationStep ? {
       phoneActionLabel: '出现手机号验证',
       phoneActionAlert: {
         text: '如果当前页面已经进入手机号验证，可直接标记为失败并继续下一个邮箱。',
@@ -2984,7 +2985,7 @@ function getCustomVerificationPromptCopy(step) {
 
 async function openCustomVerificationConfirmDialog(step) {
   const promptCopy = getCustomVerificationPromptCopy(step);
-  if (step === 8) {
+  if (step === 8 || step === 11) {
     return openActionModal({
       title: promptCopy.title,
       message: promptCopy.message,

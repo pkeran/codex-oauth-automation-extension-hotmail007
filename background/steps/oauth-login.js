@@ -60,7 +60,7 @@
         try {
           const currentState = attempt === 1 ? state : await getState();
           const password = currentState.password || currentState.customPassword || '';
-          const oauthUrl = await refreshOAuthUrlBeforeStep6(currentState);
+          const oauthUrl = await refreshOAuthUrlBeforeStep6(currentState, { visibleStep });
           if (typeof startOAuthFlowTimeoutWindow === 'function') {
             await startOAuthFlowTimeoutWindow({ step: visibleStep, oauthUrl });
           }
@@ -105,9 +105,16 @@
           }
 
           if (isStep6SuccessResult(result)) {
-            await completeStepFromBackground(visibleStep, {
+            const completionPayload = {
               loginVerificationRequestedAt: result.loginVerificationRequestedAt || null,
-            });
+            };
+            if (result.skipLoginVerificationStep) {
+              completionPayload.skipLoginVerificationStep = true;
+            }
+            if (result.directOAuthConsentPage) {
+              completionPayload.directOAuthConsentPage = true;
+            }
+            await completeStepFromBackground(visibleStep, completionPayload);
             return;
           }
 

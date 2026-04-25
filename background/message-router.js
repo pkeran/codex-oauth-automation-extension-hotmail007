@@ -137,6 +137,31 @@
       return '';
     }
 
+    function isStepProtectedFromAutoSkip(status) {
+      return status === 'running'
+        || status === 'completed'
+        || status === 'manual_completed'
+        || status === 'skipped';
+    }
+
+    function findStepByKeyAfter(currentStep, targetKey, state = {}) {
+      const activeStepIds = typeof getStepIdsForState === 'function'
+        ? getStepIdsForState(state)
+        : [];
+      const candidates = activeStepIds.length ? activeStepIds : [Number(currentStep) + 1, 8];
+      return candidates.find((stepId) => {
+        const numericStep = Number(stepId);
+        if (!Number.isFinite(numericStep) || numericStep <= Number(currentStep)) {
+          return false;
+        }
+        const stepKey = getStepKeyForState(numericStep, state);
+        if (stepKey) {
+          return stepKey === targetKey;
+        }
+        return targetKey === 'fetch-login-code' && Number(currentStep) === 7 && numericStep === 8;
+      }) || null;
+    }
+
     async function handlePlatformVerifyStepData(payload) {
       if (payload.localhostUrl) {
         await closeLocalhostCallbackTabs(payload.localhostUrl);
@@ -180,7 +205,18 @@
       const stepKey = getStepKeyForState(step, stateForStep);
 
       if (stepKey === 'oauth-login') {
-        if (payload.loginVerificationRequestedAt) {
+        if (payload.skipLoginVerificationStep) {
+          await setState({ loginVerificationRequestedAt: null });
+          const latestState = await getState();
+          const loginCodeStep = findStepByKeyAfter(step, 'fetch-login-code', latestState);
+          if (loginCodeStep) {
+            const currentStatus = latestState.stepStatuses?.[loginCodeStep];
+            if (!isStepProtectedFromAutoSkip(currentStatus)) {
+              await setStepStatus(loginCodeStep, 'skipped');
+              await addLog(`步骤 ${step}：认证页已直接进入 OAuth 授权页，已自动跳过步骤 ${loginCodeStep} 的登录验证码。`, 'warn');
+            }
+          }
+        } else if (payload.loginVerificationRequestedAt) {
           await setState({ loginVerificationRequestedAt: payload.loginVerificationRequestedAt });
         }
         return;
@@ -484,7 +520,8 @@
             await setPersistentSettings({ emailPrefix: message.payload.emailPrefix });
             await setState({ emailPrefix: message.payload.emailPrefix });
           }
-          if (doesStepUseCompletionSignal(step)) {
+          const executionState = await getState();
+          if (doesStepUseCompletionSignal(step, executionState)) {
             await executeStepViaCompletionSignal(step);
           } else {
             await executeStep(step);

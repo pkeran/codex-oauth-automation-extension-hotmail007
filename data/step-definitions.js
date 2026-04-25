@@ -25,8 +25,9 @@
     { id: 8, order: 80, key: 'paypal-approve', title: 'PayPal 登录与授权' },
     { id: 9, order: 90, key: 'plus-checkout-return', title: '订阅回跳确认' },
     { id: 10, order: 100, key: 'oauth-login', title: '刷新 OAuth 并登录' },
-    { id: 11, order: 110, key: 'confirm-oauth', title: '自动确认 OAuth' },
-    { id: 12, order: 120, key: 'platform-verify', title: '平台回调验证' },
+    { id: 11, order: 110, key: 'fetch-login-code', title: '获取登录验证码' },
+    { id: 12, order: 120, key: 'confirm-oauth', title: '自动确认 OAuth' },
+    { id: 13, order: 130, key: 'platform-verify', title: '平台回调验证' },
   ];
 
   function isPlusModeEnabled(options = {}) {

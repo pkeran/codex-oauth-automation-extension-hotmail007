@@ -4420,7 +4420,6 @@ function getLoginAuthStateLabel(state) {
   if (typeof loggingStatus !== 'undefined' && loggingStatus?.getLoginAuthStateLabel) {
     return loggingStatus.getLoginAuthStateLabel(state);
   }
-  state = state === 'oauth_consent_page' ? 'unknown' : state;
   switch (state) {
     case 'verification_page': return '登录验证码页';
     case 'password_page': return '密码页';
@@ -4487,7 +4486,8 @@ function hasSavedProgress(statuses = {}, stateOverride = null) {
   return activeStepIds.some((step) => (merged[step] || 'pending') !== 'pending');
 }
 
-function getDownstreamStateResets(step) {
+function getDownstreamStateResets(step, state = {}) {
+  const stepKey = getStepExecutionKeyForState(step, state);
   const plusRuntimeResets = {
     plusCheckoutTabId: null,
     plusCheckoutUrl: null,
@@ -4574,6 +4574,20 @@ function getDownstreamStateResets(step) {
       localhostUrl: null,
     };
   }
+  if (stepKey === 'oauth-login' || stepKey === 'fetch-login-code') {
+    return {
+      lastLoginCode: null,
+      loginVerificationRequestedAt: null,
+      oauthFlowDeadlineAt: null,
+      oauthFlowDeadlineSourceUrl: null,
+      localhostUrl: null,
+    };
+  }
+  if (stepKey === 'confirm-oauth') {
+    return {
+      localhostUrl: null,
+    };
+  }
   return {};
 }
 
@@ -4609,7 +4623,7 @@ async function invalidateDownstreamAfterStepRestart(step, options = {}) {
     await addLog(`${logLabel}，已重置后续步骤状态：${changedSteps.join(', ')}`, 'warn');
   }
 
-  const resets = getDownstreamStateResets(step);
+  const resets = getDownstreamStateResets(step, state);
   if (Object.keys(resets).length) {
     await setState(resets);
     broadcastDataUpdate(resets);
@@ -5436,6 +5450,24 @@ let resumeWaiter = null;
 const AUTO_RUN_SIGNAL_COMPLETION_TIMEOUT_MS = 120000;
 const AUTO_RUN_BACKGROUND_COMPLETED_STEPS = new Set([1, 2, 4, 6, 7, 8, 9]);
 const STEP_COMPLETION_SIGNAL_STEPS = new Set([3, 5, 10, 12]);
+const AUTO_RUN_BACKGROUND_COMPLETED_STEP_KEYS = new Set([
+  'open-chatgpt',
+  'submit-signup-email',
+  'fetch-signup-code',
+  'clear-login-cookies',
+  'plus-checkout-create',
+  'plus-checkout-billing',
+  'paypal-approve',
+  'plus-checkout-return',
+  'oauth-login',
+  'fetch-login-code',
+  'confirm-oauth',
+]);
+const STEP_COMPLETION_SIGNAL_STEP_KEYS = new Set([
+  'fill-password',
+  'fill-profile',
+  'platform-verify',
+]);
 
 function waitForStepComplete(step, timeoutMs = 120000) {
   return new Promise((resolve, reject) => {
@@ -5457,7 +5489,26 @@ function waitForStepComplete(step, timeoutMs = 120000) {
   });
 }
 
-function doesStepUseCompletionSignal(step) {
+function getStepExecutionKeyForState(step, state = {}) {
+  if (typeof getStepDefinitionForState !== 'function') {
+    return '';
+  }
+  return String(getStepDefinitionForState(step, state)?.key || '').trim();
+}
+
+function doesStepUseBackgroundCompletion(step, state = {}) {
+  const stepKey = getStepExecutionKeyForState(step, state);
+  if (stepKey) {
+    return AUTO_RUN_BACKGROUND_COMPLETED_STEP_KEYS.has(stepKey);
+  }
+  return AUTO_RUN_BACKGROUND_COMPLETED_STEPS.has(step);
+}
+
+function doesStepUseCompletionSignal(step, state = {}) {
+  const stepKey = getStepExecutionKeyForState(step, state);
+  if (stepKey) {
+    return STEP_COMPLETION_SIGNAL_STEP_KEYS.has(stepKey);
+  }
   return STEP_COMPLETION_SIGNAL_STEPS.has(step);
 }
 
@@ -5586,16 +5637,28 @@ async function waitForRunningStepsToFinish(payload = {}) {
   return currentState;
 }
 
-const AUTH_CHAIN_STEP_IDS = new Set([7, 8, 9, 10, 11, 12]);
+const AUTH_CHAIN_STEP_IDS = new Set([7, 8, 9, 10, 11, 12, 13]);
+const AUTH_CHAIN_STEP_KEYS = new Set([
+  'oauth-login',
+  'fetch-login-code',
+  'confirm-oauth',
+  'platform-verify',
+]);
 let activeTopLevelAuthChainExecution = null;
 
-function isAuthChainStep(step) {
+function isAuthChainStep(step, state = {}) {
+  const stepKey = typeof getStepDefinitionForState === 'function'
+    ? String(getStepDefinitionForState(step, state)?.key || '').trim()
+    : '';
+  if (stepKey && typeof AUTH_CHAIN_STEP_KEYS !== 'undefined') {
+    return AUTH_CHAIN_STEP_KEYS.has(stepKey);
+  }
   return AUTH_CHAIN_STEP_IDS.has(Number(step));
 }
 
-async function acquireTopLevelAuthChainExecution(step) {
+async function acquireTopLevelAuthChainExecution(step, state = {}) {
   const normalizedStep = Number(step);
-  if (!isAuthChainStep(normalizedStep)) {
+  if (!isAuthChainStep(normalizedStep, state)) {
     return {
       joined: false,
       release() {},
@@ -5735,7 +5798,8 @@ async function requestStop(options = {}) {
 async function executeStep(step, options = {}) {
   const { deferRetryableTransportError = false } = options;
   console.log(LOG_PREFIX, `Executing step ${step}`);
-  const authChainClaim = await acquireTopLevelAuthChainExecution(step);
+  let state = await getState();
+  const authChainClaim = await acquireTopLevelAuthChainExecution(step, state);
   if (authChainClaim.joined) {
     return;
   }
@@ -5747,7 +5811,7 @@ async function executeStep(step, options = {}) {
     await addLog(`步骤 ${step} 开始执行`);
     await humanStepDelay();
 
-    const state = await getState();
+    state = await getState();
 
     // Set flow start time on first step
     if (step === 1 && !state.flowStartTime) {
@@ -5765,11 +5829,11 @@ async function executeStep(step, options = {}) {
     });
   } catch (err) {
     executionError = err;
-    const state = await getState();
+    const errorState = await getState();
     if (isStopError(err)) {
       await setStepStatus(step, 'stopped');
       await addLog(`步骤 ${step} 已被用户停止`, 'warn');
-      await appendManualAccountRunRecordIfNeeded(`step${step}_stopped`, state, getErrorMessage(err));
+      await appendManualAccountRunRecordIfNeeded(`step${step}_stopped`, errorState, getErrorMessage(err));
       throw err;
     }
     if (isTerminalSecurityBlockedError(err)) {
@@ -5780,10 +5844,10 @@ async function executeStep(step, options = {}) {
       await handleBrowserSwitchRequired(err);
       throw new Error(STOP_ERROR_MESSAGE);
     }
-    if (!(deferRetryableTransportError && doesStepUseCompletionSignal(step) && isRetryableContentScriptTransportError(err))) {
+    if (!(deferRetryableTransportError && doesStepUseCompletionSignal(step, errorState) && isRetryableContentScriptTransportError(err))) {
       await setStepStatus(step, 'failed');
       await addLog(`步骤 ${step} 失败：${err.message}`, 'error');
-      await appendManualAccountRunRecordIfNeeded(`step${step}_failed`, state, getErrorMessage(err));
+      await appendManualAccountRunRecordIfNeeded(`step${step}_failed`, errorState, getErrorMessage(err));
     } else {
       console.warn(
         LOG_PREFIX,
@@ -5813,12 +5877,13 @@ async function executeStepAndWait(step, delayAfter = 2000) {
     await sleepWithStop(delaySeconds * 1000);
   }
 
-  if (AUTO_RUN_BACKGROUND_COMPLETED_STEPS.has(step)) {
+  const executionState = await getState();
+  if (doesStepUseBackgroundCompletion(step, executionState)) {
     await addLog(`自动运行：步骤 ${step} 由后台流程负责收尾，执行函数返回后将直接进入下一步。`, 'info');
     await executeStep(step);
     const latestState = await getState();
     await addLog(`自动运行：步骤 ${step} 已执行返回，当前状态为 ${latestState.stepStatuses?.[step] || 'pending'}，准备继续后续步骤。`, 'info');
-  } else if (doesStepUseCompletionSignal(step)) {
+  } else if (doesStepUseCompletionSignal(step, executionState)) {
     await addLog(`自动运行：步骤 ${step} 已发起，正在等待完成信号（超时 ${AUTO_RUN_SIGNAL_COMPLETION_TIMEOUT_MS / 1000} 秒）。`, 'info');
     await executeStepViaCompletionSignal(step, AUTO_RUN_SIGNAL_COMPLETION_TIMEOUT_MS);
     await addLog(`自动运行：步骤 ${step} 已收到完成信号，准备继续后续步骤。`, 'info');
@@ -6581,7 +6646,10 @@ async function runAutoSequenceFromStep(startStep, context = {}) {
 
       if (restartDecision.blockedByAddPhone) {
         const addPhoneUrl = restartDecision.authState?.url || 'https://auth.openai.com/add-phone';
-        await addLog(`步骤 ${step}：检测到认证流程进入 add-phone（${addPhoneUrl}），停止自动回到步骤 7 重开。`, 'warn');
+        const authChainStartStep = typeof getAuthChainStartStepId === 'function'
+          ? getAuthChainStartStepId(await getState())
+          : FINAL_OAUTH_CHAIN_START_STEP;
+        await addLog(`步骤 ${step}：检测到认证流程进入 add-phone（${addPhoneUrl}），停止自动回到步骤 ${authChainStartStep} 重开。`, 'warn');
       }
       throw err;
     }
@@ -7440,12 +7508,13 @@ async function runPreStep6CookieCleanup() {
 // Step 7: Login and ensure the auth page reaches the login verification page
 // ============================================================
 
-async function refreshOAuthUrlBeforeStep6(state) {
+async function refreshOAuthUrlBeforeStep6(state, options = {}) {
+  const visibleStep = Number(options.visibleStep) || Number(state?.visibleStep) || 7;
   if (state?.contributionModeExpected && !state?.contributionMode) {
-    throw new Error('步骤 7：当前自动流程预期使用贡献模式，但运行态 contributionMode 已丢失，已阻止回退到普通 CPA / SUB2API / Codex2API 链路。请重新进入贡献模式后再点击自动。');
+    throw new Error(`步骤 ${visibleStep}：当前自动流程预期使用贡献模式，但运行态 contributionMode 已丢失，已阻止回退到普通 CPA / SUB2API / Codex2API 链路。请重新进入贡献模式后再点击自动。`);
   }
   if (state?.contributionMode && contributionOAuthManager?.startContributionFlow) {
-    await addLog('步骤 7：contributionMode=true，走公开贡献接口，正在申请 OAuth 登录地址...', 'info');
+    await addLog(`步骤 ${visibleStep}：contributionMode=true，走公开贡献接口，正在申请 OAuth 登录地址...`, 'info');
     const contributionState = await contributionOAuthManager.startContributionFlow({
       nickname: state.contributionNickname || '',
       openAuthTab: false,
@@ -7458,9 +7527,9 @@ async function refreshOAuthUrlBeforeStep6(state) {
     await handleStepData(1, { oauthUrl });
     return oauthUrl;
   }
-  await addLog(`步骤 7：contributionMode=false，走普通 CPA / SUB2API / Codex2API 链路（当前面板：${getPanelModeLabel(state)}），正在刷新 OAuth 登录地址...`, 'info');
+  await addLog(`步骤 ${visibleStep}：contributionMode=false，走普通 CPA / SUB2API / Codex2API 链路（当前面板：${getPanelModeLabel(state)}），正在刷新 OAuth 登录地址...`, 'info');
   console.log(LOG_PREFIX, '[refreshOAuthUrlBeforeStep6] requesting fresh OAuth directly from panel');
-  const refreshResult = await requestOAuthUrlFromPanel(state, { logLabel: '步骤 7' });
+  const refreshResult = await requestOAuthUrlFromPanel(state, { logLabel: `步骤 ${visibleStep}` });
   await handleStepData(1, refreshResult);
 
   if (!refreshResult?.oauthUrl) {
@@ -7470,9 +7539,12 @@ async function refreshOAuthUrlBeforeStep6(state) {
   return refreshResult.oauthUrl;
 }
 
-function buildOAuthFlowTimeoutError(step, actionLabel = '后续授权流程') {
+function buildOAuthFlowTimeoutError(step, actionLabel = '后续授权流程', state = {}) {
+  const restartStep = typeof getAuthChainStartStepId === 'function'
+    ? getAuthChainStartStepId(state)
+    : FINAL_OAUTH_CHAIN_START_STEP;
   return new Error(
-    `步骤 ${step}：从拿到 OAuth 登录地址开始，${Math.round(OAUTH_FLOW_TIMEOUT_MS / 60000)} 分钟内未完成${actionLabel}，结束当前链路，准备从步骤 7 重新开始。`
+    `步骤 ${step}：从拿到 OAuth 登录地址开始，${Math.round(OAUTH_FLOW_TIMEOUT_MS / 60000)} 分钟内未完成${actionLabel}，结束当前链路，准备从步骤 ${restartStep} 重新开始。`
   );
 }
 
@@ -7523,7 +7595,7 @@ async function getOAuthFlowRemainingMs(options = {}) {
 
   const remainingMs = deadlineAt - Date.now();
   if (remainingMs <= 0) {
-    throw buildOAuthFlowTimeoutError(step, actionLabel);
+    throw buildOAuthFlowTimeoutError(step, actionLabel, state);
   }
 
   return remainingMs;
@@ -7539,9 +7611,11 @@ async function getOAuthFlowStepTimeoutMs(defaultTimeoutMs, options = {}) {
 
   const budgetMs = remainingMs - reserveMs;
   if (budgetMs <= 0) {
+    const stateForError = options.state || await getState();
     throw buildOAuthFlowTimeoutError(
       Number(options.step) || 7,
-      String(options.actionLabel || '后续授权流程').trim() || '后续授权流程'
+      String(options.actionLabel || '后续授权流程').trim() || '后续授权流程',
+      stateForError
     );
   }
 
@@ -7615,7 +7689,7 @@ async function getPostStep6AutoRestartDecision(step, error) {
   let authState = null;
   try {
     authState = await getLoginAuthStateFromContent({
-      logMessage: `步骤 ${normalizedStep}：正在确认当前认证页状态，以决定是否回到步骤 7 重开...`,
+      logMessage: `步骤 ${normalizedStep}：正在确认当前认证页状态，以决定是否回到步骤 ${authChainStartStep} 重开...`,
     });
   } catch (inspectError) {
     console.warn(LOG_PREFIX, '[AutoRun] failed to inspect login auth state after post-step6 error', {
@@ -7671,6 +7745,8 @@ async function getLoginAuthStateFromContent(options = {}) {
 }
 
 async function ensureStep8VerificationPageReady(options = {}) {
+  const visibleStep = Number(options.visibleStep) || 8;
+  const authLoginStep = Number(options.authLoginStep) || (visibleStep >= 11 ? 10 : 7);
   const pageState = await getLoginAuthStateFromContent(options);
   if (pageState.state === 'verification_page') {
     return pageState;
@@ -7682,17 +7758,17 @@ async function ensureStep8VerificationPageReady(options = {}) {
 
   if (pageState.state === 'login_timeout_error_page') {
     const urlPart = pageState.url ? ` URL: ${pageState.url}` : '';
-    throw new Error(`STEP8_RESTART_STEP7::步骤 8：当前认证页进入登录超时报错页，请回到步骤 7 重新开始。${urlPart}`.trim());
+    throw new Error(`STEP8_RESTART_STEP7::步骤 ${visibleStep}：当前认证页进入登录超时报错页，请回到步骤 ${authLoginStep} 重新开始。${urlPart}`.trim());
   }
 
   if (pageState.state === 'add_phone_page') {
     const urlPart = pageState.url ? ` URL: ${pageState.url}` : '';
-    throw new Error(`步骤 8：当前认证页进入手机号页面，当前流程无法继续自动授权。${urlPart}`.trim());
+    throw new Error(`步骤 ${visibleStep}：当前认证页进入手机号页面，当前流程无法继续自动授权。${urlPart}`.trim());
   }
 
   const stateLabel = getLoginAuthStateLabel(pageState.state);
   const urlPart = pageState.url ? ` URL: ${pageState.url}` : '';
-  throw new Error(`当前未进入登录验证码页面，请先重新完成步骤 7。当前状态：${stateLabel}.${urlPart}`.trim());
+  throw new Error(`当前未进入登录验证码页面，请先重新完成步骤 ${authLoginStep}。当前状态：${stateLabel}.${urlPart}`.trim());
 }
 
 async function rerunStep7ForStep8Recovery(options = {}) {
@@ -7703,27 +7779,33 @@ async function rerunStep7ForStep8Recovery(options = {}) {
 
   throwIfStopped();
   const initialState = await getState();
+  const authLoginStep = typeof getAuthChainStartStepId === 'function'
+    ? getAuthChainStartStepId(initialState)
+    : FINAL_OAUTH_CHAIN_START_STEP;
   await addLog(logMessage, 'warn');
-  await setStepStatus(7, 'running');
-  await addLog('步骤 7 开始执行');
+  await setStepStatus(authLoginStep, 'running');
+  await addLog(`步骤 ${authLoginStep} 开始执行`);
 
   try {
-    await step7Executor.executeStep7(initialState);
+    await step7Executor.executeStep7({
+      ...initialState,
+      visibleStep: authLoginStep,
+    });
   } catch (err) {
     const latestState = await getState();
     if (isStopError(err)) {
-      await setStepStatus(7, 'stopped');
-      await addLog('步骤 7 已被用户停止', 'warn');
-      await appendManualAccountRunRecordIfNeeded('step7_stopped', latestState, getErrorMessage(err));
+      await setStepStatus(authLoginStep, 'stopped');
+      await addLog(`步骤 ${authLoginStep} 已被用户停止`, 'warn');
+      await appendManualAccountRunRecordIfNeeded(`step${authLoginStep}_stopped`, latestState, getErrorMessage(err));
       throw err;
     }
     if (isTerminalSecurityBlockedError(err)) {
       await handleCloudflareSecurityBlocked(err);
       throw new Error(STOP_ERROR_MESSAGE);
     }
-    await setStepStatus(7, 'failed');
-    await addLog(`步骤 7 失败：${getErrorMessage(err)}`, 'error');
-    await appendManualAccountRunRecordIfNeeded('step7_failed', latestState, getErrorMessage(err));
+    await setStepStatus(authLoginStep, 'failed');
+    await addLog(`步骤 ${authLoginStep} 失败：${getErrorMessage(err)}`, 'error');
+    await appendManualAccountRunRecordIfNeeded(`step${authLoginStep}_failed`, latestState, getErrorMessage(err));
     throw err;
   }
 

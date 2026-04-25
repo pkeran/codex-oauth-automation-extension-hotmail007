@@ -1012,7 +1012,7 @@ async function step1_getOAuthLink(payload, options = {}) {
 
 async function step9_vpsVerify(payload) {
   const visibleStep = Number(payload?.visibleStep) || 10;
-  const confirmStep = visibleStep === 12 ? 11 : 9;
+  const confirmStep = visibleStep >= 13 ? 12 : 9;
   await ensureOAuthManagementPage(payload?.vpsPassword, confirmStep);
 
   // 优先从 payload 读取 localhostUrl；没有时再回退到全局状态
