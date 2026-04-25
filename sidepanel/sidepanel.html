@@ -353,12 +353,12 @@
           </div>
         </div>
       </div>
-      <div class="data-row" id="row-account-run-history-text-enabled">
-        <span class="data-label">本地同步</span>
+      <div class="data-row" id="row-phone-verification-enabled">
+        <span class="data-label">接码</span>
         <div class="data-inline setting-pair">
           <div class="setting-group setting-group-primary">
-            <label class="toggle-switch" for="input-account-run-history-text-enabled">
-              <input type="checkbox" id="input-account-run-history-text-enabled" />
+            <label class="toggle-switch" for="input-phone-verification-enabled">
+              <input type="checkbox" id="input-phone-verification-enabled" />
               <span class="toggle-switch-track" aria-hidden="true">
                 <span class="toggle-switch-thumb"></span>
               </span>
@@ -379,17 +379,17 @@
         <input type="text" id="input-account-run-history-helper-base-url" class="data-input mono"
           placeholder="http://127.0.0.1:17373" />
       </div>
-      <div class="data-row">
+      <div class="data-row" id="row-hero-sms-platform" style="display:none;">
         <span class="data-label">接码平台</span>
         <span id="display-hero-sms-platform" class="data-value mono">HeroSMS / OpenAI / Thailand</span>
       </div>
-      <div class="data-row">
+      <div class="data-row" id="row-hero-sms-country" style="display:none;">
         <span class="data-label">接码国家</span>
         <select id="select-hero-sms-country" class="data-input mono">
           <option value="52" selected>Thailand</option>
         </select>
       </div>
-      <div class="data-row">
+      <div class="data-row" id="row-hero-sms-api-key" style="display:none;">
         <span class="data-label">接码 API</span>
         <input type="password" id="input-hero-sms-api-key" class="data-input mono" placeholder="请输入 HeroSMS API Key" />
       </div>

@@ -48,116 +48,58 @@ function extractFunction(name) {
   return sidepanelSource.slice(start, end);
 }
 
-test('syncSelectedMail2925PoolAccount writes selected pool email back to mail2925BaseEmail', async () => {
-  const bundle = [
-    extractFunction('getMail2925Accounts'),
-    extractFunction('getCurrentMail2925Account'),
-    extractFunction('getCurrentMail2925Email'),
-    extractFunction('isMail2925AccountPoolEnabled'),
-    extractFunction('syncMail2925PoolAccountOptions'),
-    extractFunction('getPreferredMail2925PoolAccountId'),
-    extractFunction('syncSelectedMail2925PoolAccount'),
-  ].join('\n');
+test('sidepanel html exposes phone verification toggle and dedicated HeroSMS rows', () => {
+  const html = fs.readFileSync('sidepanel/sidepanel.html', 'utf8');
 
+  assert.match(html, /id="row-phone-verification-enabled"/);
+  assert.match(html, /id="input-phone-verification-enabled"/);
+  assert.match(html, /id="row-hero-sms-platform"/);
+  assert.match(html, /id="row-hero-sms-country"/);
+  assert.match(html, /id="row-hero-sms-api-key"/);
+  assert.doesNotMatch(html, /id="input-account-run-history-text-enabled"/);
+});
+
+test('updatePhoneVerificationSettingsUI toggles HeroSMS rows from the sms switch', () => {
   const api = new Function(`
-let latestState = {
-  mail2925UseAccountPool: true,
-  mail2925BaseEmail: 'old@2925.com',
-  currentMail2925AccountId: '',
-  mail2925Accounts: [{ id: 'acc-1', email: 'new@2925.com' }],
-};
-const selectMail2925PoolAccount = { value: 'acc-1', innerHTML: '' };
-const chrome = {
-  runtime: {
-    async sendMessage() {
-      return { account: { id: 'acc-1', email: 'new@2925.com' } };
-    },
-  },
-};
-const toastEvents = [];
-function syncLatestState(patch) {
-  latestState = { ...latestState, ...patch };
-}
-function setManagedAliasBaseEmailInputForProvider() {}
-function showToast(message) {
-  toastEvents.push(message);
-}
-function escapeHtml(value) {
-  return String(value || '');
-}
-${bundle}
+const inputPhoneVerificationEnabled = { checked: false };
+const rowHeroSmsPlatform = { style: { display: 'none' } };
+const rowHeroSmsCountry = { style: { display: 'none' } };
+const rowHeroSmsApiKey = { style: { display: 'none' } };
+
+${extractFunction('updatePhoneVerificationSettingsUI')}
+
 return {
-  syncSelectedMail2925PoolAccount,
-  getLatestState() {
-    return latestState;
-  },
+  inputPhoneVerificationEnabled,
+  rowHeroSmsPlatform,
+  rowHeroSmsCountry,
+  rowHeroSmsApiKey,
+  updatePhoneVerificationSettingsUI,
 };
 `)();
 
-  await api.syncSelectedMail2925PoolAccount({ silent: true });
+  api.updatePhoneVerificationSettingsUI();
+  assert.equal(api.rowHeroSmsPlatform.style.display, 'none');
+  assert.equal(api.rowHeroSmsCountry.style.display, 'none');
+  assert.equal(api.rowHeroSmsApiKey.style.display, 'none');
 
-  assert.equal(api.getLatestState().currentMail2925AccountId, 'acc-1');
-  assert.equal(api.getLatestState().mail2925BaseEmail, 'new@2925.com');
+  api.inputPhoneVerificationEnabled.checked = true;
+  api.updatePhoneVerificationSettingsUI();
+  assert.equal(api.rowHeroSmsPlatform.style.display, '');
+  assert.equal(api.rowHeroSmsCountry.style.display, '');
+  assert.equal(api.rowHeroSmsApiKey.style.display, '');
 });
 
-test('syncMail2925BaseEmailFromCurrentAccount reuses current pool account email for manual base email field', async () => {
-  const bundle = [
-    extractFunction('getMail2925Accounts'),
-    extractFunction('getCurrentMail2925Account'),
-    extractFunction('getCurrentMail2925Email'),
-    extractFunction('isMail2925AccountPoolEnabled'),
-    extractFunction('syncMail2925BaseEmailFromCurrentAccount'),
-  ].join('\n');
-
-  const api = new Function(`
-let latestState = {
-  mail2925UseAccountPool: true,
-  mail2925BaseEmail: 'old@2925.com',
-  currentMail2925AccountId: 'acc-1',
-  mail2925Accounts: [{ id: 'acc-1', email: 'new@2925.com' }],
-};
-let saveCalls = 0;
-function syncLatestState(patch) {
-  latestState = { ...latestState, ...patch };
-}
-async function saveSettings() {
-  saveCalls += 1;
-}
-${bundle}
-return {
-  syncMail2925BaseEmailFromCurrentAccount,
-  getLatestState() {
-    return latestState;
-  },
-  getSaveCalls() {
-    return saveCalls;
-  },
-};
-`)();
-
-  const changed = api.syncMail2925BaseEmailFromCurrentAccount(undefined, { persist: true });
-  await Promise.resolve();
-
-  assert.equal(changed, true);
-  assert.equal(api.getLatestState().mail2925BaseEmail, 'new@2925.com');
-  assert.equal(api.getSaveCalls(), 1);
-});
-
-test('collectSettingsPayload persists currentMail2925AccountId for 2925 account pool restore', () => {
-  const bundle = [
-    extractFunction('collectSettingsPayload'),
-  ].join('\n');
-
+test('collectSettingsPayload keeps local helper sync enabled while persisting sms toggle state', () => {
   const api = new Function(`
 let latestState = {
   contributionMode: false,
-  mail2925UseAccountPool: true,
-  currentMail2925AccountId: 'acc-2',
+  mail2925UseAccountPool: false,
+  currentMail2925AccountId: '',
 };
 let cloudflareDomainEditMode = false;
 let cloudflareTempEmailDomainEditMode = false;
-const selectCfDomain = { value: 'example.com' };
-const selectTempEmailDomain = { value: 'mail.example.com' };
+const selectCfDomain = { value: '' };
+const selectTempEmailDomain = { value: '' };
 const selectPanelMode = { value: 'cpa' };
 const inputVpsUrl = { value: '' };
 const inputVpsPassword = { value: '' };
@@ -169,14 +111,11 @@ const inputSub2ApiDefaultProxy = { value: '' };
 const inputCodex2ApiUrl = { value: '' };
 const inputCodex2ApiAdminKey = { value: '' };
 const inputPassword = { value: '' };
-const selectMailProvider = { value: '2925' };
+const selectMailProvider = { value: '163' };
 const selectEmailGenerator = { value: 'duck' };
 const checkboxAutoDeleteIcloud = { checked: false };
 const selectIcloudHostPreference = { value: 'auto' };
-const inputPhoneVerificationEnabled = { checked: false };
-const inputAccountRunHistoryTextEnabled = { checked: false };
-const inputAccountRunHistoryHelperBaseUrl = { value: '' };
-const inputMail2925UseAccountPool = { checked: true };
+const inputMail2925UseAccountPool = { checked: false };
 const inputInbucketHost = { value: '' };
 const inputInbucketMailbox = { value: '' };
 const inputHotmailRemoteBaseUrl = { value: '' };
@@ -195,22 +134,26 @@ const inputAutoSkipFailuresThreadIntervalMinutes = { value: '0' };
 const inputAutoDelayEnabled = { checked: false };
 const inputAutoDelayMinutes = { value: '30' };
 const inputAutoStepDelaySeconds = { value: '' };
+const inputPhoneVerificationEnabled = { checked: true };
 const inputVerificationResendCount = { value: '4' };
+const inputHeroSmsApiKey = { value: 'demo-key' };
+const inputAccountRunHistoryHelperBaseUrl = { value: 'http://127.0.0.1:17373' };
 const DEFAULT_VERIFICATION_RESEND_COUNT = 4;
-function getCloudflareDomainsFromState() {
-  return { domains: [], activeDomain: '' };
-}
+const DEFAULT_HERO_SMS_COUNTRY_ID = 52;
+const DEFAULT_HERO_SMS_COUNTRY_LABEL = 'Thailand';
+const selectHeroSmsCountry = {
+  value: '52',
+  selectedIndex: 0,
+  options: [{ textContent: 'Thailand' }],
+};
+function getCloudflareDomainsFromState() { return { domains: [], activeDomain: '' }; }
 function normalizeCloudflareDomainValue(value) { return String(value || '').trim(); }
-function getCloudflareTempEmailDomainsFromState() {
-  return { domains: [], activeDomain: '' };
-}
+function getCloudflareTempEmailDomainsFromState() { return { domains: [], activeDomain: '' }; }
 function normalizeCloudflareTempEmailDomainValue(value) { return String(value || '').trim(); }
 function getSelectedLocalCpaStep9Mode() { return 'submit'; }
 function getSelectedMail2925Mode() { return 'provide'; }
 function getSelectedHotmailServiceMode() { return 'local'; }
-function buildManagedAliasBaseEmailPayload() {
-  return { gmailBaseEmail: '', mail2925BaseEmail: 'demo@2925.com', emailPrefix: '' };
-}
+function buildManagedAliasBaseEmailPayload() { return { gmailBaseEmail: '', mail2925BaseEmail: '', emailPrefix: '' }; }
 function normalizeLuckmailBaseUrl(value) { return String(value || '').trim(); }
 function normalizeLuckmailEmailType(value) { return String(value || '').trim() || 'ms_graph'; }
 function normalizeCloudflareTempEmailBaseUrlValue(value) { return String(value || '').trim(); }
@@ -220,13 +163,19 @@ function normalizeAutoRunThreadIntervalMinutes(value) { return Number(value) || 
 function normalizeAutoDelayMinutes(value) { return Number(value) || 30; }
 function normalizeAutoStepDelaySeconds(value) { return value === '' ? null : Number(value); }
 function normalizeVerificationResendCount(value, fallback) { return Number(value) || fallback; }
-${bundle}
+${extractFunction('normalizeHeroSmsCountryId')}
+${extractFunction('normalizeHeroSmsCountryLabel')}
+${extractFunction('getSelectedHeroSmsCountryOption')}
+${extractFunction('collectSettingsPayload')}
 return { collectSettingsPayload };
 `)();
 
   const payload = api.collectSettingsPayload();
 
-  assert.equal(payload.currentMail2925AccountId, 'acc-2');
-  assert.equal(payload.mail2925UseAccountPool, true);
-  assert.equal(payload.phoneVerificationEnabled, false);
+  assert.equal(payload.phoneVerificationEnabled, true);
+  assert.equal(payload.accountRunHistoryTextEnabled, true);
+  assert.equal(payload.accountRunHistoryHelperBaseUrl, 'http://127.0.0.1:17373');
+  assert.equal(payload.heroSmsApiKey, 'demo-key');
+  assert.equal(payload.heroSmsCountryId, 52);
+  assert.equal(payload.heroSmsCountryLabel, 'Thailand');
 });

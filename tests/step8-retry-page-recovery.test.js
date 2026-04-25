@@ -140,6 +140,9 @@ const phoneVerificationCalls = [];
 function throwIfStopped() {}
 async function sleepWithStop() {}
 async function ensureStep8SignupPageReady() {}
+async function getState() {
+  return { phoneVerificationEnabled: true };
+}
 const phoneVerificationHelpers = {
   async completePhoneVerificationFlow(tabId, pageState) {
     phoneVerificationCalls.push({ tabId, pageState });
@@ -199,4 +202,53 @@ return {
     phoneVerificationPage: false,
     consentReady: true,
   });
+});
+
+test('step 8 ready check blocks phone verification flow when sms toggle is disabled', async () => {
+  const api = new Function(`
+const phoneVerificationCalls = [];
+
+function throwIfStopped() {}
+async function sleepWithStop() {}
+async function ensureStep8SignupPageReady() {}
+async function getState() {
+  return { phoneVerificationEnabled: false };
+}
+const phoneVerificationHelpers = {
+  async completePhoneVerificationFlow(tabId, pageState) {
+    phoneVerificationCalls.push({ tabId, pageState });
+    return {
+      success: true,
+      consentReady: true,
+      url: 'https://auth.openai.com/authorize',
+    };
+  },
+};
+async function getStep8PageState() {
+  return {
+    url: 'https://auth.openai.com/add-phone',
+    addPhonePage: true,
+    phoneVerificationPage: false,
+    consentReady: false,
+  };
+}
+
+${extractFunction('waitForStep8Ready')}
+
+return {
+  async run() {
+    try {
+      await waitForStep8Ready(88, 1000);
+      return { error: null, phoneVerificationCalls };
+    } catch (error) {
+      return { error, phoneVerificationCalls };
+    }
+  },
+};
+`)();
+
+  const { error, phoneVerificationCalls } = await api.run();
+
+  assert.match(String(error?.message || ''), /未开启接码功能/);
+  assert.deepStrictEqual(phoneVerificationCalls, []);
 });

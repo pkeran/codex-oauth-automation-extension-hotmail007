@@ -39,4 +39,9 @@ test('logging/status add-phone detection ignores step 2 phone-entry switch failu
     loggingStatus.isAddPhoneAuthFailure('Step 8: verification submitted but the auth flow entered the phone number page. URL: https://auth.openai.com/add-phone'),
     true
   );
+  assert.equal(
+    loggingStatus.isAddPhoneAuthFailure('Step 9: auth page entered phone verification page. URL: https://auth.openai.com/phone-verification'),
+    true
+  );
+  assert.equal(loggingStatus.getLoginAuthStateLabel('phone_verification_page'), '手机验证码页');
 });

@@ -334,9 +334,6 @@
       if (Boolean(state.contributionMode)) {
         return false;
       }
-      if (!Boolean(state.accountRunHistoryTextEnabled)) {
-        return false;
-      }
 
       const helperBaseUrl = normalizeAccountRunHistoryHelperBaseUrl(state.accountRunHistoryHelperBaseUrl);
       return Boolean(helperBaseUrl);
@@ -364,7 +361,7 @@
           body: JSON.stringify(buildAccountRunHistorySnapshotPayload(records)),
         });
       } catch (err) {
-        throw new Error(`账号记录快照同步失败：无法连接本地 helper（${getErrorMessage(err)}）`);
+        return '';
       }
 
       let payload = null;

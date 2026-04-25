@@ -269,6 +269,7 @@ const PERSISTED_SETTING_DEFAULTS = {
   autoRunDelayEnabled: false,
   autoRunDelayMinutes: 30,
   autoStepDelaySeconds: null,
+  phoneVerificationEnabled: false,
   verificationResendCount: DEFAULT_VERIFICATION_RESEND_COUNT,
   mailProvider: '163',
   mail2925Mode: DEFAULT_MAIL_2925_MODE,
@@ -279,7 +280,7 @@ const PERSISTED_SETTING_DEFAULTS = {
   autoDeleteUsedIcloudAlias: false,
   icloudHostPreference: 'auto',
   icloudFetchMode: 'reuse_existing',
-  accountRunHistoryTextEnabled: false,
+  accountRunHistoryTextEnabled: true,
   accountRunHistoryHelperBaseUrl: DEFAULT_ACCOUNT_RUN_HISTORY_HELPER_BASE_URL,
   gmailBaseEmail: '',
   mail2925BaseEmail: '',
@@ -969,6 +970,7 @@ function normalizePersistentSettingValue(key, value) {
       return String(value || '');
     case 'autoRunSkipFailures':
     case 'autoRunDelayEnabled':
+    case 'phoneVerificationEnabled':
       return Boolean(value);
     case 'autoRunFallbackThreadIntervalMinutes':
       return normalizeAutoRunFallbackThreadIntervalMinutes(value);
@@ -7235,12 +7237,14 @@ function isStep6RecoverableResult(result) {
 }
 
 function isAddPhoneAuthUrl(url) {
-  return /https:\/\/auth\.openai\.com\/add-phone(?:[/?#]|$)/i.test(String(url || '').trim());
+  return /https:\/\/auth\.openai\.com\/(?:add-phone|phone-verification)(?:[/?#]|$)/i.test(String(url || '').trim());
 }
 
 function isAddPhoneAuthState(authState = {}) {
   return authState?.state === 'add_phone_page'
+    || authState?.state === 'phone_verification_page'
     || Boolean(authState?.addPhonePage)
+    || Boolean(authState?.phoneVerificationPage)
     || isAddPhoneAuthUrl(authState?.url);
 }
 
@@ -7532,6 +7536,15 @@ async function waitForStep8Ready(tabId, timeoutMs = STEP8_READY_WAIT_TIMEOUT_MS)
       throw new Error(`${CLOUDFLARE_SECURITY_BLOCK_ERROR_PREFIX}${CLOUDFLARE_SECURITY_BLOCK_USER_MESSAGE}`);
     }
     if (pageState?.addPhonePage || pageState?.phoneVerificationPage) {
+      const latestState = await getState();
+      if (!Boolean(latestState?.phoneVerificationEnabled)) {
+        const urlPart = pageState?.url ? ` URL: ${pageState.url}` : '';
+        throw new Error(
+          pageState?.phoneVerificationPage
+            ? `步骤 9：当前认证页进入手机验证码页，但未开启接码功能，无法继续自动授权。${urlPart}`.trim()
+            : `步骤 9：当前认证页进入手机号页面，但未开启接码功能，无法继续自动授权。${urlPart}`.trim()
+        );
+      }
       await phoneVerificationHelpers.completePhoneVerificationFlow(tabId, pageState);
       recovered = false;
       await sleepWithStop(250);

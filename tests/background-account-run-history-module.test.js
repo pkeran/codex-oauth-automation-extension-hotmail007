@@ -54,7 +54,7 @@ test('account run history helper upgrades old records, keeps stopped items and s
       autoRunTotalRuns: 10,
       autoRunAttemptRun: 3,
       accountRunHistoryTextEnabled: false,
-      accountRunHistoryHelperBaseUrl: '',
+      accountRunHistoryHelperBaseUrl: 'http://127.0.0.1:17373',
     }),
     normalizeAccountRunHistoryHelperBaseUrl: (value) => String(value || '').trim(),
   });
@@ -97,8 +97,8 @@ test('account run history helper upgrades old records, keeps stopped items and s
   assert.equal(storedHistory.some((item) => item.email === 'stop@example.com' && item.finalStatus === 'stopped'), true);
   assert.equal(storedHistory.some((item) => item.email === 'latest@example.com' && item.retryCount === 2), true);
   assert.equal(storedHistory.some((item) => item.email === 'old@example.com'), true);
-  assert.equal(fetchCalled, false);
-  assert.equal(helpers.shouldAppendAccountRunTextFile({ accountRunHistoryTextEnabled: false, accountRunHistoryHelperBaseUrl: 'http://127.0.0.1:17373' }), false);
+  assert.equal(fetchCalled, true);
+  assert.equal(helpers.shouldAppendAccountRunTextFile({ accountRunHistoryTextEnabled: false, accountRunHistoryHelperBaseUrl: 'http://127.0.0.1:17373' }), true);
   assert.equal(helpers.shouldAppendAccountRunTextFile({ accountRunHistoryTextEnabled: true, accountRunHistoryHelperBaseUrl: 'http://127.0.0.1:17373' }), true);
   const stoppedRecord = helpers.buildAccountRunHistoryRecord(
     { email: 'a@b.com', password: 'x' },

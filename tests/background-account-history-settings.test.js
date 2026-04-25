@@ -98,6 +98,7 @@ return {
   `)();
 
   assert.equal(api.normalizePersistentSettingValue('accountRunHistoryTextEnabled', 1), true);
+  assert.equal(api.normalizePersistentSettingValue('phoneVerificationEnabled', 1), true);
   assert.equal(api.normalizePersistentSettingValue('verificationResendCount', '7'), 7);
   assert.equal(api.normalizePersistentSettingValue('verificationResendCount', '-1'), 0);
   assert.equal(

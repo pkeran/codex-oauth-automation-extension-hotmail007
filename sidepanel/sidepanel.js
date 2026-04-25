@@ -222,11 +222,14 @@ const inputAutoDelayEnabled = document.getElementById('input-auto-delay-enabled'
 const inputAutoDelayMinutes = document.getElementById('input-auto-delay-minutes');
 const inputAutoStepDelaySeconds = document.getElementById('input-auto-step-delay-seconds');
 const inputVerificationResendCount = document.getElementById('input-verification-resend-count');
-const rowAccountRunHistoryTextEnabled = document.getElementById('row-account-run-history-text-enabled');
+const rowPhoneVerificationEnabled = document.getElementById('row-phone-verification-enabled');
+const inputPhoneVerificationEnabled = document.getElementById('input-phone-verification-enabled');
+const rowHeroSmsPlatform = document.getElementById('row-hero-sms-platform');
+const rowHeroSmsCountry = document.getElementById('row-hero-sms-country');
+const rowHeroSmsApiKey = document.getElementById('row-hero-sms-api-key');
 const inputHeroSmsApiKey = document.getElementById('input-hero-sms-api-key');
 const selectHeroSmsCountry = document.getElementById('select-hero-sms-country');
 const displayHeroSmsPlatform = document.getElementById('display-hero-sms-platform');
-const inputAccountRunHistoryTextEnabled = document.getElementById('input-account-run-history-text-enabled');
 const rowAccountRunHistoryHelperBaseUrl = document.getElementById('row-account-run-history-helper-base-url');
 const inputAccountRunHistoryHelperBaseUrl = document.getElementById('input-account-run-history-helper-base-url');
 const autoStartModal = document.getElementById('auto-start-modal');
@@ -280,6 +283,7 @@ const DEFAULT_LUCKMAIL_EMAIL_TYPE = 'ms_graph';
 const DISPLAY_TIMEZONE = 'Asia/Shanghai';
 const DEFAULT_ACCOUNT_RUN_HISTORY_HELPER_BASE_URL = 'http://127.0.0.1:17373';
 const CONTRIBUTION_UPLOAD_URL = 'https://apikey.qzz.io/';
+const DEFAULT_PHONE_VERIFICATION_ENABLED = false;
 const DEFAULT_HERO_SMS_COUNTRY_ID = 52;
 const DEFAULT_HERO_SMS_COUNTRY_LABEL = 'Thailand';
 
@@ -1701,7 +1705,7 @@ function collectSettingsPayload() {
       ? 'always_new'
       : 'reuse_existing'),
     ...(contributionModeEnabled ? {} : {
-      accountRunHistoryTextEnabled: Boolean(inputAccountRunHistoryTextEnabled?.checked),
+      accountRunHistoryTextEnabled: true,
       accountRunHistoryHelperBaseUrl: normalizeAccountRunHistoryHelperBaseUrlValue(inputAccountRunHistoryHelperBaseUrl?.value),
     }),
     ...buildManagedAliasBaseEmailPayload(),
@@ -1728,6 +1732,7 @@ function collectSettingsPayload() {
     autoRunDelayEnabled: inputAutoDelayEnabled.checked,
     autoRunDelayMinutes: normalizeAutoDelayMinutes(inputAutoDelayMinutes.value),
     autoStepDelaySeconds: normalizeAutoStepDelaySeconds(inputAutoStepDelaySeconds.value),
+    phoneVerificationEnabled: Boolean(inputPhoneVerificationEnabled?.checked),
     verificationResendCount: normalizeVerificationResendCount(
       inputVerificationResendCount?.value,
       DEFAULT_VERIFICATION_RESEND_COUNT
@@ -1897,13 +1902,21 @@ function setHotmailServiceMode(mode) {
 }
 
 function updateAccountRunHistorySettingsUI() {
-  if (!rowAccountRunHistoryHelperBaseUrl || !inputAccountRunHistoryTextEnabled) {
+  if (!rowAccountRunHistoryHelperBaseUrl) {
     return;
   }
 
-  rowAccountRunHistoryHelperBaseUrl.style.display = inputAccountRunHistoryTextEnabled.checked && !latestState?.contributionMode
-    ? ''
-    : 'none';
+  rowAccountRunHistoryHelperBaseUrl.style.display = 'none';
+}
+
+function updatePhoneVerificationSettingsUI() {
+  const enabled = Boolean(inputPhoneVerificationEnabled?.checked);
+  [rowHeroSmsPlatform, rowHeroSmsCountry, rowHeroSmsApiKey].forEach((row) => {
+    if (!row) {
+      return;
+    }
+    row.style.display = enabled ? '' : 'none';
+  });
 }
 
 function setSettingsCardLocked(locked) {
@@ -2190,9 +2203,6 @@ function applySettingsState(state) {
   if (checkboxAutoDeleteIcloud) {
     checkboxAutoDeleteIcloud.checked = Boolean(state?.autoDeleteUsedIcloudAlias);
   }
-  if (inputAccountRunHistoryTextEnabled) {
-    inputAccountRunHistoryTextEnabled.checked = Boolean(state?.accountRunHistoryTextEnabled);
-  }
   if (inputAccountRunHistoryHelperBaseUrl) {
     inputAccountRunHistoryHelperBaseUrl.value = normalizeAccountRunHistoryHelperBaseUrlValue(state?.accountRunHistoryHelperBaseUrl);
   }
@@ -2237,6 +2247,11 @@ function applySettingsState(state) {
       normalizeVerificationResendCount(restoredVerificationResendCount, DEFAULT_VERIFICATION_RESEND_COUNT)
     );
   }
+  if (inputPhoneVerificationEnabled) {
+    inputPhoneVerificationEnabled.checked = state?.phoneVerificationEnabled !== undefined
+      ? Boolean(state.phoneVerificationEnabled)
+      : DEFAULT_PHONE_VERIFICATION_ENABLED;
+  }
   if (inputHeroSmsApiKey) {
     inputHeroSmsApiKey.value = state?.heroSmsApiKey || '';
   }
@@ -2256,6 +2271,7 @@ function applySettingsState(state) {
   updateAutoDelayInputState();
   updateFallbackThreadIntervalInputState();
   updateAccountRunHistorySettingsUI();
+  updatePhoneVerificationSettingsUI();
   updatePanelModeUI();
   updateMailProviderUI();
   if (isLuckmailProvider(state?.mailProvider)) {
@@ -3942,7 +3958,7 @@ const contributionModeManager = window.SidepanelContributionMode?.createContribu
     contributionModeText,
     contributionOauthStatus,
     rowAccountRunHistoryHelperBaseUrl,
-    rowAccountRunHistoryTextEnabled,
+    rowPhoneVerificationEnabled,
     rowCustomPassword,
     rowLocalCpaStep9Mode,
     rowSub2ApiDefaultProxy,
@@ -5029,8 +5045,8 @@ inputAutoDelayMinutes.addEventListener('blur', () => {
   saveSettings({ silent: true }).catch(() => { });
 });
 
-inputAccountRunHistoryTextEnabled?.addEventListener('change', () => {
-  updateAccountRunHistorySettingsUI();
+inputPhoneVerificationEnabled?.addEventListener('change', () => {
+  updatePhoneVerificationSettingsUI();
   markSettingsDirty(true);
   saveSettings({ silent: true }).catch(() => { });
 });
@@ -5279,12 +5295,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       if (message.payload.autoDeleteUsedIcloudAlias !== undefined && checkboxAutoDeleteIcloud) {
         checkboxAutoDeleteIcloud.checked = Boolean(message.payload.autoDeleteUsedIcloudAlias);
       }
-      if (message.payload.accountRunHistoryTextEnabled !== undefined && inputAccountRunHistoryTextEnabled) {
-        inputAccountRunHistoryTextEnabled.checked = Boolean(message.payload.accountRunHistoryTextEnabled);
-        updateAccountRunHistorySettingsUI();
-      }
       if (message.payload.accountRunHistoryHelperBaseUrl !== undefined && inputAccountRunHistoryHelperBaseUrl) {
         inputAccountRunHistoryHelperBaseUrl.value = normalizeAccountRunHistoryHelperBaseUrlValue(message.payload.accountRunHistoryHelperBaseUrl);
+        updateAccountRunHistorySettingsUI();
       }
       if (message.payload.icloudHostPreference !== undefined && selectIcloudHostPreference) {
         const hostPreference = String(message.payload.icloudHostPreference || '').trim().toLowerCase();
@@ -5336,6 +5349,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       if (message.payload.heroSmsApiKey !== undefined && inputHeroSmsApiKey) {
         inputHeroSmsApiKey.value = message.payload.heroSmsApiKey || '';
       }
+      if (message.payload.phoneVerificationEnabled !== undefined && inputPhoneVerificationEnabled) {
+        inputPhoneVerificationEnabled.checked = Boolean(message.payload.phoneVerificationEnabled);
+        updatePhoneVerificationSettingsUI();
+      }
       if (
         (message.payload.heroSmsCountryId !== undefined || message.payload.heroSmsCountryLabel !== undefined)
         && selectHeroSmsCountry
@@ -5352,6 +5369,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         }
         updateHeroSmsPlatformDisplay(message.payload.heroSmsCountryLabel || getSelectedHeroSmsCountryOption().label);
       }
+      updateAccountRunHistorySettingsUI();
       renderContributionMode();
       break;
     }
