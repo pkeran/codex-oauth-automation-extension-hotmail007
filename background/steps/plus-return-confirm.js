@@ -3,7 +3,7 @@
 })(typeof self !== 'undefined' ? self : globalThis, function createBackgroundPlusReturnConfirmModule() {
   const PAYPAL_SOURCE = 'paypal-flow';
   const PLUS_CHECKOUT_SOURCE = 'plus-checkout';
-  const PLUS_RETURN_SETTLE_WAIT_MS = 40000;
+  const PLUS_RETURN_SETTLE_WAIT_MS = 20000;
 
   function createPlusReturnConfirmExecutor(deps = {}) {
     const {
@@ -41,7 +41,7 @@
       const tabId = await resolveReturnTabId(state);
       await addLog('步骤 9：正在等待 PayPal 授权后回跳到 ChatGPT / OpenAI 页面...', 'info');
       const tab = await waitForTabUrlMatchUntilStopped(tabId, isReturnUrl);
-      await addLog('步骤 9：已检测到订阅回跳页面，固定等待 40 秒让页面完成加载。', 'info');
+      await addLog('步骤 9：已检测到订阅回跳页面，固定等待 20 秒让页面完成加载。', 'info');
       await sleepWithStop(PLUS_RETURN_SETTLE_WAIT_MS);
 
       await setState({
