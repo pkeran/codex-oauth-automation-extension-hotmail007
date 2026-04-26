@@ -6,7 +6,7 @@ const source = fs.readFileSync('background/steps/plus-return-confirm.js', 'utf8'
 const globalScope = {};
 const api = new Function('self', `${source}; return self.MultiPageBackgroundPlusReturnConfirm;`)(globalScope);
 
-test('Plus return confirm waits a fixed 40 seconds after return URL is detected', async () => {
+test('Plus return confirm waits a fixed 20 seconds after return URL is detected', async () => {
   const events = [];
   const executor = api.createPlusReturnConfirmExecutor({
     addLog: async (message, level = 'info') => {
@@ -36,10 +36,10 @@ test('Plus return confirm waits a fixed 40 seconds after return URL is detected'
 
   assert.deepEqual(
     events.find((event) => event.type === 'sleep'),
-    { type: 'sleep', ms: 40000 }
+    { type: 'sleep', ms: 20000 }
   );
   assert.equal(
-    events.some((event) => event.type === 'log' && /固定等待 40 秒/.test(event.message)),
+    events.some((event) => event.type === 'log' && /固定等待 20 秒/.test(event.message)),
     true
   );
   assert.deepEqual(
