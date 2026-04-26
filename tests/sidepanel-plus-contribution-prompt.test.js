@@ -184,6 +184,7 @@ test('Plus contribution prompt marks shown and donated choice adds twenty credit
     'shouldShowPlusContributionPrompt',
     'markPlusContributionPromptShown',
     'addPlusContributionPromptCredit',
+    'enterContributionModeFromPlusPrompt',
     'maybeShowPlusContributionPromptBeforeAutoRun',
   ]);
 
@@ -246,6 +247,7 @@ test('Plus contribution prompt opens portal and aborts normal auto run when cont
     'shouldShowPlusContributionPrompt',
     'markPlusContributionPromptShown',
     'addPlusContributionPromptCredit',
+    'enterContributionModeFromPlusPrompt',
     'maybeShowPlusContributionPromptBeforeAutoRun',
   ]);
 
@@ -274,6 +276,20 @@ function openExternalUrl(url) {
 function getContributionPortalUrl() {
   return 'https://apikey.qzz.io';
 }
+const chrome = {
+  runtime: {
+    async sendMessage(message) {
+      events.push({ type: 'runtime', message });
+      return { state: { contributionMode: true } };
+    },
+  },
+};
+function applySettingsState(state) {
+  events.push({ type: 'apply', state });
+}
+function renderContributionMode() {
+  events.push({ type: 'render' });
+}
 ${bundle}
 return {
   maybeShowPlusContributionPromptBeforeAutoRun,
@@ -286,6 +302,11 @@ return {
   const result = await api.maybeShowPlusContributionPromptBeforeAutoRun(true);
 
   assert.equal(result, false);
-  assert.deepEqual(api.getEvents().map((event) => event.type), ['modal', 'open', 'toast']);
+  assert.deepEqual(api.getEvents().map((event) => event.type), ['modal', 'open', 'runtime', 'apply', 'render', 'toast']);
   assert.equal(api.getEvents()[1].url, 'https://apikey.qzz.io');
+  assert.deepEqual(api.getEvents()[2].message, {
+    type: 'SET_CONTRIBUTION_MODE',
+    source: 'sidepanel',
+    payload: { enabled: true },
+  });
 });

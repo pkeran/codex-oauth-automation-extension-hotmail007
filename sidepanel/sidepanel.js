@@ -1190,6 +1190,29 @@ function openPlusContributionSupportModal() {
   });
 }
 
+async function enterContributionModeFromPlusPrompt() {
+  if (typeof chrome === 'undefined' || !chrome.runtime?.sendMessage) {
+    return null;
+  }
+
+  const response = await chrome.runtime.sendMessage({
+    type: 'SET_CONTRIBUTION_MODE',
+    source: 'sidepanel',
+    payload: { enabled: true },
+  });
+
+  if (response?.error) {
+    throw new Error(response.error);
+  }
+  if (response?.state && typeof applySettingsState === 'function') {
+    applySettingsState(response.state);
+  }
+  if (typeof renderContributionMode === 'function') {
+    renderContributionMode();
+  }
+  return response?.state || null;
+}
+
 async function maybeShowPlusContributionPromptBeforeAutoRun(plusModeEnabled) {
   const records = Array.isArray(latestState?.accountRunHistory) ? latestState.accountRunHistory : [];
   if (!shouldShowPlusContributionPrompt(records, plusModeEnabled)) {
@@ -1205,7 +1228,12 @@ async function maybeShowPlusContributionPromptBeforeAutoRun(plusModeEnabled) {
   }
   if (choice === 'contribute') {
     openExternalUrl(getContributionPortalUrl());
-    showToast('已打开贡献页面，可以按页面提示贡献 Plus 账号。', 'info', 2200);
+    try {
+      await enterContributionModeFromPlusPrompt();
+      showToast('已进入贡献模式，并打开贡献页面。', 'info', 2200);
+    } catch (error) {
+      showToast(`贡献模式开启失败：${error.message}`, 'error', 2600);
+    }
     return false;
   }
   return true;
@@ -3253,7 +3281,7 @@ function syncMail2925BaseEmailFromCurrentAccount(state = latestState, options = 
 
   syncLatestState({ mail2925BaseEmail: currentEmail });
   if (persist) {
-    saveSettings({ silent: true }).catch(() => {});
+    saveSettings({ silent: true }).catch(() => { });
   }
   return true;
 }
@@ -3591,9 +3619,9 @@ function updateMailProviderUI() {
       ? '请先校验并选择一个 Hotmail 账号'
       : (useLuckmail
         ? '步骤 3 会自动购买 LuckMail 邮箱并用于收码'
-      : (useGeneratedAlias
-        ? '步骤 3 会自动生成邮箱，无需手动获取'
-        : (useCustomEmail ? '请先填写自定义注册邮箱，成功一轮后会自动清空' : `先自动获取${uiCopy.label}，或手动粘贴邮箱后再继续`)));
+        : (useGeneratedAlias
+          ? '步骤 3 会自动生成邮箱，无需手动获取'
+          : (useCustomEmail ? '请先填写自定义注册邮箱，成功一轮后会自动清空' : `先自动获取${uiCopy.label}，或手动粘贴邮箱后再继续`)));
   }
   if (autoHintText && useCustomEmailPool) {
     autoHintText.textContent = getCustomEmailPoolSize() > 0
@@ -3799,12 +3827,12 @@ function updateButtonStates() {
     } else if (step === 1) {
       btn.disabled = false;
     } else {
-    const currentIndex = STEP_IDS.indexOf(step);
-    const prevStep = currentIndex > 0 ? STEP_IDS[currentIndex - 1] : null;
-    const prevStatus = prevStep === null ? 'completed' : statuses[prevStep];
-    const currentStatus = statuses[step];
-    btn.disabled = !(isDoneStatus(prevStatus) || currentStatus === 'failed' || isDoneStatus(currentStatus) || currentStatus === 'stopped');
-  }
+      const currentIndex = STEP_IDS.indexOf(step);
+      const prevStep = currentIndex > 0 ? STEP_IDS[currentIndex - 1] : null;
+      const prevStatus = prevStep === null ? 'completed' : statuses[prevStep];
+      const currentStatus = statuses[step];
+      btn.disabled = !(isDoneStatus(prevStatus) || currentStatus === 'failed' || isDoneStatus(currentStatus) || currentStatus === 'stopped');
+    }
   }
 
   document.querySelectorAll('.step-manual-btn').forEach((btn) => {
@@ -3999,8 +4027,8 @@ async function fetchGeneratedEmail(options = {}) {
         mail2925Mode: getSelectedMail2925Mode(),
         ...(getSelectedEmailGenerator() === CUSTOM_EMAIL_POOL_GENERATOR
           ? {
-              customEmailPool: normalizeCustomEmailPoolEntries(inputCustomEmailPool?.value),
-            }
+            customEmailPool: normalizeCustomEmailPoolEntries(inputCustomEmailPool?.value),
+          }
           : {}),
         ...buildManagedAliasBaseEmailPayload(),
       },
@@ -5267,9 +5295,9 @@ inputEmailPrefix.addEventListener('input', () => {
   scheduleSettingsAutoSave();
 });
 inputEmailPrefix.addEventListener('blur', () => {
-  maybeClearGeneratedAliasAfterEmailPrefixChange().catch(() => {});
+  maybeClearGeneratedAliasAfterEmailPrefixChange().catch(() => { });
   syncManagedAliasBaseEmailDraftFromInput();
-  saveSettings({ silent: true }).catch(() => {});
+  saveSettings({ silent: true }).catch(() => { });
 });
 
 inputCustomEmailPool?.addEventListener('input', () => {
@@ -5282,7 +5310,7 @@ inputCustomEmailPool?.addEventListener('blur', () => {
   inputCustomEmailPool.value = normalizeCustomEmailPoolEntries(inputCustomEmailPool.value).join('\n');
   syncRunCountFromConfiguredEmailPool();
   updateMailProviderUI();
-  saveSettings({ silent: true }).catch(() => {});
+  saveSettings({ silent: true }).catch(() => { });
 });
 
 inputCustomMailProviderPool?.addEventListener('input', () => {
@@ -5295,14 +5323,14 @@ inputCustomMailProviderPool?.addEventListener('blur', () => {
   inputCustomMailProviderPool.value = normalizeCustomEmailPoolEntries(inputCustomMailProviderPool.value).join('\n');
   syncRunCountFromConfiguredEmailPool();
   updateMailProviderUI();
-  saveSettings({ silent: true }).catch(() => {});
+  saveSettings({ silent: true }).catch(() => { });
 });
 
 selectMail2925PoolAccount?.addEventListener('change', async () => {
   try {
     await syncSelectedMail2925PoolAccount();
     markSettingsDirty(true);
-    saveSettings({ silent: true }).catch(() => {});
+    saveSettings({ silent: true }).catch(() => { });
   } catch (err) {
     showToast(err.message, 'error');
   }
@@ -5325,7 +5353,7 @@ inputMail2925UseAccountPool?.addEventListener('change', async () => {
   setManagedAliasBaseEmailInputForProvider('2925', latestState);
   updateMailProviderUI();
   markSettingsDirty(true);
-  saveSettings({ silent: true }).catch(() => {});
+  saveSettings({ silent: true }).catch(() => { });
 });
 
 inputInbucketMailbox.addEventListener('input', () => {
@@ -5522,7 +5550,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         alert: message.payload?.alert || { text: '检测到 Cloudflare 风控，请暂停当前操作。', tone: 'danger' },
         confirmLabel: '我知道了',
         confirmVariant: 'btn-danger',
-      }).catch(() => {});
+      }).catch(() => { });
       break;
     }
 
