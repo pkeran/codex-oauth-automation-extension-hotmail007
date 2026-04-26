@@ -2378,7 +2378,7 @@ function renderStepsList() {
   }
 
   initializeManualStepActions();
-  updateProgressCounter();
+  renderStepStatuses();
   updateButtonStates();
 }
 
@@ -2399,10 +2399,11 @@ function syncStepDefinitionsForMode(plusModeEnabled = false, options = {}) {
 
 function applySettingsState(state) {
   if (typeof syncStepDefinitionsForMode === 'function') {
-    syncStepDefinitionsForMode(Boolean(state?.plusModeEnabled), { render: true });
+    syncStepDefinitionsForMode(Boolean(state?.plusModeEnabled));
   }
   syncLatestState(state);
   syncAutoRunState(state);
+  renderStepStatuses(latestState);
 
   inputEmail.value = state?.email || '';
   syncPasswordField(state || {});
@@ -3681,9 +3682,6 @@ function updatePanelModeUI() {
 // ============================================================
 
 function updateStepUI(step, status) {
-  const statusEl = document.querySelector(`.step-status[data-step="${step}"]`);
-  const row = document.querySelector(`.step-row[data-step="${step}"]`);
-
   syncLatestState({
     stepStatuses: {
       ...getStepStatuses(),
@@ -3691,14 +3689,29 @@ function updateStepUI(step, status) {
     },
   });
 
-  if (statusEl) statusEl.textContent = STATUS_ICONS[status] || '';
-  if (row) {
-    row.className = `step-row ${status}`;
-  }
-
+  renderSingleStepStatus(step, status);
   updateButtonStates();
   updateProgressCounter();
   updateConfigMenuControls();
+}
+
+function renderSingleStepStatus(step, status) {
+  const normalizedStatus = status || 'pending';
+  const statusEl = document.querySelector(`.step-status[data-step="${step}"]`);
+  const row = document.querySelector(`.step-row[data-step="${step}"]`);
+
+  if (statusEl) statusEl.textContent = STATUS_ICONS[normalizedStatus] || '';
+  if (row) {
+    row.className = `step-row ${normalizedStatus}`;
+  }
+}
+
+function renderStepStatuses(state = latestState) {
+  const statuses = getStepStatuses(state);
+  for (const step of STEP_IDS) {
+    renderSingleStepStatus(step, statuses[step]);
+  }
+  updateProgressCounter();
 }
 
 function updateProgressCounter() {

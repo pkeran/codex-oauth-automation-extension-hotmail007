@@ -118,6 +118,59 @@ test('sidepanel html contains contribution mode runtime UI and loads the module 
   assert.ok(moduleIndex < sidepanelIndex);
 });
 
+test('sidepanel settings refresh preserves rendered step progress', () => {
+  const applySettingsStateSource = extractFunction('applySettingsState');
+  assert.doesNotMatch(
+    applySettingsStateSource,
+    /syncStepDefinitionsForMode\(Boolean\(state\?\.plusModeEnabled\),\s*\{\s*render:\s*true\s*\}\)/
+  );
+  assert.match(applySettingsStateSource, /renderStepStatuses\(latestState\)/);
+
+  const bundle = [
+    extractFunction('isDoneStatus'),
+    extractFunction('getStepStatuses'),
+    extractFunction('renderSingleStepStatus'),
+    extractFunction('renderStepStatuses'),
+    extractFunction('updateProgressCounter'),
+  ].join('\n');
+
+  const api = new Function(`
+const STATUS_ICONS = {
+  pending: '',
+  running: '',
+  completed: 'C',
+  failed: 'F',
+  stopped: 'S',
+  manual_completed: 'M',
+  skipped: 'K',
+};
+let latestState = { stepStatuses: { 1: 'completed', 2: 'running', 3: 'pending' } };
+let STEP_IDS = [1, 2, 3];
+let STEP_DEFAULT_STATUSES = { 1: 'pending', 2: 'pending', 3: 'pending' };
+const rows = new Map(STEP_IDS.map((step) => [step, { className: 'step-row' }]));
+const statusEls = new Map(STEP_IDS.map((step) => [step, { textContent: '' }]));
+const document = {
+  querySelector(selector) {
+    const match = selector.match(/data-step="(\\d+)"/);
+    const step = match ? Number(match[1]) : 0;
+    return selector.includes('step-status') ? statusEls.get(step) : rows.get(step);
+  },
+};
+const stepsProgress = { textContent: '' };
+${bundle}
+return { renderStepStatuses, rows, statusEls, stepsProgress };
+`)();
+
+  api.renderStepStatuses();
+
+  assert.equal(api.rows.get(1).className, 'step-row completed');
+  assert.equal(api.rows.get(2).className, 'step-row running');
+  assert.equal(api.rows.get(3).className, 'step-row pending');
+  assert.equal(api.statusEls.get(1).textContent, 'C');
+  assert.equal(api.statusEls.get(2).textContent, '');
+  assert.equal(api.stepsProgress.textContent, '1 / 3');
+});
+
 test('collectSettingsPayload omits custom password and local sync settings in contribution mode', () => {
   const bundle = extractFunction('collectSettingsPayload');
 
