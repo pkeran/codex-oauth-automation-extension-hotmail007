@@ -114,6 +114,9 @@ const VERIFICATION_CODE_INPUT_SELECTOR = [
 ].join(', ');
 
 const ONE_TIME_CODE_LOGIN_PATTERN = /使用一次性验证码登录|改用(?:一次性)?验证码(?:登录)?|使用验证码登录|一次性验证码|验证码登录|one[-\s]*time\s*(?:passcode|password|code)|use\s+(?:a\s+)?one[-\s]*time\s*(?:passcode|password|code)(?:\s+instead)?|use\s+(?:a\s+)?code(?:\s+instead)?|sign\s+in\s+with\s+(?:email|code)|email\s+(?:me\s+)?(?:a\s+)?code/i;
+const LOGIN_ENTRY_ACTION_PATTERN = /(?:^|\b)(?:log\s*in|sign\s*in|continue\s+(?:with|using)\s+(?:email|chatgpt)|use\s+(?:an?\s+)?email|email\s+address)(?:\b|$)|登录|登陆|邮箱|电子邮件/i;
+const LOGIN_EXTERNAL_IDP_PATTERN = /google|microsoft|apple|sso|single\s+sign[-\s]*on|企业|工作区|workspace/i;
+const LOGIN_CODE_ONLY_ACTION_PATTERN = /one[-\s]*time|passcode|use\s+(?:a\s+)?code|验证码|一次性/i;
 
 const RESEND_VERIFICATION_CODE_PATTERN = /重新发送(?:验证码)?|再次发送(?:验证码)?|重发(?:验证码)?|未收到(?:验证码|邮件)|resend(?:\s+code)?|send\s+(?:a\s+)?new\s+code|send\s+(?:it\s+)?again|request\s+(?:a\s+)?new\s+code|didn'?t\s+receive/i;
 
@@ -1719,12 +1722,32 @@ function getLoginSubmitButton({ allowDisabled = false } = {}) {
   }) || null;
 }
 
+function findLoginEntryTrigger() {
+  const candidates = Array.from(document.querySelectorAll(
+    'button, a, [role="button"], [role="link"], input[type="button"], input[type="submit"]'
+  )).filter((el) => isVisibleElement(el) && isActionEnabled(el));
+
+  const preferred = candidates.find((el) => {
+    const text = getActionText(el);
+    if (!text || LOGIN_CODE_ONLY_ACTION_PATTERN.test(text) || LOGIN_EXTERNAL_IDP_PATTERN.test(text)) return false;
+    return /continue\s+(?:with|using)\s+email|use\s+(?:an?\s+)?email|email\s+address|邮箱|电子邮件/i.test(text);
+  });
+  if (preferred) return preferred;
+
+  return candidates.find((el) => {
+    const text = getActionText(el);
+    if (!text || LOGIN_CODE_ONLY_ACTION_PATTERN.test(text) || LOGIN_EXTERNAL_IDP_PATTERN.test(text)) return false;
+    return LOGIN_ENTRY_ACTION_PATTERN.test(text);
+  }) || null;
+}
+
 function inspectLoginAuthState() {
   const retryState = getLoginTimeoutErrorPageState();
   const verificationTarget = getVerificationCodeTarget();
   const passwordInput = getLoginPasswordInput();
   const emailInput = getLoginEmailInput();
   const switchTrigger = findOneTimeCodeLoginTrigger();
+  const loginEntryTrigger = findLoginEntryTrigger();
   const submitButton = getLoginSubmitButton({ allowDisabled: true });
   const verificationVisible = isVerificationPageStillVisible();
   const addPhonePage = isAddPhonePageReady();
@@ -1746,6 +1769,7 @@ function inspectLoginAuthState() {
     emailInput,
     submitButton,
     switchTrigger,
+    loginEntryTrigger,
     verificationVisible,
     addPhonePage,
     phoneVerificationPage,
@@ -1810,6 +1834,13 @@ function inspectLoginAuthState() {
     };
   }
 
+  if (loginEntryTrigger) {
+    return {
+      ...baseState,
+      state: 'entry_page',
+    };
+  }
+
   return baseState;
 }
 
@@ -1828,6 +1859,7 @@ function serializeLoginAuthState(snapshot) {
     hasEmailInput: Boolean(snapshot?.emailInput),
     hasSubmitButton: Boolean(snapshot?.submitButton),
     hasSwitchTrigger: Boolean(snapshot?.switchTrigger),
+    hasLoginEntryTrigger: Boolean(snapshot?.loginEntryTrigger),
     verificationVisible: Boolean(snapshot?.verificationVisible),
     addPhonePage: Boolean(snapshot?.addPhonePage),
     phoneVerificationPage: Boolean(snapshot?.phoneVerificationPage),
@@ -1849,6 +1881,8 @@ function getLoginAuthStateLabel(snapshot) {
       return '登录超时报错页';
     case 'oauth_consent_page':
       return 'OAuth 授权页';
+    case 'entry_page':
+      return '登录入口页';
     case 'add_phone_page':
       return '手机号页';
     default:
@@ -2816,6 +2850,71 @@ async function waitForStep6SwitchTransition(loginVerificationRequestedAt, timeou
   return transition;
 }
 
+async function waitForLoginEntryOpenTransition(timeout = 10000) {
+  const start = Date.now();
+  let snapshot = normalizeStep6Snapshot(inspectLoginAuthState());
+
+  while (Date.now() - start < timeout) {
+    throwIfStopped();
+    snapshot = normalizeStep6Snapshot(inspectLoginAuthState());
+    if (snapshot.state !== 'unknown' && snapshot.state !== 'entry_page') {
+      return snapshot;
+    }
+    await sleep(250);
+  }
+
+  return snapshot;
+}
+
+async function step6OpenLoginEntry(payload, snapshot) {
+  const currentSnapshot = normalizeStep6Snapshot(snapshot || inspectLoginAuthState());
+  const trigger = currentSnapshot.loginEntryTrigger || findLoginEntryTrigger();
+  if (!trigger || !isActionEnabled(trigger)) {
+    return createStep6RecoverableResult('missing_login_entry_trigger', currentSnapshot, {
+      message: '当前登录入口页没有可点击的邮箱登录入口。',
+    });
+  }
+
+  log(`步骤 7：检测到登录入口页，正在点击 "${getActionText(trigger).slice(0, 80)}"...`);
+  await humanPause(350, 900);
+  simulateClick(trigger);
+  const nextSnapshot = await waitForLoginEntryOpenTransition();
+
+  if (nextSnapshot.state === 'email_page') {
+    return step6LoginFromEmailPage(payload, nextSnapshot);
+  }
+  if (nextSnapshot.state === 'password_page') {
+    return step6LoginFromPasswordPage(payload, nextSnapshot);
+  }
+  if (nextSnapshot.state === 'verification_page') {
+    return finalizeStep6VerificationReady({
+      logLabel: '步骤 7 收尾',
+      loginVerificationRequestedAt: null,
+      via: 'entry_open_verification_page',
+    });
+  }
+  if (nextSnapshot.state === 'oauth_consent_page') {
+    return createStep6OAuthConsentSuccessResult(nextSnapshot, {
+      via: 'entry_open_oauth_consent_page',
+    });
+  }
+  if (nextSnapshot.state === 'login_timeout_error_page') {
+    const transition = await createStep6LoginTimeoutRecoveryTransition(
+      'login_timeout_after_entry_open',
+      nextSnapshot,
+      '点击登录入口后进入登录超时报错页。'
+    );
+    if (transition.action === 'done') return transition.result;
+    if (transition.action === 'email') return step6LoginFromEmailPage(payload, transition.snapshot);
+    if (transition.action === 'password') return step6LoginFromPasswordPage(payload, transition.snapshot);
+    return transition.result;
+  }
+
+  return createStep6RecoverableResult('login_entry_open_stalled', nextSnapshot, {
+    message: '点击登录入口后仍未进入邮箱/密码/验证码页。',
+  });
+}
+
 async function step6SwitchToOneTimeCodeLogin(payload, snapshot) {
   const switchTrigger = snapshot?.switchTrigger || findOneTimeCodeLoginTrigger();
   if (!switchTrigger || !isActionEnabled(switchTrigger)) {
@@ -3022,6 +3121,10 @@ async function step6_login(payload) {
   if (snapshot.state === 'password_page') {
     log('步骤 7：认证页已在密码页，继续当前登录流程。');
     return step6LoginFromPasswordPage(payload, snapshot);
+  }
+
+  if (snapshot.state === 'entry_page') {
+    return step6OpenLoginEntry(payload, snapshot);
   }
 
   throwForStep6FatalState(snapshot);
