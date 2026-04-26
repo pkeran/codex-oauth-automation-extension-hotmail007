@@ -4678,12 +4678,12 @@ async function fetchIcloudHideMyEmail(options = {}) {
     try {
       let generated = null;
       try {
-      generated = await icloudRequest('POST', `${activeServiceUrl}/v1/hme/generate`, {
-        timeoutMs: ICLOUD_REQUEST_TIMEOUT_MS,
-        maxAttempts: ICLOUD_WRITE_MAX_ATTEMPTS,
-        retryLabel: '生成 Hide My Email 地址',
-        logRetries: true,
-      });
+        generated = await icloudRequest('POST', `${activeServiceUrl}/v1/hme/generate`, {
+          timeoutMs: ICLOUD_REQUEST_TIMEOUT_MS,
+          maxAttempts: ICLOUD_WRITE_MAX_ATTEMPTS,
+          retryLabel: '生成 Hide My Email 地址',
+          logRetries: true,
+        });
       } catch (err) {
         if (!isIcloudRetryableError(err)) {
           throw err;
