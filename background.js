@@ -39,6 +39,7 @@ importScripts(
   'luckmail-utils.js',
   'cloudflare-temp-email-utils.js',
   'icloud-utils.js',
+  'mail-provider-utils.js',
   'content/activation-utils.js'
 );
 
@@ -145,6 +146,11 @@ const {
   pickReusableIcloudAlias,
   toNormalizedEmailSet,
 } = self.IcloudUtils;
+const {
+  getIcloudForwardMailConfig: getSharedIcloudForwardMailConfig,
+  normalizeIcloudForwardMailProvider,
+  normalizeIcloudTargetMailboxType,
+} = self.MailProviderUtils;
 const {
   isRecoverableStep9AuthFailure,
 } = self.MultiPageActivationUtils;
@@ -369,6 +375,8 @@ const PERSISTED_SETTING_DEFAULTS = {
   customEmailPool: [],
   autoDeleteUsedIcloudAlias: false,
   icloudHostPreference: 'auto',
+  icloudTargetMailboxType: 'icloud-inbox',
+  icloudForwardMailProvider: 'qq',
   icloudFetchMode: 'reuse_existing',
   accountRunHistoryTextEnabled: true,
   accountRunHistoryHelperBaseUrl: DEFAULT_ACCOUNT_RUN_HISTORY_HELPER_BASE_URL,
@@ -1105,6 +1113,10 @@ function normalizePersistentSettingValue(key, value) {
       return Boolean(value);
     case 'icloudHostPreference':
       return normalizeIcloudHost(value) || 'auto';
+    case 'icloudTargetMailboxType':
+      return normalizeIcloudTargetMailboxType(value);
+    case 'icloudForwardMailProvider':
+      return normalizeIcloudForwardMailProvider(value);
     case 'icloudFetchMode':
       return normalizeIcloudFetchMode(value);
     case 'accountRunHistoryHelperBaseUrl':
@@ -7317,6 +7329,17 @@ function getMailConfig(state) {
     const configuredHost = getConfiguredIcloudHostPreference(state)
       || normalizeIcloudHost(state?.preferredIcloudHost)
       || 'icloud.com';
+    const targetMailboxType = normalizeIcloudTargetMailboxType(state?.icloudTargetMailboxType);
+    const useForwardMailbox = targetMailboxType === 'forward-mailbox';
+    if (useForwardMailbox) {
+      const forwardProvider = normalizeIcloudForwardMailProvider(state?.icloudForwardMailProvider);
+      const forwardConfig = getSharedIcloudForwardMailConfig(forwardProvider);
+      return {
+        ...forwardConfig,
+        label: `iCloud 转发（${forwardConfig.label}）`,
+        icloudForwarding: true,
+      };
+    }
     const loginUrl = getIcloudLoginUrlForHost(configuredHost) || 'https://www.icloud.com/';
     const mailUrl = getIcloudMailUrlForHost(configuredHost) || loginUrl;
     return {

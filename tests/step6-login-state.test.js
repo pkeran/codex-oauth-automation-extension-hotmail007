@@ -96,6 +96,10 @@ function findOneTimeCodeLoginTrigger() {
   return ${JSON.stringify(overrides.switchTrigger || null)};
 }
 
+function findLoginEntryTrigger() {
+  return ${JSON.stringify(overrides.loginEntryTrigger || null)};
+}
+
 function getLoginSubmitButton() {
   return ${JSON.stringify(overrides.submitButton || null)};
 }
@@ -224,6 +228,15 @@ return {
   });
 
   assert.strictEqual(snapshot.state, 'oauth_consent_page', '第六步应保留 oauth_consent_page 状态');
+}
+
+{
+  const api = createApi({
+    loginEntryTrigger: { id: 'continue-email' },
+  });
+
+  const snapshot = api.inspectLoginAuthState();
+  assert.strictEqual(snapshot.state, 'entry_page');
 }
 
 assert.ok(
