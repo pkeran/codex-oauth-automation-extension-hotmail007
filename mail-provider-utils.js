@@ -1,5 +1,15 @@
 const HOTMAIL_PROVIDER = 'hotmail-api';
+const GMAIL_PROVIDER = 'gmail';
 const NETEASE_LIST_PATH = '/js6/main.jsp?df=mail163_letter#module=mbox.ListModule%7C%7B%22fid%22%3A1%2C%22order%22%3A%22date%22%2C%22desc%22%3Atrue%7D';
+const ICLOUD_TARGET_MAILBOX_TYPE_INBOX = 'icloud-inbox';
+const ICLOUD_TARGET_MAILBOX_TYPE_FORWARD = 'forward-mailbox';
+const ICLOUD_FORWARD_MAIL_PROVIDER_OPTIONS = [
+  { value: 'qq', label: 'QQ 邮箱' },
+  { value: '163', label: '163 邮箱' },
+  { value: '163-vip', label: '163 VIP 邮箱' },
+  { value: '126', label: '126 邮箱' },
+  { value: GMAIL_PROVIDER, label: 'Gmail 邮箱' },
+];
 
 function normalizeMailProvider(value = '') {
   const normalized = String(value || '').trim().toLowerCase();
@@ -14,6 +24,38 @@ function normalizeMailProvider(value = '') {
     default:
       return '163';
   }
+}
+
+function normalizeIcloudTargetMailboxType(value = '') {
+  return String(value || '').trim().toLowerCase() === ICLOUD_TARGET_MAILBOX_TYPE_FORWARD
+    ? ICLOUD_TARGET_MAILBOX_TYPE_FORWARD
+    : ICLOUD_TARGET_MAILBOX_TYPE_INBOX;
+}
+
+function normalizeIcloudForwardMailProvider(value = '') {
+  const normalized = String(value || '').trim().toLowerCase();
+  return ICLOUD_FORWARD_MAIL_PROVIDER_OPTIONS.some((option) => option.value === normalized)
+    ? normalized
+    : 'qq';
+}
+
+function getIcloudForwardMailProviderOptions() {
+  return ICLOUD_FORWARD_MAIL_PROVIDER_OPTIONS.map((option) => ({ ...option }));
+}
+
+function getIcloudForwardMailConfig(provider = 'qq') {
+  const normalizedProvider = normalizeIcloudForwardMailProvider(provider);
+  if (normalizedProvider === GMAIL_PROVIDER) {
+    return {
+      source: 'gmail-mail',
+      url: 'https://mail.google.com/mail/u/0/#inbox',
+      label: 'Gmail 邮箱',
+      inject: ['content/activation-utils.js', 'content/utils.js', 'content/gmail-mail.js'],
+      injectSource: 'gmail-mail',
+    };
+  }
+
+  return getMailProviderConfig({ mailProvider: normalizedProvider });
 }
 
 function getMailProviderConfig(state = {}, options = {}) {
@@ -66,8 +108,13 @@ function getMailProviderConfig(state = {}, options = {}) {
 }
 
 const api = {
+  GMAIL_PROVIDER,
   HOTMAIL_PROVIDER,
+  getIcloudForwardMailConfig,
+  getIcloudForwardMailProviderOptions,
   getMailProviderConfig,
+  normalizeIcloudForwardMailProvider,
+  normalizeIcloudTargetMailboxType,
   normalizeMailProvider,
 };
 

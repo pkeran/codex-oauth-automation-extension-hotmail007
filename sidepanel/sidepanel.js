@@ -147,6 +147,10 @@ const btnIcloudLoginDone = document.getElementById('btn-icloud-login-done');
 const btnIcloudRefresh = document.getElementById('btn-icloud-refresh');
 const btnIcloudDeleteUsed = document.getElementById('btn-icloud-delete-used');
 const selectIcloudHostPreference = document.getElementById('select-icloud-host-preference');
+const rowIcloudTargetMailboxType = document.getElementById('row-icloud-target-mailbox-type');
+const selectIcloudTargetMailboxType = document.getElementById('select-icloud-target-mailbox-type');
+const rowIcloudForwardMailProvider = document.getElementById('row-icloud-forward-mail-provider');
+const selectIcloudForwardMailProvider = document.getElementById('select-icloud-forward-mail-provider');
 const selectIcloudFetchMode = document.getElementById('select-icloud-fetch-mode');
 const checkboxAutoDeleteIcloud = document.getElementById('checkbox-auto-delete-icloud');
 const inputIcloudSearch = document.getElementById('input-icloud-search');
@@ -610,6 +614,28 @@ const normalizeIcloudFetchMode = (value) => {
   const normalized = String(value || '').trim().toLowerCase();
   return normalized === 'always_new' ? 'always_new' : 'reuse_existing';
 };
+const normalizeIcloudTargetMailboxType = window.MailProviderUtils?.normalizeIcloudTargetMailboxType
+  || ((value) => String(value || '').trim().toLowerCase() === 'forward-mailbox'
+    ? 'forward-mailbox'
+    : 'icloud-inbox');
+const getIcloudForwardMailProviderOptions = window.MailProviderUtils?.getIcloudForwardMailProviderOptions
+  || (() => Array.from(selectIcloudForwardMailProvider?.options || [])
+    .map((option) => ({
+      value: String(option?.value || '').trim().toLowerCase(),
+      label: String(option?.textContent || option?.label || option?.value || '').trim(),
+    }))
+    .filter((option) => option.value));
+const normalizeIcloudForwardMailProvider = window.MailProviderUtils?.normalizeIcloudForwardMailProvider
+  || ((value) => {
+    const normalized = String(value || '').trim().toLowerCase();
+    const options = getIcloudForwardMailProviderOptions();
+    return options.some((option) => option.value === normalized)
+      ? normalized
+      : (options[0]?.value || 'qq');
+  });
+const ICLOUD_FORWARD_MAIL_PROVIDER_LABELS = Object.fromEntries(
+  getIcloudForwardMailProviderOptions().map((option) => [option.value, option.label])
+);
 const getIcloudLoginUrlForHost = window.IcloudUtils?.getIcloudLoginUrlForHost
   || ((host) => host === 'icloud.com.cn' ? 'https://www.icloud.com.cn/' : (host === 'icloud.com' ? 'https://www.icloud.com/' : ''));
 
@@ -1866,6 +1892,14 @@ function collectSettingsPayload() {
   const icloudFetchModeRawValue = typeof selectIcloudFetchMode !== 'undefined'
     ? String(selectIcloudFetchMode?.value || '')
     : '';
+  const icloudTargetMailboxTypeValue = typeof selectIcloudTargetMailboxType !== 'undefined'
+    ? selectIcloudTargetMailboxType?.value
+    : '';
+  const icloudForwardMailProviderValue = typeof selectIcloudForwardMailProvider !== 'undefined'
+    ? selectIcloudForwardMailProvider?.value
+    : '';
+  const normalizedIcloudTargetMailboxType = normalizeIcloudTargetMailboxType(icloudTargetMailboxTypeValue);
+  const normalizedIcloudForwardMailProvider = normalizeIcloudForwardMailProvider(icloudForwardMailProviderValue);
   const mail2925UseAccountPool = typeof inputMail2925UseAccountPool !== 'undefined'
     ? Boolean(inputMail2925UseAccountPool?.checked)
     : Boolean(latestState?.mail2925UseAccountPool);
@@ -1917,6 +1951,8 @@ function collectSettingsPayload() {
       : [],
     autoDeleteUsedIcloudAlias: checkboxAutoDeleteIcloud?.checked,
     icloudHostPreference: selectIcloudHostPreference?.value || 'auto',
+    icloudTargetMailboxType: normalizedIcloudTargetMailboxType,
+    icloudForwardMailProvider: normalizedIcloudForwardMailProvider,
     icloudFetchMode: (icloudFetchModeRawValue.trim().toLowerCase() === 'always_new'
       ? 'always_new'
       : 'reuse_existing'),
@@ -2461,6 +2497,12 @@ function applySettingsState(state) {
   }
   if (selectIcloudFetchMode) {
     selectIcloudFetchMode.value = normalizeIcloudFetchMode(state?.icloudFetchMode);
+  }
+  if (selectIcloudTargetMailboxType) {
+    selectIcloudTargetMailboxType.value = normalizeIcloudTargetMailboxType(state?.icloudTargetMailboxType);
+  }
+  if (selectIcloudForwardMailProvider) {
+    selectIcloudForwardMailProvider.value = normalizeIcloudForwardMailProvider(state?.icloudForwardMailProvider);
   }
   if (checkboxAutoDeleteIcloud) {
     checkboxAutoDeleteIcloud.checked = Boolean(state?.autoDeleteUsedIcloudAlias);
@@ -3370,6 +3412,21 @@ function updateMailLoginButtonState() {
 }
 
 function updateMailProviderUI() {
+  const normalizeIcloudHostValue = typeof normalizeIcloudHost === 'function'
+    ? normalizeIcloudHost
+    : ((value) => {
+      const normalized = String(value || '').trim().toLowerCase();
+      return normalized === 'icloud.com' || normalized === 'icloud.com.cn' ? normalized : '';
+    });
+  const icloudTargetMailboxTypeValue = typeof selectIcloudTargetMailboxType !== 'undefined'
+    ? selectIcloudTargetMailboxType?.value
+    : latestState?.icloudTargetMailboxType;
+  const icloudForwardMailProviderValue = typeof selectIcloudForwardMailProvider !== 'undefined'
+    ? selectIcloudForwardMailProvider?.value
+    : latestState?.icloudForwardMailProvider;
+  const icloudHostPreferenceValue = typeof selectIcloudHostPreference !== 'undefined'
+    ? selectIcloudHostPreference?.value
+    : latestState?.icloudHostPreference;
   const use2925 = selectMailProvider.value === '2925';
   const useGmail = selectMailProvider.value === GMAIL_PROVIDER;
   const useMail2925 = selectMailProvider.value === '2925';
@@ -3431,6 +3488,15 @@ function updateMailProviderUI() {
   const showCloudflareDomain = useEmailGenerator && useCloudflare;
   const showCloudflareTempEmailSettings = useCloudflareTempEmailProvider || (useEmailGenerator && useCloudflareTempEmailGenerator);
   const showCloudflareTempEmailReceiveMailbox = useCloudflareTempEmailProvider && !useCloudflareTempEmailGenerator;
+  const selectedIcloudHost = typeof getSelectedIcloudHostPreference === 'function'
+    ? getSelectedIcloudHostPreference()
+    : (normalizeIcloudHostValue(icloudHostPreferenceValue || latestState?.icloudHostPreference || '')
+      || normalizeIcloudHostValue(latestState?.preferredIcloudHost)
+      || 'icloud.com');
+  const icloudTargetMailboxType = normalizeIcloudTargetMailboxType(icloudTargetMailboxTypeValue);
+  const isIcloudComCnHost = selectedIcloudHost === 'icloud.com.cn';
+  const showIcloudTargetMailboxType = useIcloudProvider;
+  const showIcloudForwardMailProvider = useIcloudProvider && icloudTargetMailboxType === 'forward-mailbox';
   const showCloudflareTempEmailRandomSubdomainToggle = useEmailGenerator && useCloudflareTempEmailGenerator;
   const showCloudflareTempEmailDomain = useEmailGenerator && useCloudflareTempEmailGenerator;
   if (rowEmailGenerator) {
@@ -3451,6 +3517,12 @@ function updateMailProviderUI() {
     if (!showIcloudSection) {
       hideIcloudLoginHelp();
     }
+  }
+  if (typeof rowIcloudTargetMailboxType !== 'undefined' && rowIcloudTargetMailboxType) {
+    rowIcloudTargetMailboxType.style.display = showIcloudTargetMailboxType ? '' : 'none';
+  }
+  if (typeof rowIcloudForwardMailProvider !== 'undefined' && rowIcloudForwardMailProvider) {
+    rowIcloudForwardMailProvider.style.display = showIcloudForwardMailProvider ? '' : 'none';
   }
   rowCfDomain.style.display = showCloudflareDomain ? '' : 'none';
   const { domains } = getCloudflareDomainsFromState();
@@ -3566,6 +3638,13 @@ function updateMailProviderUI() {
   }
   if (autoHintText && showCloudflareTempEmailRandomSubdomainToggle && inputTempEmailUseRandomSubdomain?.checked) {
     autoHintText.textContent = '已启用随机子域名：扩展会按当前选中的 Temp 域名提交，并额外携带 enableRandomSubdomain；是否生效取决于后端 RANDOM_SUBDOMAIN_DOMAINS 配置。';
+  }
+  if (autoHintText && useIcloudProvider && showIcloudForwardMailProvider) {
+    const forwardProvider = normalizeIcloudForwardMailProvider(icloudForwardMailProviderValue);
+    const forwardProviderLabel = ICLOUD_FORWARD_MAIL_PROVIDER_LABELS[forwardProvider]
+      || MAIL_PROVIDER_LOGIN_CONFIGS[forwardProvider]?.label
+      || '目标邮箱';
+    autoHintText.textContent = `iCloud ${isIcloudComCnHost ? 'com.cn' : ''} 当前使用转发收码：第 4/8 步会从 ${forwardProviderLabel} 轮询验证码。`;
   }
   if (useHotmail) {
     inputEmail.value = getCurrentHotmailEmail();
@@ -3724,6 +3803,9 @@ function updateButtonStates() {
   const anyRunning = Object.values(statuses).some(s => s === 'running');
   const autoLocked = isAutoRunLockedPhase();
   const autoScheduled = isAutoRunScheduledPhase();
+  const icloudTargetMailboxTypeValue = typeof selectIcloudTargetMailboxType !== 'undefined'
+    ? selectIcloudTargetMailboxType?.value
+    : latestState?.icloudTargetMailboxType;
 
   for (const step of STEP_IDS) {
     const btn = document.querySelector(`.step-btn[data-step="${step}"]`);
@@ -3773,6 +3855,15 @@ function updateButtonStates() {
   if (btnIcloudRefresh) btnIcloudRefresh.disabled = disableIcloudControls;
   if (btnIcloudDeleteUsed) btnIcloudDeleteUsed.disabled = disableIcloudControls || !hasDeletableUsedIcloudAliases();
   if (selectIcloudHostPreference) selectIcloudHostPreference.disabled = disableIcloudControls;
+  if (typeof selectIcloudTargetMailboxType !== 'undefined' && selectIcloudTargetMailboxType) {
+    selectIcloudTargetMailboxType.disabled = disableIcloudControls;
+  }
+  if (typeof selectIcloudForwardMailProvider !== 'undefined' && selectIcloudForwardMailProvider) {
+    const normalizedIcloudTargetMailboxType = normalizeIcloudTargetMailboxType(icloudTargetMailboxTypeValue);
+    const allowIcloudForwardMailProvider = isIcloudMailProvider()
+      && normalizedIcloudTargetMailboxType === 'forward-mailbox';
+    selectIcloudForwardMailProvider.disabled = disableIcloudControls || !allowIcloudForwardMailProvider;
+  }
   if (selectIcloudFetchMode) {
     const allowIcloudFetchMode = getSelectedEmailGenerator() === ICLOUD_PROVIDER
       && !isCustomMailProvider()
@@ -5028,11 +5119,24 @@ selectEmailGenerator.addEventListener('change', () => {
 });
 
 selectIcloudHostPreference?.addEventListener('change', () => {
+  updateMailProviderUI();
   markSettingsDirty(true);
   saveSettings({ silent: true }).catch(() => { });
   if (getSelectedEmailGenerator() === 'icloud') {
     queueIcloudAliasRefresh();
   }
+});
+
+selectIcloudTargetMailboxType?.addEventListener('change', () => {
+  updateMailProviderUI();
+  markSettingsDirty(true);
+  saveSettings({ silent: true }).catch(() => { });
+});
+
+selectIcloudForwardMailProvider?.addEventListener('change', () => {
+  updateMailProviderUI();
+  markSettingsDirty(true);
+  saveSettings({ silent: true }).catch(() => { });
 });
 
 selectIcloudFetchMode?.addEventListener('change', () => {
@@ -5619,6 +5723,15 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         selectIcloudHostPreference.value = hostPreference === 'icloud.com'
           ? 'icloud.com'
           : (hostPreference === 'icloud.com.cn' ? 'icloud.com.cn' : 'auto');
+        updateMailProviderUI();
+      }
+      if (message.payload.icloudTargetMailboxType !== undefined && selectIcloudTargetMailboxType) {
+        selectIcloudTargetMailboxType.value = normalizeIcloudTargetMailboxType(message.payload.icloudTargetMailboxType);
+        updateMailProviderUI();
+      }
+      if (message.payload.icloudForwardMailProvider !== undefined && selectIcloudForwardMailProvider) {
+        selectIcloudForwardMailProvider.value = normalizeIcloudForwardMailProvider(message.payload.icloudForwardMailProvider);
+        updateMailProviderUI();
       }
       if (message.payload.icloudFetchMode !== undefined && selectIcloudFetchMode) {
         selectIcloudFetchMode.value = normalizeIcloudFetchMode(message.payload.icloudFetchMode);
