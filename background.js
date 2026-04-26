@@ -34,6 +34,7 @@ importScripts(
   'luckmail-utils.js',
   'cloudflare-temp-email-utils.js',
   'icloud-utils.js',
+  'mail-provider-utils.js',
   'content/activation-utils.js'
 );
 
@@ -124,6 +125,11 @@ const {
   pickReusableIcloudAlias,
   toNormalizedEmailSet,
 } = self.IcloudUtils;
+const {
+  getIcloudForwardMailConfig: getSharedIcloudForwardMailConfig,
+  normalizeIcloudForwardMailProvider,
+  normalizeIcloudTargetMailboxType,
+} = self.MailProviderUtils;
 const {
   isRecoverableStep9AuthFailure,
 } = self.MultiPageActivationUtils;
@@ -692,19 +698,6 @@ function normalizeEmailGenerator(value = '') {
 function normalizeIcloudFetchMode(value = '') {
   const normalized = String(value || '').trim().toLowerCase();
   return normalized === 'always_new' ? 'always_new' : 'reuse_existing';
-}
-
-function normalizeIcloudTargetMailboxType(value = '') {
-  return String(value || '').trim().toLowerCase() === 'forward-mailbox'
-    ? 'forward-mailbox'
-    : 'icloud-inbox';
-}
-
-function normalizeIcloudForwardMailProvider(value = '') {
-  const normalized = String(value || '').trim().toLowerCase();
-  return ['qq', '163', '163-vip', '126', 'gmail'].includes(normalized)
-    ? normalized
-    : 'qq';
 }
 
 function normalizeCustomEmailPool(value = []) {
@@ -6894,29 +6887,6 @@ async function executeStep3(state) {
 // Step 4: Get Signup Verification Code (qq-mail.js polls, then fills in signup-page.js)
 // ============================================================
 
-function getIcloudForwardMailConfig(state = {}, provider = 'qq') {
-  const normalizedProvider = normalizeIcloudForwardMailProvider(provider);
-  if (normalizedProvider === GMAIL_PROVIDER) {
-    return {
-      source: 'gmail-mail',
-      url: 'https://mail.google.com/mail/u/0/#inbox',
-      label: 'Gmail 邮箱',
-      inject: ['content/activation-utils.js', 'content/utils.js', 'content/gmail-mail.js'],
-      injectSource: 'gmail-mail',
-    };
-  }
-  if (normalizedProvider === '163') {
-    return { source: 'mail-163', url: 'https://mail.163.com/js6/main.jsp?df=mail163_letter#module=mbox.ListModule%7C%7B%22fid%22%3A1%2C%22order%22%3A%22date%22%2C%22desc%22%3Atrue%7D', label: '163 邮箱' };
-  }
-  if (normalizedProvider === '163-vip') {
-    return { source: 'mail-163', url: 'https://webmail.vip.163.com/js6/main.jsp?df=mail163_letter#module=mbox.ListModule%7C%7B%22fid%22%3A1%2C%22order%22%3A%22date%22%2C%22desc%22%3Atrue%7D', label: '163 VIP 邮箱' };
-  }
-  if (normalizedProvider === '126') {
-    return { source: 'mail-163', url: 'https://mail.126.com/js6/main.jsp?df=mail163_letter#module=mbox.ListModule%7C%7B%22fid%22%3A1%2C%22order%22%3A%22date%22%2C%22desc%22%3Atrue%7D', label: '126 邮箱' };
-  }
-  return { source: 'qq-mail', url: 'https://wx.mail.qq.com/', label: 'QQ 邮箱' };
-}
-
 function getMailConfig(state) {
   const provider = state.mailProvider || 'qq';
   if (provider === 'custom') {
@@ -6933,7 +6903,7 @@ function getMailConfig(state) {
     const useForwardMailbox = targetMailboxType === 'forward-mailbox';
     if (useForwardMailbox) {
       const forwardProvider = normalizeIcloudForwardMailProvider(state?.icloudForwardMailProvider);
-      const forwardConfig = getIcloudForwardMailConfig(state, forwardProvider);
+      const forwardConfig = getSharedIcloudForwardMailConfig(forwardProvider);
       return {
         ...forwardConfig,
         label: `iCloud 转发（${forwardConfig.label}）`,

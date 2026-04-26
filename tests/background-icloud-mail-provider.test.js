@@ -1,6 +1,11 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const {
+  getIcloudForwardMailConfig,
+  normalizeIcloudForwardMailProvider,
+  normalizeIcloudTargetMailboxType,
+} = require('../mail-provider-utils.js');
 
 const source = fs.readFileSync('background.js', 'utf8');
 
@@ -51,6 +56,41 @@ function extractFunction(name) {
   return source.slice(start, end);
 }
 
+function createGetMailConfigApi() {
+  const bundle = extractFunction('getMailConfig');
+  return new Function('shared', `
+const ICLOUD_PROVIDER = 'icloud';
+const GMAIL_PROVIDER = 'gmail';
+const HOTMAIL_PROVIDER = 'hotmail-api';
+const LUCKMAIL_PROVIDER = 'luckmail-api';
+const CLOUDFLARE_TEMP_EMAIL_PROVIDER = 'cloudflare-temp-email';
+const getSharedIcloudForwardMailConfig = shared.getIcloudForwardMailConfig;
+const normalizeIcloudTargetMailboxType = shared.normalizeIcloudTargetMailboxType;
+const normalizeIcloudForwardMailProvider = shared.normalizeIcloudForwardMailProvider;
+function normalizeIcloudHost(value = '') {
+  const normalized = String(value || '').trim().toLowerCase();
+  return normalized === 'icloud.com' || normalized === 'icloud.com.cn' ? normalized : '';
+}
+function normalizeInbucketOrigin(value) { return String(value || '').trim(); }
+function getConfiguredIcloudHostPreference(state) {
+  const normalized = String(state?.icloudHostPreference || '').trim().toLowerCase();
+  return normalized === 'icloud.com' || normalized === 'icloud.com.cn' ? normalized : '';
+}
+function getIcloudLoginUrlForHost(host) {
+  return host === 'icloud.com.cn' ? 'https://www.icloud.com.cn/' : 'https://www.icloud.com/';
+}
+function getIcloudMailUrlForHost(host) {
+  return host === 'icloud.com.cn' ? 'https://www.icloud.com.cn/mail/' : 'https://www.icloud.com/mail/';
+}
+${bundle}
+return { getMailConfig };
+`)({
+    getIcloudForwardMailConfig,
+    normalizeIcloudForwardMailProvider,
+    normalizeIcloudTargetMailboxType,
+  });
+}
+
 test('normalizeMailProvider keeps icloud provider', () => {
   const bundle = extractFunction('normalizeMailProvider');
   const api = new Function(`
@@ -69,38 +109,7 @@ return { normalizeMailProvider };
 });
 
 test('getMailConfig returns icloud mail tab config with host preference', () => {
-  const bundle = `${extractFunction('getIcloudForwardMailConfig')}\n${extractFunction('getMailConfig')}`;
-  const api = new Function(`
-const ICLOUD_PROVIDER = 'icloud';
-const GMAIL_PROVIDER = 'gmail';
-const HOTMAIL_PROVIDER = 'hotmail-api';
-const LUCKMAIL_PROVIDER = 'luckmail-api';
-const CLOUDFLARE_TEMP_EMAIL_PROVIDER = 'cloudflare-temp-email';
-function normalizeIcloudHost(value = '') {
-  const normalized = String(value || '').trim().toLowerCase();
-  return normalized === 'icloud.com' || normalized === 'icloud.com.cn' ? normalized : '';
-}
-function normalizeInbucketOrigin(value) { return String(value || '').trim(); }
-function getConfiguredIcloudHostPreference(state) {
-  const normalized = String(state?.icloudHostPreference || '').trim().toLowerCase();
-  return normalized === 'icloud.com' || normalized === 'icloud.com.cn' ? normalized : '';
-}
-function getIcloudLoginUrlForHost(host) {
-  return host === 'icloud.com.cn' ? 'https://www.icloud.com.cn/' : 'https://www.icloud.com/';
-}
-function getIcloudMailUrlForHost(host) {
-  return host === 'icloud.com.cn' ? 'https://www.icloud.com.cn/mail/' : 'https://www.icloud.com/mail/';
-}
-function normalizeIcloudTargetMailboxType(value = '') {
-  return String(value || '').trim().toLowerCase() === 'forward-mailbox' ? 'forward-mailbox' : 'icloud-inbox';
-}
-function normalizeIcloudForwardMailProvider(value = '') {
-  const normalized = String(value || '').trim().toLowerCase();
-  return ['qq', '163', '163-vip', '126', 'gmail'].includes(normalized) ? normalized : 'qq';
-}
-${bundle}
-return { getMailConfig };
-`)();
+  const api = createGetMailConfigApi();
 
   assert.deepEqual(api.getMailConfig({
     mailProvider: 'icloud',
@@ -114,37 +123,7 @@ return { getMailConfig };
 });
 
 test('getMailConfig reuses preferred icloud host when preference is auto', () => {
-  const bundle = `${extractFunction('getIcloudForwardMailConfig')}\n${extractFunction('getMailConfig')}`;
-  const api = new Function(`
-const ICLOUD_PROVIDER = 'icloud';
-const GMAIL_PROVIDER = 'gmail';
-const HOTMAIL_PROVIDER = 'hotmail-api';
-const LUCKMAIL_PROVIDER = 'luckmail-api';
-const CLOUDFLARE_TEMP_EMAIL_PROVIDER = 'cloudflare-temp-email';
-function normalizeIcloudHost(value = '') {
-  const normalized = String(value || '').trim().toLowerCase();
-  return normalized === 'icloud.com' || normalized === 'icloud.com.cn' ? normalized : '';
-}
-function normalizeInbucketOrigin(value) { return String(value || '').trim(); }
-function getConfiguredIcloudHostPreference() {
-  return '';
-}
-function getIcloudLoginUrlForHost(host) {
-  return host === 'icloud.com.cn' ? 'https://www.icloud.com.cn/' : 'https://www.icloud.com/';
-}
-function getIcloudMailUrlForHost(host) {
-  return host === 'icloud.com.cn' ? 'https://www.icloud.com.cn/mail/' : 'https://www.icloud.com/mail/';
-}
-function normalizeIcloudTargetMailboxType(value = '') {
-  return String(value || '').trim().toLowerCase() === 'forward-mailbox' ? 'forward-mailbox' : 'icloud-inbox';
-}
-function normalizeIcloudForwardMailProvider(value = '') {
-  const normalized = String(value || '').trim().toLowerCase();
-  return ['qq', '163', '163-vip', '126', 'gmail'].includes(normalized) ? normalized : 'qq';
-}
-${bundle}
-return { getMailConfig };
-`)();
+  const api = createGetMailConfigApi();
 
   assert.deepEqual(api.getMailConfig({
     mailProvider: 'icloud',
@@ -159,28 +138,7 @@ return { getMailConfig };
 });
 
 test('getMailConfig keeps provider metadata for 2925 mailboxes', () => {
-  const bundle = `${extractFunction('getIcloudForwardMailConfig')}\n${extractFunction('getMailConfig')}`;
-  const api = new Function(`
-const ICLOUD_PROVIDER = 'icloud';
-const GMAIL_PROVIDER = 'gmail';
-const HOTMAIL_PROVIDER = 'hotmail-api';
-const LUCKMAIL_PROVIDER = 'luckmail-api';
-const CLOUDFLARE_TEMP_EMAIL_PROVIDER = 'cloudflare-temp-email';
-function normalizeIcloudHost(value = '') { return String(value || '').trim().toLowerCase(); }
-function normalizeInbucketOrigin(value) { return String(value || '').trim(); }
-function getConfiguredIcloudHostPreference() { return ''; }
-function getIcloudLoginUrlForHost(host) { return host; }
-function getIcloudMailUrlForHost(host) { return host; }
-function normalizeIcloudTargetMailboxType(value = '') {
-  return String(value || '').trim().toLowerCase() === 'forward-mailbox' ? 'forward-mailbox' : 'icloud-inbox';
-}
-function normalizeIcloudForwardMailProvider(value = '') {
-  const normalized = String(value || '').trim().toLowerCase();
-  return ['qq', '163', '163-vip', '126', 'gmail'].includes(normalized) ? normalized : 'qq';
-}
-${bundle}
-return { getMailConfig };
-`)();
+  const api = createGetMailConfigApi();
 
   assert.deepEqual(api.getMailConfig({
     mailProvider: '2925',
@@ -195,38 +153,7 @@ return { getMailConfig };
 });
 
 test('getMailConfig uses icloud inbox config when host is com.cn and target mailbox is icloud inbox', () => {
-  const bundle = `${extractFunction('getIcloudForwardMailConfig')}\n${extractFunction('getMailConfig')}`;
-  const api = new Function(`
-const ICLOUD_PROVIDER = 'icloud';
-const GMAIL_PROVIDER = 'gmail';
-const HOTMAIL_PROVIDER = 'hotmail-api';
-const LUCKMAIL_PROVIDER = 'luckmail-api';
-const CLOUDFLARE_TEMP_EMAIL_PROVIDER = 'cloudflare-temp-email';
-function normalizeIcloudHost(value = '') {
-  const normalized = String(value || '').trim().toLowerCase();
-  return normalized === 'icloud.com' || normalized === 'icloud.com.cn' ? normalized : '';
-}
-function normalizeInbucketOrigin(value) { return String(value || '').trim(); }
-function getConfiguredIcloudHostPreference(state) {
-  const normalized = String(state?.icloudHostPreference || '').trim().toLowerCase();
-  return normalized === 'icloud.com' || normalized === 'icloud.com.cn' ? normalized : '';
-}
-function getIcloudLoginUrlForHost(host) {
-  return host === 'icloud.com.cn' ? 'https://www.icloud.com.cn/' : 'https://www.icloud.com/';
-}
-function getIcloudMailUrlForHost(host) {
-  return host === 'icloud.com.cn' ? 'https://www.icloud.com.cn/mail/' : 'https://www.icloud.com/mail/';
-}
-function normalizeIcloudTargetMailboxType(value = '') {
-  return String(value || '').trim().toLowerCase() === 'forward-mailbox' ? 'forward-mailbox' : 'icloud-inbox';
-}
-function normalizeIcloudForwardMailProvider(value = '') {
-  const normalized = String(value || '').trim().toLowerCase();
-  return ['qq', '163', '163-vip', '126', 'gmail'].includes(normalized) ? normalized : 'qq';
-}
-${bundle}
-return { getMailConfig };
-`)();
+  const api = createGetMailConfigApi();
 
   assert.deepEqual(api.getMailConfig({
     mailProvider: 'icloud',
@@ -242,38 +169,7 @@ return { getMailConfig };
 });
 
 test('getMailConfig uses forward mailbox config when target mailbox type is forward', () => {
-  const bundle = `${extractFunction('getIcloudForwardMailConfig')}\n${extractFunction('getMailConfig')}`;
-  const api = new Function(`
-const ICLOUD_PROVIDER = 'icloud';
-const GMAIL_PROVIDER = 'gmail';
-const HOTMAIL_PROVIDER = 'hotmail-api';
-const LUCKMAIL_PROVIDER = 'luckmail-api';
-const CLOUDFLARE_TEMP_EMAIL_PROVIDER = 'cloudflare-temp-email';
-function normalizeIcloudHost(value = '') {
-  const normalized = String(value || '').trim().toLowerCase();
-  return normalized === 'icloud.com' || normalized === 'icloud.com.cn' ? normalized : '';
-}
-function normalizeInbucketOrigin(value) { return String(value || '').trim(); }
-function getConfiguredIcloudHostPreference(state) {
-  const normalized = String(state?.icloudHostPreference || '').trim().toLowerCase();
-  return normalized === 'icloud.com' || normalized === 'icloud.com.cn' ? normalized : '';
-}
-function getIcloudLoginUrlForHost(host) {
-  return host === 'icloud.com.cn' ? 'https://www.icloud.com.cn/' : 'https://www.icloud.com/';
-}
-function getIcloudMailUrlForHost(host) {
-  return host === 'icloud.com.cn' ? 'https://www.icloud.com.cn/mail/' : 'https://www.icloud.com/mail/';
-}
-function normalizeIcloudTargetMailboxType(value = '') {
-  return String(value || '').trim().toLowerCase() === 'forward-mailbox' ? 'forward-mailbox' : 'icloud-inbox';
-}
-function normalizeIcloudForwardMailProvider(value = '') {
-  const normalized = String(value || '').trim().toLowerCase();
-  return ['qq', '163', '163-vip', '126', 'gmail'].includes(normalized) ? normalized : 'qq';
-}
-${bundle}
-return { getMailConfig };
-`)();
+  const api = createGetMailConfigApi();
 
   assert.deepEqual(api.getMailConfig({
     mailProvider: 'icloud',

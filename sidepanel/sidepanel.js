@@ -582,17 +582,28 @@ const normalizeIcloudFetchMode = (value) => {
   const normalized = String(value || '').trim().toLowerCase();
   return normalized === 'always_new' ? 'always_new' : 'reuse_existing';
 };
-const normalizeIcloudTargetMailboxType = (value) => {
-  return String(value || '').trim().toLowerCase() === 'forward-mailbox'
+const normalizeIcloudTargetMailboxType = window.MailProviderUtils?.normalizeIcloudTargetMailboxType
+  || ((value) => String(value || '').trim().toLowerCase() === 'forward-mailbox'
     ? 'forward-mailbox'
-    : 'icloud-inbox';
-};
-const normalizeIcloudForwardMailProvider = (value) => {
-  const normalized = String(value || '').trim().toLowerCase();
-  return ['qq', '163', '163-vip', '126', 'gmail'].includes(normalized)
-    ? normalized
-    : 'qq';
-};
+    : 'icloud-inbox');
+const getIcloudForwardMailProviderOptions = window.MailProviderUtils?.getIcloudForwardMailProviderOptions
+  || (() => Array.from(selectIcloudForwardMailProvider?.options || [])
+    .map((option) => ({
+      value: String(option?.value || '').trim().toLowerCase(),
+      label: String(option?.textContent || option?.label || option?.value || '').trim(),
+    }))
+    .filter((option) => option.value));
+const normalizeIcloudForwardMailProvider = window.MailProviderUtils?.normalizeIcloudForwardMailProvider
+  || ((value) => {
+    const normalized = String(value || '').trim().toLowerCase();
+    const options = getIcloudForwardMailProviderOptions();
+    return options.some((option) => option.value === normalized)
+      ? normalized
+      : (options[0]?.value || 'qq');
+  });
+const ICLOUD_FORWARD_MAIL_PROVIDER_LABELS = Object.fromEntries(
+  getIcloudForwardMailProviderOptions().map((option) => [option.value, option.label])
+);
 const getIcloudLoginUrlForHost = window.IcloudUtils?.getIcloudLoginUrlForHost
   || ((host) => host === 'icloud.com.cn' ? 'https://www.icloud.com.cn/' : (host === 'icloud.com' ? 'https://www.icloud.com/' : ''));
 
@@ -1687,16 +1698,8 @@ function collectSettingsPayload() {
   const icloudForwardMailProviderValue = typeof selectIcloudForwardMailProvider !== 'undefined'
     ? selectIcloudForwardMailProvider?.value
     : '';
-  const normalizedIcloudTargetMailboxType = typeof normalizeIcloudTargetMailboxType === 'function'
-    ? normalizeIcloudTargetMailboxType(icloudTargetMailboxTypeValue)
-    : (String(icloudTargetMailboxTypeValue || '').trim().toLowerCase() === 'forward-mailbox'
-      ? 'forward-mailbox'
-      : 'icloud-inbox');
-  const normalizedIcloudForwardMailProvider = typeof normalizeIcloudForwardMailProvider === 'function'
-    ? normalizeIcloudForwardMailProvider(icloudForwardMailProviderValue)
-    : (['qq', '163', '163-vip', '126', 'gmail'].includes(String(icloudForwardMailProviderValue || '').trim().toLowerCase())
-      ? String(icloudForwardMailProviderValue || '').trim().toLowerCase()
-      : 'qq');
+  const normalizedIcloudTargetMailboxType = normalizeIcloudTargetMailboxType(icloudTargetMailboxTypeValue);
+  const normalizedIcloudForwardMailProvider = normalizeIcloudForwardMailProvider(icloudForwardMailProviderValue);
   const mail2925UseAccountPool = typeof inputMail2925UseAccountPool !== 'undefined'
     ? Boolean(inputMail2925UseAccountPool?.checked)
     : Boolean(latestState?.mail2925UseAccountPool);
@@ -3229,11 +3232,7 @@ function updateMailProviderUI() {
     : (normalizeIcloudHostValue(icloudHostPreferenceValue || latestState?.icloudHostPreference || '')
       || normalizeIcloudHostValue(latestState?.preferredIcloudHost)
       || 'icloud.com');
-  const icloudTargetMailboxType = typeof normalizeIcloudTargetMailboxType === 'function'
-    ? normalizeIcloudTargetMailboxType(icloudTargetMailboxTypeValue)
-    : (String(icloudTargetMailboxTypeValue || '').trim().toLowerCase() === 'forward-mailbox'
-      ? 'forward-mailbox'
-      : 'icloud-inbox');
+  const icloudTargetMailboxType = normalizeIcloudTargetMailboxType(icloudTargetMailboxTypeValue);
   const isIcloudComCnHost = selectedIcloudHost === 'icloud.com.cn';
   const showIcloudTargetMailboxType = useIcloudProvider;
   const showIcloudForwardMailProvider = useIcloudProvider && icloudTargetMailboxType === 'forward-mailbox';
@@ -3380,12 +3379,10 @@ function updateMailProviderUI() {
     autoHintText.textContent = '已启用随机子域名：扩展会按当前选中的 Temp 域名提交，并额外携带 enableRandomSubdomain；是否生效取决于后端 RANDOM_SUBDOMAIN_DOMAINS 配置。';
   }
   if (autoHintText && useIcloudProvider && showIcloudForwardMailProvider) {
-    const forwardProvider = typeof normalizeIcloudForwardMailProvider === 'function'
-      ? normalizeIcloudForwardMailProvider(icloudForwardMailProviderValue)
-      : (['qq', '163', '163-vip', '126', 'gmail'].includes(String(icloudForwardMailProviderValue || '').trim().toLowerCase())
-        ? String(icloudForwardMailProviderValue || '').trim().toLowerCase()
-        : 'qq');
-    const forwardProviderLabel = MAIL_PROVIDER_LOGIN_CONFIGS[forwardProvider]?.label || '目标邮箱';
+    const forwardProvider = normalizeIcloudForwardMailProvider(icloudForwardMailProviderValue);
+    const forwardProviderLabel = ICLOUD_FORWARD_MAIL_PROVIDER_LABELS[forwardProvider]
+      || MAIL_PROVIDER_LOGIN_CONFIGS[forwardProvider]?.label
+      || '目标邮箱';
     autoHintText.textContent = `iCloud ${isIcloudComCnHost ? 'com.cn' : ''} 当前使用转发收码：第 4/8 步会从 ${forwardProviderLabel} 轮询验证码。`;
   }
   if (useHotmail) {
@@ -3589,11 +3586,7 @@ function updateButtonStates() {
     selectIcloudTargetMailboxType.disabled = disableIcloudControls;
   }
   if (typeof selectIcloudForwardMailProvider !== 'undefined' && selectIcloudForwardMailProvider) {
-    const normalizedIcloudTargetMailboxType = typeof normalizeIcloudTargetMailboxType === 'function'
-      ? normalizeIcloudTargetMailboxType(icloudTargetMailboxTypeValue)
-      : (String(icloudTargetMailboxTypeValue || '').trim().toLowerCase() === 'forward-mailbox'
-        ? 'forward-mailbox'
-        : 'icloud-inbox');
+    const normalizedIcloudTargetMailboxType = normalizeIcloudTargetMailboxType(icloudTargetMailboxTypeValue);
     const allowIcloudForwardMailProvider = isIcloudMailProvider()
       && normalizedIcloudTargetMailboxType === 'forward-mailbox';
     selectIcloudForwardMailProvider.disabled = disableIcloudControls || !allowIcloudForwardMailProvider;

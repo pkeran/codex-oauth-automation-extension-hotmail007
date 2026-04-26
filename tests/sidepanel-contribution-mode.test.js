@@ -1,6 +1,10 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const {
+  normalizeIcloudForwardMailProvider,
+  normalizeIcloudTargetMailboxType,
+} = require('../mail-provider-utils');
 
 const sidepanelSource = fs.readFileSync('sidepanel/sidepanel.js', 'utf8');
 
@@ -121,7 +125,7 @@ test('sidepanel html contains contribution mode runtime UI and loads the module 
 test('collectSettingsPayload omits custom password and local sync settings in contribution mode', () => {
   const bundle = extractFunction('collectSettingsPayload');
 
-  const api = new Function(`
+  const api = new Function('normalizeIcloudTargetMailboxType', 'normalizeIcloudForwardMailProvider', `
 let latestState = { contributionMode: true };
 let cloudflareDomainEditMode = false;
 let cloudflareTempEmailDomainEditMode = false;
@@ -188,7 +192,7 @@ return {
   collectSettingsPayload,
   setLatestState(nextState) { latestState = nextState; },
 };
-`)();
+`)(normalizeIcloudTargetMailboxType, normalizeIcloudForwardMailProvider);
 
   const contributionPayload = api.collectSettingsPayload();
   assert.equal('customPassword' in contributionPayload, false);

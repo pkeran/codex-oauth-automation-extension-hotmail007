@@ -1,6 +1,10 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
+const {
+  normalizeIcloudForwardMailProvider,
+  normalizeIcloudTargetMailboxType,
+} = require('../mail-provider-utils.js');
 
 const source = fs.readFileSync('background.js', 'utf8');
 
@@ -55,8 +59,6 @@ const bundle = [
   extractFunction('normalizeEmailGenerator'),
   extractFunction('getEmailGeneratorLabel'),
   extractFunction('normalizeVerificationResendCount'),
-  extractFunction('normalizeIcloudTargetMailboxType'),
-  extractFunction('normalizeIcloudForwardMailProvider'),
   extractFunction('normalizePersistentSettingValue'),
   extractFunction('finalizeIcloudAliasAfterSuccessfulFlow'),
 ].join('\n');
@@ -157,6 +159,8 @@ function findIcloudAliasByEmail(aliases, email) {
 function getErrorMessage(error) {
   return String(typeof error === 'string' ? error : error?.message || '');
 }
+const normalizeIcloudTargetMailboxType = overrides.normalizeIcloudTargetMailboxType;
+const normalizeIcloudForwardMailProvider = overrides.normalizeIcloudForwardMailProvider;
 
 ${bundle}
 
@@ -177,7 +181,10 @@ test('normalizeEmailGenerator and label support icloud', () => {
 });
 
 test('normalizePersistentSettingValue handles icloud settings', () => {
-  const api = createApi();
+  const api = createApi({
+    normalizeIcloudTargetMailboxType,
+    normalizeIcloudForwardMailProvider,
+  });
   assert.equal(api.normalizePersistentSettingValue('icloudHostPreference', 'icloud.com'), 'icloud.com');
   assert.equal(api.normalizePersistentSettingValue('icloudHostPreference', 'bad-host'), 'auto');
   assert.equal(api.normalizePersistentSettingValue('icloudTargetMailboxType', 'forward-mailbox'), 'forward-mailbox');
