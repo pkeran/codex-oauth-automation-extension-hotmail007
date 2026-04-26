@@ -449,7 +449,7 @@ function getStep10BrowserSwitchRequiredMessage(diagnostics = {}) {
   const callbackFailureText = normalizeStep9StatusText(diagnostics?.callbackFailureText || '');
   return [
     '检测到 CPA 页面同时显示“认证成功”和“回调 URL 提交失败: 请更新CLI Proxy API或检查连接”。',
-    '这类冲突状态通常通过更换浏览器可以解决，请更换浏览器后重新进行注册登录。',
+    '这通常不是浏览器问题，而是 CPA 项目会清理多线程 OAuth 会话。CPA 项目无法使用多线程，请修改 CPA 服务器或改为单线程注册。',
     callbackFailureText ? `面板原文：${callbackFailureText}` : '',
   ].filter(Boolean).join(' ');
 }
