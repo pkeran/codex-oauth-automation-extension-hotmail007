@@ -644,6 +644,9 @@
             stateUpdates.currentStep = 0;
           }
           await setState(stateUpdates);
+          if (Boolean(currentState?.contributionMode) && typeof setContributionMode === 'function') {
+            await setContributionMode(true);
+          }
           if (modeChanged) {
             await addLog(
               Boolean(updates.plusModeEnabled)

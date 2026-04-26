@@ -183,6 +183,10 @@ const DEFAULT_SUB2API_URL = 'https://sub2api.hisence.fun/admin/accounts';
 const DEFAULT_CODEX2API_URL = 'http://localhost:8080/admin/accounts';
 const DEFAULT_SUB2API_GROUP_NAME = 'codex';
 const DEFAULT_SUB2API_PROXY_NAME = '';
+const CONTRIBUTION_SOURCE_CPA = 'cpa';
+const CONTRIBUTION_SOURCE_SUB2API = 'sub2api';
+const CONTRIBUTION_SUB2API_DEFAULT_GROUP_NAME = 'codex号池';
+const CONTRIBUTION_SUB2API_PLUS_GROUP_NAME = 'openai-plus';
 const DEFAULT_SUB2API_REDIRECT_URI = 'http://localhost:1455/auth/callback';
 const AUTO_RUN_TIMER_ALARM_NAME = 'auto-run-timer';
 const AUTO_RUN_TIMER_KIND_SCHEDULED_START = 'scheduled_start';
@@ -222,6 +226,8 @@ const ACCOUNT_RUN_HISTORY_STORAGE_KEY = 'accountRunHistory';
 const CONTRIBUTION_RUNTIME_DEFAULTS = self.MultiPageBackgroundContributionOAuth?.RUNTIME_DEFAULTS || {
   contributionMode: false,
   contributionModeExpected: false,
+  contributionSource: CONTRIBUTION_SOURCE_SUB2API,
+  contributionTargetGroupName: CONTRIBUTION_SUB2API_DEFAULT_GROUP_NAME,
   contributionNickname: '',
   contributionQq: '',
   contributionSessionId: '',
@@ -241,6 +247,40 @@ const CONTRIBUTION_RUNTIME_KEYS = self.MultiPageBackgroundContributionOAuth?.RUN
 
 function isPlusModeState(state = {}) {
   return Boolean(state?.plusModeEnabled);
+}
+
+function normalizeContributionModeSource(value = '') {
+  const normalized = String(value || '').trim().toLowerCase();
+  return normalized === CONTRIBUTION_SOURCE_SUB2API
+    ? CONTRIBUTION_SOURCE_SUB2API
+    : CONTRIBUTION_SOURCE_CPA;
+}
+
+function resolveContributionModeRoutingState(state = {}) {
+  const currentStatus = String(state?.contributionStatus || '').trim().toLowerCase();
+  const currentSource = normalizeContributionModeSource(state?.contributionSource);
+  const hasActiveSession = Boolean(
+    String(state?.contributionSessionId || '').trim()
+    && currentStatus
+    && !['auto_approved', 'auto_rejected', 'expired', 'error'].includes(currentStatus)
+  );
+
+  if (hasActiveSession) {
+    return {
+      source: currentSource,
+      targetGroupName: currentSource === CONTRIBUTION_SOURCE_SUB2API
+        ? (String(state?.contributionTargetGroupName || '').trim() || CONTRIBUTION_SUB2API_DEFAULT_GROUP_NAME)
+        : '',
+    };
+  }
+
+  const source = CONTRIBUTION_SOURCE_SUB2API;
+  return {
+    source,
+    targetGroupName: isPlusModeState(state)
+      ? CONTRIBUTION_SUB2API_PLUS_GROUP_NAME
+      : (String(state?.contributionTargetGroupName || '').trim() || CONTRIBUTION_SUB2API_DEFAULT_GROUP_NAME),
+  };
 }
 
 function getStepDefinitionsForState(state = {}) {
@@ -1343,11 +1383,18 @@ function buildContributionModeState(enabled, persistedSettings = {}, currentStat
   }
 
   if (enabled) {
+    const routing = resolveContributionModeRoutingState({
+      ...persistedSettings,
+      ...currentState,
+      ...currentContributionState,
+    });
     return {
       ...currentContributionState,
       contributionMode: true,
       contributionModeExpected: true,
-      panelMode: 'cpa',
+      contributionSource: routing.source,
+      contributionTargetGroupName: routing.targetGroupName,
+      panelMode: routing.source,
       customPassword: '',
       accountRunHistoryTextEnabled: false,
     };
@@ -1370,14 +1417,7 @@ async function setContributionMode(enabled) {
     getState(),
   ]);
 
-  if (normalizedEnabled) {
-    await setPersistentSettings({ panelMode: 'cpa' });
-  }
-
-  const updates = buildContributionModeState(normalizedEnabled, {
-    ...persistedSettings,
-    ...(normalizedEnabled ? { panelMode: 'cpa' } : {}),
-  }, currentState);
+  const updates = buildContributionModeState(normalizedEnabled, persistedSettings, currentState);
 
   await setState(updates);
   const nextState = await getState();
@@ -1550,10 +1590,7 @@ async function resetState() {
     getPersistedSettings(),
     getPersistedAliasState(),
   ]);
-  const contributionModeState = buildContributionModeState(Boolean(prev.contributionMode), {
-    ...persistedSettings,
-    ...(prev.contributionMode ? { panelMode: 'cpa' } : {}),
-  }, prev);
+  const contributionModeState = buildContributionModeState(Boolean(prev.contributionMode), persistedSettings, prev);
   await chrome.storage.session.clear();
   await chrome.storage.session.set({
     ...DEFAULT_STATE,

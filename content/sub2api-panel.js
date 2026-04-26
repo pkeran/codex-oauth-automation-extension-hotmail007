@@ -509,9 +509,6 @@ async function step9_submitOpenAiCallback(payload = {}) {
 
   const sessionId = String(payload.sub2apiSessionId || backgroundState.sub2apiSessionId || '').trim();
   const expectedState = String(payload.sub2apiOAuthState || backgroundState.sub2apiOAuthState || '').trim();
-  const accountName = flowEmail
-    || String(payload.sub2apiDraftName || backgroundState.sub2apiDraftName || '').trim()
-    || buildDraftAccountName(payload.sub2apiGroupName || backgroundState.sub2apiGroupName || SUB2API_DEFAULT_GROUP_NAME);
 
   const { origin, token } = await loginSub2Api(payload);
   const proxyPreference = resolveSub2ApiProxyPreference(payload, backgroundState);
@@ -552,10 +549,15 @@ async function step9_submitOpenAiCallback(payload = {}) {
 
   const credentials = buildOpenAiCredentials(exchangeData);
   const extra = buildOpenAiExtra(exchangeData);
+  const resolvedEmail = String(exchangeData?.email || credentials?.email || '').trim();
   const groupId = Number(group.id);
   if (!Number.isFinite(groupId) || groupId <= 0) {
     throw new Error('SUB2API 返回的目标分组 ID 无效。');
   }
+  const accountName = resolvedEmail
+    || flowEmail
+    || String(payload.sub2apiDraftName || backgroundState.sub2apiDraftName || '').trim()
+    || buildDraftAccountName(payload.sub2apiGroupName || backgroundState.sub2apiGroupName || SUB2API_DEFAULT_GROUP_NAME);
   const createPayload = {
     name: accountName,
     notes: '',
