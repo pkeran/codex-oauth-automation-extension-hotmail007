@@ -50,6 +50,69 @@
         .trim();
     }
 
+    function normalizeCountryOptionValue(value) {
+      return String(value || '').trim().toUpperCase();
+    }
+
+    function getRegionDisplayName(regionCode, locale) {
+      const normalizedRegionCode = normalizeCountryOptionValue(regionCode);
+      const normalizedLocale = String(locale || '').trim();
+      if (!/^[A-Z]{2}$/.test(normalizedRegionCode) || !normalizedLocale || typeof Intl?.DisplayNames !== 'function') {
+        return '';
+      }
+      try {
+        return String(
+          new Intl.DisplayNames([normalizedLocale], { type: 'region' }).of(normalizedRegionCode) || ''
+        ).trim();
+      } catch {
+        return '';
+      }
+    }
+
+    function getCountryOptionMatchLabels(option) {
+      const labels = new Set();
+      const pushLabel = (value) => {
+        const label = String(value || '').replace(/\s+/g, ' ').trim();
+        if (label) {
+          labels.add(label);
+        }
+      };
+
+      pushLabel(getOptionLabel(option));
+
+      const regionCode = normalizeCountryOptionValue(option?.value);
+      if (/^[A-Z]{2}$/.test(regionCode)) {
+        pushLabel(regionCode);
+        pushLabel(getRegionDisplayName(regionCode, 'en'));
+
+        const pageLocale = String(
+          document?.documentElement?.lang
+          || document?.documentElement?.getAttribute?.('lang')
+          || self?.navigator?.language
+          || ''
+        ).trim();
+        if (pageLocale && !/^en(?:[-_]|$)/i.test(pageLocale)) {
+          pushLabel(getRegionDisplayName(regionCode, pageLocale));
+        }
+      }
+
+      return Array.from(labels);
+    }
+
+    function isSameCountryOption(left, right) {
+      if (!left || !right) {
+        return false;
+      }
+
+      const leftValue = normalizeCountryOptionValue(left.value);
+      const rightValue = normalizeCountryOptionValue(right.value);
+      if (leftValue && rightValue) {
+        return leftValue === rightValue;
+      }
+
+      return normalizeCountryLabel(getOptionLabel(left)) === normalizeCountryLabel(getOptionLabel(right));
+    }
+
     function extractDialCodeFromText(value) {
       const match = String(value || '').match(/\(\+\s*(\d{1,4})\s*\)|\+\s*(\d{1,4})\b/);
       return String(match?.[1] || match?.[2] || '').trim();
@@ -161,10 +224,16 @@
       }
 
       const options = Array.from(select.options);
-      return options.find((option) => normalizeCountryLabel(getOptionLabel(option)) === normalizedTarget)
+      return options.find((option) => (
+        getCountryOptionMatchLabels(option).some((label) => normalizeCountryLabel(label) === normalizedTarget)
+      ))
         || options.find((option) => {
-          const optionLabel = normalizeCountryLabel(getOptionLabel(option));
-          return optionLabel && (optionLabel.includes(normalizedTarget) || normalizedTarget.includes(optionLabel));
+          const normalizedLabels = getCountryOptionMatchLabels(option)
+            .map((label) => normalizeCountryLabel(label))
+            .filter(Boolean);
+          return normalizedLabels.some((optionLabel) => (
+            optionLabel.includes(normalizedTarget) || normalizedTarget.includes(optionLabel)
+          ));
         })
         || null;
     }
@@ -181,7 +250,7 @@
       }
 
       const selectedOption = getSelectedCountryOption();
-      if (selectedOption && normalizeCountryLabel(getOptionLabel(selectedOption)) === normalizeCountryLabel(getOptionLabel(targetOption))) {
+      if (selectedOption && isSameCountryOption(selectedOption, targetOption)) {
         return true;
       }
 
@@ -190,10 +259,7 @@
       await sleep(250);
 
       const nextSelectedOption = getSelectedCountryOption();
-      return Boolean(
-        nextSelectedOption
-        && normalizeCountryLabel(getOptionLabel(nextSelectedOption)) === normalizeCountryLabel(getOptionLabel(targetOption))
-      );
+      return Boolean(nextSelectedOption && isSameCountryOption(nextSelectedOption, targetOption));
     }
 
     function getAddPhoneSubmitButton() {
