@@ -25,7 +25,10 @@ test('Plus checkout create does not wait 20 seconds after opening checkout page'
     ensureContentScriptReadyOnTabUntilStopped: async () => {
       events.push({ type: 'ready' });
     },
-    reuseOrCreateTab: async () => 42,
+    reuseOrCreateTab: async (source, url, options) => {
+      events.push({ type: 'reuse-tab', source, url, options });
+      return 42;
+    },
     sendTabMessageUntilStopped: async () => ({
       checkoutUrl: 'https://checkout.stripe.com/c/pay/session',
       country: 'US',
@@ -43,6 +46,11 @@ test('Plus checkout create does not wait 20 seconds after opening checkout page'
   });
 
   await executor.executePlusCheckoutCreate();
+
+  const reuseEvent = events.find((event) => event.type === 'reuse-tab');
+  assert.equal(reuseEvent.source, 'plus-checkout');
+  assert.equal(reuseEvent.options.reloadIfSameUrl, false);
+  assert.equal(Object.hasOwn(reuseEvent.options, 'inject'), false);
 
   const sleepEvents = events.filter((event) => event.type === 'sleep');
   assert.deepStrictEqual(sleepEvents.map((event) => event.ms), [1000, 1000]);

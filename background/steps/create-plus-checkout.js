@@ -21,8 +21,6 @@
     async function executePlusCheckoutCreate() {
       await addLog('步骤 6：正在打开 ChatGPT 会话页，准备创建 Plus Checkout...', 'info');
       const tabId = await reuseOrCreateTab(PLUS_CHECKOUT_SOURCE, PLUS_CHECKOUT_ENTRY_URL, {
-        inject: PLUS_CHECKOUT_INJECT_FILES,
-        injectSource: PLUS_CHECKOUT_SOURCE,
         reloadIfSameUrl: false,
       });
 

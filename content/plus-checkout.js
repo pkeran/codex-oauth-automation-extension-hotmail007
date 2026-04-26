@@ -1,6 +1,7 @@
 // content/plus-checkout.js — ChatGPT Plus checkout helper.
 
 console.log('[MultiPage:plus-checkout] Content script loaded on', location.href);
+window.__MULTIPAGE_PLUS_CHECKOUT_READY__ = true;
 
 const PLUS_CHECKOUT_LISTENER_SENTINEL = 'data-multipage-plus-checkout-listener';
 const PLUS_CHECKOUT_PAYLOAD = {
