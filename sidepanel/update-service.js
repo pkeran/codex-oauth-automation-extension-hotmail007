@@ -8,11 +8,15 @@
   const FETCH_TIMEOUT_MS = 8000;
   const MAX_RELEASES = 10;
   const MAX_NOTES_PER_RELEASE = 5;
+  const VERSION_FAMILY_ULTRA = 'ultra';
   const VERSION_FAMILY_PRO = 'pro';
   const VERSION_FAMILY_LEGACY = 'legacy';
 
   function getVersionFamily(version, fallbackFamily = VERSION_FAMILY_LEGACY) {
     const trimmed = String(version || '').trim();
+    if (/^ultra/i.test(trimmed)) {
+      return VERSION_FAMILY_ULTRA;
+    }
     if (/^pro/i.test(trimmed)) {
       return VERSION_FAMILY_PRO;
     }
@@ -23,7 +27,7 @@
   }
 
   function stripVersionPrefix(version) {
-    return String(version || '').trim().replace(/^(?:pro|v)\s*/i, '');
+    return String(version || '').trim().replace(/^(?:ultra|pro|v)\s*/i, '');
   }
 
   function extractVersionCore(version) {
@@ -38,7 +42,7 @@
     }
 
     const family = getVersionFamily(version, fallbackFamily);
-    return `${family === VERSION_FAMILY_PRO ? 'Pro' : 'v'}${core}`;
+    return `${getVersionFamilyPrefix(family)}${core}`;
   }
 
   function parseVersionMeta(version, fallbackFamily = VERSION_FAMILY_LEGACY) {
@@ -47,7 +51,7 @@
     return {
       family,
       core,
-      displayVersion: core ? `${family === VERSION_FAMILY_PRO ? 'Pro' : 'v'}${core}` : '',
+      displayVersion: core ? `${getVersionFamilyPrefix(family)}${core}` : '',
       parts: core
         ? core.split('.').map((part) => {
           const numeric = Number.parseInt(part, 10);
@@ -57,8 +61,24 @@
     };
   }
 
+  function getVersionFamilyPrefix(family) {
+    if (family === VERSION_FAMILY_ULTRA) {
+      return 'Ultra';
+    }
+    if (family === VERSION_FAMILY_PRO) {
+      return 'Pro';
+    }
+    return 'v';
+  }
+
   function getVersionFamilyRank(family) {
-    return family === VERSION_FAMILY_PRO ? 2 : 1;
+    if (family === VERSION_FAMILY_ULTRA) {
+      return 3;
+    }
+    if (family === VERSION_FAMILY_PRO) {
+      return 2;
+    }
+    return 1;
   }
 
   function parseVersionParts(version, fallbackFamily = VERSION_FAMILY_LEGACY) {
@@ -185,8 +205,8 @@
   }
 
   function getComparableReleaseVersion(release) {
-    const fallbackFamily = release?.family === VERSION_FAMILY_PRO
-      ? VERSION_FAMILY_PRO
+    const fallbackFamily = [VERSION_FAMILY_ULTRA, VERSION_FAMILY_PRO].includes(release?.family)
+      ? release.family
       : VERSION_FAMILY_LEGACY;
     const displayVersion = String(release?.displayVersion || '').trim();
     if (displayVersion) {
@@ -319,17 +339,17 @@
   }
 
   function getLocalVersionLabel(manifest = chrome.runtime.getManifest()) {
-    const versionName = formatDisplayVersion(manifest?.version_name, VERSION_FAMILY_PRO);
+    const versionName = formatDisplayVersion(manifest?.version_name, VERSION_FAMILY_ULTRA);
     if (versionName) {
       return versionName;
     }
 
     const versionCore = extractVersionCore(manifest?.version || '');
-    return versionCore ? formatDisplayVersion(`v${versionCore}`, VERSION_FAMILY_LEGACY) : '';
+    return versionCore ? formatDisplayVersion(`Ultra${versionCore}`, VERSION_FAMILY_ULTRA) : '';
   }
 
   async function getReleaseSnapshot(options = {}) {
-    const localVersion = getLocalVersionLabel(chrome.runtime.getManifest()) || 'v0.0.0';
+    const localVersion = getLocalVersionLabel(chrome.runtime.getManifest()) || 'Ultra0.0';
 
     try {
       const releases = await loadReleases(options);

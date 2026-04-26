@@ -2726,7 +2726,7 @@ function renderUpdateReleaseList(releases = []) {
 
     const version = document.createElement('span');
     version.className = 'update-release-version';
-    version.textContent = release.displayVersion || `Pro${release.version}`;
+    version.textContent = release.displayVersion || `Ultra${release.version}`;
     titleRow.appendChild(version);
 
     if (release.title) {
@@ -2820,14 +2820,14 @@ function renderReleaseSnapshot(snapshot) {
     }
 
     case 'latest': {
-      extensionUpdateStatus.textContent = localVersionText || 'Pro0.0';
+      extensionUpdateStatus.textContent = localVersionText || 'Ultra0.0';
       extensionUpdateStatus.classList.add('is-version-label');
       resetUpdateCard();
       break;
     }
 
     case 'empty': {
-      extensionUpdateStatus.textContent = localVersionText || 'Pro0.0';
+      extensionUpdateStatus.textContent = localVersionText || 'Ultra0.0';
       extensionUpdateStatus.classList.add('is-version-label');
       resetUpdateCard();
       break;
@@ -2835,7 +2835,7 @@ function renderReleaseSnapshot(snapshot) {
 
     case 'error':
     default: {
-      extensionUpdateStatus.textContent = localVersionText || 'Pro0.0';
+      extensionUpdateStatus.textContent = localVersionText || 'Ultra0.0';
       extensionUpdateStatus.classList.add('is-version-label', 'is-check-failed');
       extensionVersionMeta.textContent = snapshot?.errorMessage || 'GitHub Releases 检查失败';
       extensionVersionMeta.hidden = false;
@@ -2858,8 +2858,8 @@ async function initializeReleaseInfo() {
 
   const localVersion = sidepanelUpdateService?.getLocalVersionLabel?.(chrome.runtime.getManifest())
     || chrome.runtime.getManifest()?.version_name
-    || (chrome.runtime.getManifest()?.version ? `v${chrome.runtime.getManifest().version}` : '');
-  extensionUpdateStatus.textContent = localVersion || 'Pro0.0';
+    || (chrome.runtime.getManifest()?.version ? `Ultra${chrome.runtime.getManifest().version}` : '');
+  extensionUpdateStatus.textContent = localVersion || 'Ultra0.0';
   extensionUpdateStatus.classList.remove('is-update-available', 'is-check-failed');
   extensionUpdateStatus.classList.add('is-version-label');
   extensionVersionMeta.hidden = true;
