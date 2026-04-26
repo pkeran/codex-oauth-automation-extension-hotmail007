@@ -34,6 +34,7 @@ const updateReleaseList = document.getElementById('update-release-list');
 const btnOpenRelease = document.getElementById('btn-open-release');
 const settingsCard = document.getElementById('settings-card');
 const contributionModePanel = document.getElementById('contribution-mode-panel');
+const contributionModeBadge = document.getElementById('contribution-mode-badge');
 const contributionModeText = document.getElementById('contribution-mode-text');
 const inputContributionNickname = document.getElementById('input-contribution-nickname');
 const inputContributionQq = document.getElementById('input-contribution-qq');
@@ -1733,7 +1734,9 @@ function collectSettingsPayload() {
       label: typeof DEFAULT_HERO_SMS_COUNTRY_LABEL !== 'undefined' ? DEFAULT_HERO_SMS_COUNTRY_LABEL : 'Thailand',
     };
   return {
-    panelMode: selectPanelMode.value,
+    ...(contributionModeEnabled ? {} : {
+      panelMode: selectPanelMode.value,
+    }),
     vpsUrl: inputVpsUrl.value.trim(),
     vpsPassword: inputVpsPassword.value,
     localCpaStep9Mode: getSelectedLocalCpaStep9Mode(),
@@ -4070,6 +4073,7 @@ const contributionModeManager = window.SidepanelContributionMode?.createContribu
     btnOpenAccountRecords,
     btnOpenContributionUpload,
     btnStartContribution,
+    contributionModeBadge,
     contributionModePanel,
     contributionModeSummary,
     contributionModeText,
