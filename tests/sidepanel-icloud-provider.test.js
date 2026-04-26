@@ -327,6 +327,7 @@ const DEFAULT_VERIFICATION_RESEND_COUNT = 4;
 function syncLatestState(state) { latestState = { ...latestState, ...state }; }
 function syncAutoRunState() {}
 function syncPasswordField() {}
+function renderStepStatuses() {}
 function setLocalCpaStep9Mode() {}
 function isCustomMailProvider() { return false; }
 function setMail2925Mode() {}
