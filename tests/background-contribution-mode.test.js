@@ -510,6 +510,157 @@ test('contribution oauth manager starts session, opens auth url, submits callbac
   assert.ok(broadcasts.some((item) => item.contributionCallbackStatus === 'submitted'));
 });
 
+test('contribution oauth manager deduplicates concurrent callback captures for the same localhost url', async () => {
+  const source = fs.readFileSync('background/contribution-oauth.js', 'utf8');
+  const globalScope = {};
+  const fetchCalls = [];
+  const broadcasts = [];
+  let submitCallCount = 0;
+  let resolveSubmitRequest = null;
+  let currentState = {
+    contributionMode: true,
+    contributionSource: 'sub2api',
+    contributionTargetGroupName: 'codex号池',
+    contributionSessionId: 'session-001',
+    contributionAuthState: 'oauth-state-001',
+    contributionStatus: 'waiting',
+    contributionCallbackStatus: 'idle',
+  };
+
+  const api = new Function('self', 'fetch', `${source}; return self.MultiPageBackgroundContributionOAuth;`)(
+    globalScope,
+    async (url, options = {}) => {
+      fetchCalls.push({ url, options });
+      if (String(url).endsWith('/submit-callback')) {
+        submitCallCount += 1;
+        await new Promise((resolve) => {
+          resolveSubmitRequest = resolve;
+        });
+        return createMockResponse(true, 200, {
+          ok: true,
+          session_id: 'session-001',
+          status: 'processing',
+          message: '回调地址已提交给 CPA，正在等待结果确认。',
+        });
+      }
+      if (String(url).includes('/status?')) {
+        return createMockResponse(true, 200, {
+          ok: true,
+          session_id: 'session-001',
+          status: 'processing',
+          message: '回调地址已提交给 CPA，正在等待结果确认。',
+        });
+      }
+      return createMockResponse(true, 200, { ok: true });
+    }
+  );
+
+  const manager = api.createContributionOAuthManager({
+    addLog: async () => {},
+    broadcastDataUpdate(updates) {
+      broadcasts.push(updates);
+      currentState = { ...currentState, ...updates };
+    },
+    chrome: {
+      tabs: {
+        onUpdated: { addListener() {} },
+      },
+      webNavigation: {
+        onCommitted: { addListener() {} },
+        onHistoryStateUpdated: { addListener() {} },
+      },
+    },
+    getState: async () => currentState,
+    setState: async (updates) => {
+      currentState = { ...currentState, ...updates };
+    },
+  });
+
+  const callbackUrl = 'http://localhost:1455/auth/callback?code=abc123&state=oauth-state-001';
+  const firstTask = manager.handleCapturedCallback(callbackUrl, { source: 'tabs.onUpdated' });
+  const secondTask = manager.handleCapturedCallback(callbackUrl, { source: 'webNavigation.onCommitted' });
+
+  for (let round = 0; round < 10 && submitCallCount === 0; round += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+
+  assert.equal(submitCallCount, 1);
+  assert.equal(
+    broadcasts.filter((entry) => entry.contributionCallbackStatus === 'captured').length,
+    1
+  );
+
+  assert.equal(typeof resolveSubmitRequest, 'function');
+  resolveSubmitRequest();
+  const [firstState, secondState] = await Promise.all([firstTask, secondTask]);
+
+  assert.equal(firstState.contributionCallbackStatus, 'submitted');
+  assert.equal(secondState.contributionCallbackStatus, 'submitted');
+  assert.equal(fetchCalls.filter((call) => String(call.url).endsWith('/submit-callback')).length, 1);
+});
+
+test('contribution oauth manager ignores tabs.onUpdated events without a real url change', async () => {
+  const source = fs.readFileSync('background/contribution-oauth.js', 'utf8');
+  const globalScope = {};
+  const fetchCalls = [];
+  const addedListeners = {};
+  let currentState = {
+    contributionMode: true,
+    contributionSource: 'sub2api',
+    contributionTargetGroupName: 'codex号池',
+    contributionSessionId: 'session-001',
+    contributionAuthState: 'oauth-state-001',
+    contributionStatus: 'waiting',
+    contributionCallbackStatus: 'idle',
+  };
+
+  const api = new Function('self', 'fetch', `${source}; return self.MultiPageBackgroundContributionOAuth;`)(
+    globalScope,
+    async (url, options = {}) => {
+      fetchCalls.push({ url, options });
+      return createMockResponse(true, 200, { ok: true, status: 'processing' });
+    }
+  );
+
+  const manager = api.createContributionOAuthManager({
+    addLog: async () => {},
+    broadcastDataUpdate(updates) {
+      currentState = { ...currentState, ...updates };
+    },
+    chrome: {
+      tabs: {
+        onUpdated: {
+          addListener(listener) {
+            addedListeners.onTabUpdated = listener;
+          },
+        },
+      },
+      webNavigation: {
+        onCommitted: { addListener() {} },
+        onHistoryStateUpdated: { addListener() {} },
+      },
+    },
+    getState: async () => currentState,
+    setState: async (updates) => {
+      currentState = { ...currentState, ...updates };
+    },
+  });
+
+  manager.ensureCallbackListeners();
+  assert.equal(typeof addedListeners.onTabUpdated, 'function');
+
+  addedListeners.onTabUpdated(
+    88,
+    { status: 'complete' },
+    { url: 'http://localhost:1455/auth/callback?code=abc123&state=oauth-state-001' }
+  );
+
+  await Promise.resolve();
+  await Promise.resolve();
+
+  assert.equal(fetchCalls.length, 0);
+});
+
 test('contribution oauth manager accepts localhost callback urls that contain error and state', async () => {
   const source = fs.readFileSync('background/contribution-oauth.js', 'utf8');
   const globalScope = {};

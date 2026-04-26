@@ -44,6 +44,7 @@
     } = deps;
 
     let listenersBound = false;
+    const inFlightCapturedCallbackTasks = new Map();
 
     function normalizeString(value = '') {
       return String(value || '').trim();
@@ -108,6 +109,29 @@
 
     function isContributionFinalStatus(status = '') {
       return FINAL_STATUSES.has(normalizeContributionStatus(status));
+    }
+
+    function runCapturedCallbackOnce(callbackUrl, executor) {
+      const normalizedUrl = normalizeString(callbackUrl);
+      if (!normalizedUrl) {
+        return Promise.resolve().then(executor);
+      }
+
+      const existingTask = inFlightCapturedCallbackTasks.get(normalizedUrl);
+      if (existingTask) {
+        return existingTask;
+      }
+
+      let task = null;
+      task = Promise.resolve()
+        .then(executor)
+        .finally(() => {
+          if (inFlightCapturedCallbackTasks.get(normalizedUrl) === task) {
+            inFlightCapturedCallbackTasks.delete(normalizedUrl);
+          }
+        });
+      inFlightCapturedCallbackTasks.set(normalizedUrl, task);
+      return task;
     }
 
     function normalizeContributionSource(value = '') {
@@ -513,42 +537,44 @@
     }
 
     async function handleCapturedCallback(rawUrl, metadata = {}) {
-      const currentState = await getState();
-      if (!normalizeString(currentState.contributionSessionId) || !currentState.contributionMode) {
-        return currentState;
-      }
-      if (!isContributionCallbackUrl(rawUrl, currentState)) {
-        return currentState;
-      }
-
       const normalizedUrl = normalizeString(rawUrl);
-      const currentCallbackStatus = normalizeContributionCallbackStatus(currentState.contributionCallbackStatus);
-      if (
-        normalizedUrl
-        && normalizeString(currentState.contributionCallbackUrl) === normalizedUrl
-        && (CALLBACK_FINAL_STATUSES.has(currentCallbackStatus) || currentCallbackStatus === 'submitting')
-      ) {
-        return currentState;
-      }
+      return runCapturedCallbackOnce(normalizedUrl, async () => {
+        const currentState = await getState();
+        if (!normalizeString(currentState.contributionSessionId) || !currentState.contributionMode) {
+          return currentState;
+        }
+        if (!isContributionCallbackUrl(normalizedUrl, currentState)) {
+          return currentState;
+        }
 
-      await applyRuntimeUpdates({
-        contributionCallbackUrl: normalizedUrl,
-        contributionCallbackStatus: 'captured',
-        contributionCallbackMessage: buildCallbackMessage('captured'),
-      });
+        const currentCallbackStatus = normalizeContributionCallbackStatus(currentState.contributionCallbackStatus);
+        if (
+          normalizedUrl
+          && normalizeString(currentState.contributionCallbackUrl) === normalizedUrl
+          && (CALLBACK_FINAL_STATUSES.has(currentCallbackStatus) || currentCallbackStatus === 'submitting')
+        ) {
+          return currentState;
+        }
 
-      if (typeof addLog === 'function') {
-        await addLog(`贡献模式：已捕获回调地址（${metadata.source || 'unknown'}）。`, 'info');
-      }
-
-      try {
-        return await submitContributionCallback(normalizedUrl, {
-          reason: metadata.source || 'navigation',
-          stateOverride: await getState(),
+        await applyRuntimeUpdates({
+          contributionCallbackUrl: normalizedUrl,
+          contributionCallbackStatus: 'captured',
+          contributionCallbackMessage: buildCallbackMessage('captured'),
         });
-      } catch {
-        return getState();
-      }
+
+        if (typeof addLog === 'function') {
+          await addLog(`贡献模式：已捕获回调地址（${metadata.source || 'unknown'}）。`, 'info');
+        }
+
+        try {
+          return await submitContributionCallback(normalizedUrl, {
+            reason: metadata.source || 'navigation',
+            stateOverride: await getState(),
+          });
+        } catch {
+          return getState();
+        }
+      });
     }
 
     async function pollContributionStatus(options = {}) {
@@ -696,7 +722,7 @@
     }
 
     function onTabUpdated(tabId, changeInfo, tab) {
-      const candidateUrl = normalizeString(changeInfo?.url || tab?.url);
+      const candidateUrl = normalizeString(changeInfo?.url);
       if (!candidateUrl) {
         return;
       }
