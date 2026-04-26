@@ -8,12 +8,11 @@
 
 一百五十个号，一个401：
 
+进官网，获取最新交流群：<https://apikey.qzz.io/>
+
 <table>
   <tr>
-    <td align="center" width="50%">
-      <img src="docs/images/交流群.jpg" alt="QQ交流群，便于大家交流" width="100%" />
-    </td>
-    <td align="center" width="50%">
+    <td align="center" width="100%">
       <img src="docs/images/十轮自动.png" alt="最新版本运行日志" width="100%" />
     </td>
   </tr>
