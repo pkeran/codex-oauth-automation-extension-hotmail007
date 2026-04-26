@@ -50,8 +50,6 @@ function extractFunction(name) {
 
 function createApi({
   refreshImpl,
-  confirmImpl,
-  dismissImpl,
   runCount = 3,
   plusModeEnabled = false,
   plusRiskEnabled = false,
@@ -119,14 +117,6 @@ async function refreshContributionContentHint() {
   events.push({ type: 'refresh' });
   ${refreshImpl ? 'return (' + refreshImpl + ')();' : 'return null;'}
 }
-async function maybeConfirmContributionUpdateBeforeAutoRun(snapshot) {
-  events.push({ type: 'confirm-check', snapshot });
-  ${confirmImpl ? 'return (' + confirmImpl + ')(snapshot);' : 'return true;'}
-}
-function dismissContributionUpdateHint() {
-  events.push({ type: 'dismiss-hint' });
-  ${dismissImpl ? '(' + dismissImpl + ')();' : ''}
-}
 ${bundle}
 return {
   startAutoRunFromCurrentSettings,
@@ -145,9 +135,9 @@ test('startAutoRunFromCurrentSettings refreshes contribution content hint before
   assert.equal(result, true);
   assert.deepEqual(
     api.getEvents().map((entry) => entry.type),
-    ['refresh', 'confirm-check', 'send']
+    ['refresh', 'send']
   );
-  assert.equal(api.getEvents()[2].message.type, 'AUTO_RUN');
+  assert.equal(api.getEvents()[1].message.type, 'AUTO_RUN');
 });
 
 test('startAutoRunFromCurrentSettings continues auto run when contribution content refresh fails', async () => {
@@ -161,27 +151,26 @@ test('startAutoRunFromCurrentSettings continues auto run when contribution conte
   assert.equal(result, true);
   assert.deepEqual(
     events.map((entry) => entry.type),
-    ['refresh', 'warn', 'confirm-check', 'send']
+    ['refresh', 'warn', 'send']
   );
   assert.match(String(events[1].args[0]), /Failed to refresh contribution content hint before auto run/);
-  assert.equal(events[3].message.type, 'AUTO_RUN');
+  assert.equal(events[2].message.type, 'AUTO_RUN');
 });
 
-test('startAutoRunFromCurrentSettings aborts when contribution update confirmation is declined', async () => {
+test('startAutoRunFromCurrentSettings does not block auto run when contribution content has updates', async () => {
   const api = createApi({
     refreshImpl: `async () => ({
       promptVersion: 'questionnaire:2026-04-23T00:00:00Z',
       items: [{ slug: 'questionnaire', isVisible: true }],
     })`,
-    confirmImpl: 'async () => false',
   });
 
   const result = await api.startAutoRunFromCurrentSettings();
 
-  assert.equal(result, false);
+  assert.equal(result, true);
   assert.deepEqual(
     api.getEvents().map((entry) => entry.type),
-    ['refresh', 'confirm-check']
+    ['refresh', 'send']
   );
 });
 
@@ -198,10 +187,10 @@ test('startAutoRunFromCurrentSettings shows Plus risk warning before starting mo
   assert.equal(result, true);
   assert.deepEqual(
     events.map((entry) => entry.type),
-    ['refresh', 'confirm-check', 'plus-risk-modal', 'send']
+    ['refresh', 'plus-risk-modal', 'send']
   );
-  assert.equal(events[2].totalRuns, 4);
-  assert.equal(events[3].message.payload.totalRuns, 4);
+  assert.equal(events[1].totalRuns, 4);
+  assert.equal(events[2].message.payload.totalRuns, 4);
 });
 
 test('startAutoRunFromCurrentSettings aborts when Plus risk warning is declined', async () => {
@@ -217,7 +206,7 @@ test('startAutoRunFromCurrentSettings aborts when Plus risk warning is declined'
   assert.equal(result, false);
   assert.deepEqual(
     api.getEvents().map((entry) => entry.type),
-    ['refresh', 'confirm-check', 'plus-risk-modal']
+    ['refresh', 'plus-risk-modal']
   );
 });
 
@@ -235,7 +224,7 @@ test('startAutoRunFromCurrentSettings aborts when Plus contribution prompt opens
   assert.equal(result, false);
   assert.deepEqual(
     api.getEvents().map((entry) => entry.type),
-    ['refresh', 'confirm-check', 'plus-contribution-modal']
+    ['refresh', 'plus-contribution-modal']
   );
-  assert.equal(api.getEvents()[2].plusModeEnabled, true);
+  assert.equal(api.getEvents()[1].plusModeEnabled, true);
 });

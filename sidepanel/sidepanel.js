@@ -2854,6 +2854,15 @@ function getContributionUpdatePromptLines(snapshot = currentContributionContentS
   }
 
   const items = Array.isArray(snapshot.items) ? snapshot.items : [];
+  const autoRunNoticeItem = items.find((item) =>
+    item
+    && String(item.slug || '').trim().toLowerCase() === 'auto_run_notice'
+  );
+  if (autoRunNoticeItem) {
+    const noticeText = String(autoRunNoticeItem.text || '').trim();
+    return autoRunNoticeItem.isVisible && noticeText ? [noticeText] : [];
+  }
+
   const hasAnnouncementOrTutorial = items.some((item) =>
     item
     && item.isVisible
@@ -2873,35 +2882,6 @@ function getContributionUpdatePromptLines(snapshot = currentContributionContentS
     lines.push('有新的征求意见，请佬友共同参与选择。');
   }
   return lines;
-}
-
-function shouldPromptContributionUpdateBeforeAutoRun(snapshot = currentContributionContentSnapshot) {
-  const promptVersion = String(snapshot?.promptVersion || '').trim();
-  if (!promptVersion) {
-    return false;
-  }
-  if (promptVersion === getDismissedContributionContentPromptVersion()) {
-    return false;
-  }
-  return getContributionUpdatePromptLines(snapshot).length > 0;
-}
-
-async function maybeConfirmContributionUpdateBeforeAutoRun(snapshot = currentContributionContentSnapshot) {
-  if (!shouldPromptContributionUpdateBeforeAutoRun(snapshot)) {
-    return true;
-  }
-
-  const confirmed = await openConfirmModal({
-    title: '自动前提醒',
-    message: getContributionUpdateHintMessage(snapshot),
-    confirmLabel: '确定继续',
-    confirmVariant: 'btn-primary',
-  });
-  if (!confirmed) {
-    return false;
-  }
-  dismissContributionUpdateHint();
-  return true;
 }
 
 function positionContributionUpdateHint() {
@@ -2941,6 +2921,9 @@ function shouldShowContributionUpdateHint(snapshot = currentContributionContentS
     return false;
   }
   if (!promptVersion) {
+    return false;
+  }
+  if (!getContributionUpdatePromptLines(snapshot).length) {
     return false;
   }
   if (promptVersion === getDismissedContributionContentPromptVersion()) {
@@ -4651,16 +4634,10 @@ autoStartModal?.addEventListener('click', (event) => {
 btnAutoStartClose?.addEventListener('click', () => resolveModalChoice(null));
 
 async function startAutoRunFromCurrentSettings() {
-  let contributionSnapshot = null;
   try {
-    contributionSnapshot = await refreshContributionContentHint();
+    await refreshContributionContentHint();
   } catch (error) {
     console.warn('Failed to refresh contribution content hint before auto run:', error);
-  }
-
-  const confirmedContributionUpdate = await maybeConfirmContributionUpdateBeforeAutoRun(contributionSnapshot);
-  if (!confirmedContributionUpdate) {
-    return false;
   }
 
   if (typeof settingsDirty !== 'undefined' && settingsDirty && typeof saveSettings === 'function') {
