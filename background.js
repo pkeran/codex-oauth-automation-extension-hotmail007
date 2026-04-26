@@ -4606,11 +4606,7 @@ async function fetchIcloudHideMyEmail(options = {}) {
     await addLog(`iCloud：当前 Hide My Email 服务节点 ${new URL(serviceUrl).host}`, 'info');
 
     let activeServiceUrl = serviceUrl;
-    const { aliases: existingAliases, serviceUrl: listServiceUrl } = await loadNormalizedIcloudAliases({
-      serviceUrl: activeServiceUrl,
-      silent: true,
-    });
-    activeServiceUrl = listServiceUrl || activeServiceUrl;
+    const existingAliases = await listIcloudAliases();
     const existingAliasEmailSet = new Set(
       existingAliases
         .map((aliasItem) => String(aliasItem?.email || '').trim().toLowerCase())
@@ -4706,7 +4702,7 @@ async function fetchIcloudHideMyEmail(options = {}) {
           throw reserveErr;
         }
 
-        await addLog(`iCloud：保留 ${generatedAlias} 失败，正在回查别名列表确认是否已成功保留...`, 'warn');
+        await addLog('iCloud：保留别名返回鉴权/网络异常，正在回查别名列表确认是否已创建...', 'warn');
         const { aliases: aliasesAfterReserveFailure, serviceUrl: refreshedListServiceUrl } = await loadNormalizedIcloudAliases({
           serviceUrl: activeServiceUrl,
           silent: true,
