@@ -1,6 +1,6 @@
 // content/utils.js — Shared utilities for all content scripts
 
-const getActivationStrategy = self.MultiPageActivationUtils?.getActivationStrategy;
+var getActivationStrategy = self.MultiPageActivationUtils?.getActivationStrategy;
 
 function detectScriptSource({
   injectedSource,
@@ -26,7 +26,7 @@ function detectScriptSource({
   return 'vps-panel';
 }
 
-const SCRIPT_SOURCE = (() => {
+var SCRIPT_SOURCE = (() => {
   return detectScriptSource({
     injectedSource: window.__MULTIPAGE_SOURCE,
     url: location.href,
@@ -38,9 +38,9 @@ function getRuntimeScriptSource() {
   return window.__MULTIPAGE_SOURCE || SCRIPT_SOURCE;
 }
 
-const LOG_PREFIX = `[MultiPage:${SCRIPT_SOURCE}]`;
-const STOP_ERROR_MESSAGE = '流程已被用户停止。';
-let flowStopped = false;
+var LOG_PREFIX = `[MultiPage:${SCRIPT_SOURCE}]`;
+var STOP_ERROR_MESSAGE = '流程已被用户停止。';
+var flowStopped = false;
 
 if (!window.__MULTIPAGE_UTILS_LISTENER_READY__) {
   window.__MULTIPAGE_UTILS_LISTENER_READY__ = true;
