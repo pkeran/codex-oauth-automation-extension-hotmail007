@@ -84,6 +84,39 @@
       };
     }
 
+    function normalizeActivationFallback(record) {
+      if (!record || typeof record !== 'object' || Array.isArray(record)) {
+        return null;
+      }
+
+      const fallback = {};
+      const provider = String(record.provider || '').trim();
+      const serviceCode = String(record.serviceCode || '').trim();
+      const countryId = Math.floor(Number(record.countryId));
+      const statusAction = String(record.statusAction || '').trim();
+
+      if (provider) {
+        fallback.provider = provider;
+      }
+      if (serviceCode) {
+        fallback.serviceCode = serviceCode;
+      }
+      if (Number.isFinite(countryId) && countryId > 0) {
+        fallback.countryId = countryId;
+      }
+      if (Object.prototype.hasOwnProperty.call(record, 'successfulUses')) {
+        fallback.successfulUses = normalizeUseCount(record.successfulUses);
+      }
+      if (Object.prototype.hasOwnProperty.call(record, 'maxUses')) {
+        fallback.maxUses = Math.max(1, Math.floor(Number(record.maxUses) || DEFAULT_PHONE_NUMBER_MAX_USES));
+      }
+      if (statusAction) {
+        fallback.statusAction = statusAction;
+      }
+
+      return Object.keys(fallback).length ? fallback : null;
+    }
+
     function describeHeroSmsPayload(raw) {
       if (typeof raw === 'string') {
         return raw.trim();
@@ -215,7 +248,7 @@
     }
 
     function parseActivationPayload(payload, fallback = null) {
-      const normalizedFallback = normalizeActivation(fallback);
+      const normalizedFallback = normalizeActivation(fallback) || normalizeActivationFallback(fallback);
       const directActivation = normalizeActivation(payload);
       if (directActivation) {
         const statusAction = normalizedFallback?.statusAction || directActivation.statusAction;
@@ -224,8 +257,8 @@
           provider: normalizedFallback?.provider || directActivation.provider,
           serviceCode: normalizedFallback?.serviceCode || directActivation.serviceCode,
           countryId: normalizedFallback?.countryId || directActivation.countryId,
-          successfulUses: normalizedFallback?.successfulUses || directActivation.successfulUses,
-          maxUses: normalizedFallback?.maxUses || directActivation.maxUses,
+          successfulUses: normalizedFallback?.successfulUses ?? directActivation.successfulUses,
+          maxUses: normalizedFallback?.maxUses ?? directActivation.maxUses,
           ...(statusAction ? { statusAction } : {}),
         };
       }
@@ -239,8 +272,8 @@
           provider: normalizedFallback?.provider || 'hero-sms',
           serviceCode: normalizedFallback?.serviceCode || HERO_SMS_SERVICE_CODE,
           countryId: normalizedFallback?.countryId || HERO_SMS_COUNTRY_ID,
-          successfulUses: normalizedFallback?.successfulUses || 0,
-          maxUses: normalizedFallback?.maxUses || DEFAULT_PHONE_NUMBER_MAX_USES,
+          successfulUses: normalizedFallback?.successfulUses ?? 0,
+          maxUses: normalizedFallback?.maxUses ?? DEFAULT_PHONE_NUMBER_MAX_USES,
           ...(normalizedFallback?.statusAction ? { statusAction: normalizedFallback.statusAction } : {}),
         };
       }

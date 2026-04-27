@@ -1038,6 +1038,8 @@ test('phone verification helper keeps maxUses behavior for reused V2 activations
   const requests = [];
   let currentState = {
     heroSmsApiKey: 'demo-key',
+    heroSmsCountryId: 16,
+    heroSmsCountryLabel: 'United Kingdom',
     verificationResendCount: 0,
     currentPhoneActivation: null,
     reusablePhoneActivation: {
