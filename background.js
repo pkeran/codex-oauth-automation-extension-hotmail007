@@ -477,6 +477,7 @@ const PERSISTED_SETTING_DEFAULTS = {
   hotmailAccounts: [],
   mail2925Accounts: [],
   heroSmsApiKey: '',
+  heroSmsMaxPrice: '',
   heroSmsCountryId: HERO_SMS_COUNTRY_ID,
   heroSmsCountryLabel: HERO_SMS_COUNTRY_LABEL,
 };
@@ -1316,6 +1317,8 @@ function normalizePersistentSettingValue(key, value) {
       return normalizeMail2925Accounts(value);
     case 'heroSmsApiKey':
       return String(value || '');
+    case 'heroSmsMaxPrice':
+      return String(value || '').trim();
     case 'heroSmsCountryId':
       return Math.max(1, Math.floor(Number(value) || HERO_SMS_COUNTRY_ID));
     case 'heroSmsCountryLabel':
