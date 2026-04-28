@@ -1,4 +1,15 @@
 (function attachSidepanelFormDialog(globalScope) {
+  const FORM_EYE_OPEN_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+  const FORM_EYE_CLOSED_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 19C5 19 1 12 1 12a21.77 21.77 0 0 1 5.06-6.94"/><path d="M9.9 4.24A10.94 10.94 0 0 1 12 5c7 0 11 7 11 7a21.86 21.86 0 0 1-2.16 3.19"/><path d="M1 1l22 22"/><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/></svg>';
+
+  function syncPasswordToggleButton(button, input, labels) {
+    if (!button || !input) return;
+    const isHidden = input.type === 'password';
+    button.innerHTML = isHidden ? FORM_EYE_OPEN_ICON : FORM_EYE_CLOSED_ICON;
+    button.setAttribute('aria-label', isHidden ? labels.show : labels.hide);
+    button.title = isHidden ? labels.show : labels.hide;
+  }
+
   function createFormDialog(context = {}) {
     const {
       overlay = null,
@@ -62,7 +73,8 @@
 
       const label = documentRef.createElement('label');
       label.className = 'modal-form-label';
-      label.textContent = String(field.label || field.key || '').trim();
+      const labelText = String(field.label || field.key || '').trim();
+      label.textContent = labelText;
       wrapper.appendChild(label);
 
       let input = null;
@@ -82,7 +94,9 @@
       } else {
         input = documentRef.createElement('input');
         input.type = field.type === 'password' ? 'password' : 'text';
-        input.className = 'data-input';
+        input.className = field.type === 'password'
+          ? 'data-input data-input-with-icon'
+          : 'data-input';
       }
 
       const normalizedValue = Object.prototype.hasOwnProperty.call(values, field.key)
@@ -106,7 +120,29 @@
       input.dataset.fieldKey = String(field.key || '');
       label.htmlFor = field.key;
       input.id = field.key;
-      wrapper.appendChild(input);
+      if (field.type === 'password') {
+        const inputShell = documentRef.createElement('div');
+        inputShell.className = 'input-with-icon';
+        inputShell.appendChild(input);
+
+        const toggleButton = documentRef.createElement('button');
+        toggleButton.className = 'input-icon-btn';
+        toggleButton.type = 'button';
+        const labels = {
+          show: String(field.showPasswordLabel || `\u663e\u793a${labelText || '\u5bc6\u7801'}`),
+          hide: String(field.hidePasswordLabel || `\u9690\u85cf${labelText || '\u5bc6\u7801'}`),
+        };
+        syncPasswordToggleButton(toggleButton, input, labels);
+        toggleButton.addEventListener('click', () => {
+          input.type = input.type === 'password' ? 'text' : 'password';
+          syncPasswordToggleButton(toggleButton, input, labels);
+        });
+
+        inputShell.appendChild(toggleButton);
+        wrapper.appendChild(inputShell);
+      } else {
+        wrapper.appendChild(input);
+      }
 
       if (field.type !== 'textarea') {
         input.addEventListener('keydown', (event) => {

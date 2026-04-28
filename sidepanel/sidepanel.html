@@ -184,7 +184,13 @@
       </div>
       <div class="data-row" id="row-sub2api-password" style="display:none;">
         <span class="data-label">密码</span>
-        <input type="password" id="input-sub2api-password" class="data-input" placeholder="请输入 SUB2API 登录密码" />
+        <div class="input-with-icon">
+          <input type="password" id="input-sub2api-password" class="data-input data-input-with-icon"
+            placeholder="请输入 SUB2API 登录密码" />
+          <button id="btn-toggle-sub2api-password" class="input-icon-btn" type="button"
+            data-password-toggle="input-sub2api-password" data-show-label="显示 SUB2API 密码"
+            data-hide-label="隐藏 SUB2API 密码" aria-label="显示 SUB2API 密码" title="显示 SUB2API 密码"></button>
+        </div>
       </div>
       <div class="data-row" id="row-sub2api-group" style="display:none;">
         <span class="data-label">分组</span>
@@ -358,8 +364,14 @@
       </div>
       <div class="data-row" id="row-codex2api-admin-key" style="display:none;">
         <span class="data-label">管理密钥</span>
-        <input type="password" id="input-codex2api-admin-key" class="data-input"
-          placeholder="请输入 Codex2API Admin Secret" />
+        <div class="input-with-icon">
+          <input type="password" id="input-codex2api-admin-key" class="data-input data-input-with-icon"
+            placeholder="请输入 Codex2API Admin Secret" />
+          <button id="btn-toggle-codex2api-admin-key" class="input-icon-btn" type="button"
+            data-password-toggle="input-codex2api-admin-key" data-show-label="显示 Codex2API 管理密钥"
+            data-hide-label="隐藏 Codex2API 管理密钥" aria-label="显示 Codex2API 管理密钥"
+            title="显示 Codex2API 管理密钥"></button>
+        </div>
       </div>
       <div class="data-row" id="row-custom-password">
         <span class="data-label">账户密码</span>
@@ -572,7 +584,13 @@
       </div>
       <div class="data-row" id="row-hero-sms-api-key" style="display:none;">
         <span class="data-label">接码 API</span>
-        <input type="password" id="input-hero-sms-api-key" class="data-input mono" placeholder="请输入 HeroSMS API Key" />
+        <div class="input-with-icon">
+          <input type="password" id="input-hero-sms-api-key" class="data-input data-input-with-icon mono"
+            placeholder="请输入 HeroSMS API Key" />
+          <button id="btn-toggle-hero-sms-api-key" class="input-icon-btn" type="button"
+            data-password-toggle="input-hero-sms-api-key" data-show-label="显示 HeroSMS API Key"
+            data-hide-label="隐藏 HeroSMS API Key" aria-label="显示 HeroSMS API Key" title="显示 HeroSMS API Key"></button>
+        </div>
       </div>
       <div class="data-row">
         <span class="data-label">OAuth</span>
@@ -603,13 +621,23 @@
       </div>
       <div class="data-row" id="row-temp-email-admin-auth" style="display:none;">
         <span class="data-label">Admin Auth</span>
-        <input type="password" id="input-temp-email-admin-auth" class="data-input data-input-with-icon"
-          placeholder="Cloudflare Temp Email admin password" />
+        <div class="input-with-icon">
+          <input type="password" id="input-temp-email-admin-auth" class="data-input data-input-with-icon"
+            placeholder="Cloudflare Temp Email admin password" />
+          <button id="btn-toggle-temp-email-admin-auth" class="input-icon-btn" type="button"
+            data-password-toggle="input-temp-email-admin-auth" data-show-label="显示 Admin Auth"
+            data-hide-label="隐藏 Admin Auth" aria-label="显示 Admin Auth" title="显示 Admin Auth"></button>
+        </div>
       </div>
       <div class="data-row" id="row-temp-email-custom-auth" style="display:none;">
         <span class="data-label">Custom Auth</span>
-        <input type="password" id="input-temp-email-custom-auth" class="data-input data-input-with-icon"
-          placeholder="仅当站点启用了访问密码时再填写；这是额外鉴权，不替代 Admin Auth。" />
+        <div class="input-with-icon">
+          <input type="password" id="input-temp-email-custom-auth" class="data-input data-input-with-icon"
+            placeholder="仅当站点启用了访问密码时再填写；这是额外鉴权，不替代 Admin Auth。" />
+          <button id="btn-toggle-temp-email-custom-auth" class="input-icon-btn" type="button"
+            data-password-toggle="input-temp-email-custom-auth" data-show-label="显示 Custom Auth"
+            data-hide-label="隐藏 Custom Auth" aria-label="显示 Custom Auth" title="显示 Custom Auth"></button>
+        </div>
       </div>
       <div class="data-row" id="row-temp-email-receive-mailbox" style="display:none;">
         <span class="data-label">邮件接收</span>
@@ -683,12 +711,24 @@
         </div>
         <div class="data-row">
           <span class="data-label">邮箱密码</span>
-          <input type="password" id="input-hotmail-password" class="data-input" placeholder="可选，仅用于记录" />
+          <div class="input-with-icon">
+            <input type="password" id="input-hotmail-password" class="data-input data-input-with-icon"
+              placeholder="可选，仅用于记录" />
+            <button id="btn-toggle-hotmail-password" class="input-icon-btn" type="button"
+              data-password-toggle="input-hotmail-password" data-show-label="显示 Hotmail 密码"
+              data-hide-label="隐藏 Hotmail 密码" aria-label="显示 Hotmail 密码" title="显示 Hotmail 密码"></button>
+          </div>
         </div>
         <div class="data-row">
           <span class="data-label">刷新令牌</span>
-          <input type="password" id="input-hotmail-refresh-token" class="data-input mono"
-            placeholder="必填，粘贴刷新令牌（refresh token）" />
+          <div class="input-with-icon">
+            <input type="password" id="input-hotmail-refresh-token" class="data-input data-input-with-icon mono"
+              placeholder="必填，粘贴刷新令牌（refresh token）" />
+            <button id="btn-toggle-hotmail-refresh-token" class="input-icon-btn" type="button"
+              data-password-toggle="input-hotmail-refresh-token" data-show-label="显示 Hotmail 刷新令牌"
+              data-hide-label="隐藏 Hotmail 刷新令牌" aria-label="显示 Hotmail 刷新令牌"
+              title="显示 Hotmail 刷新令牌"></button>
+          </div>
         </div>
         <div class="data-row hotmail-actions-row">
           <span class="data-label"></span>
@@ -730,7 +770,13 @@
         </div>
         <div class="data-row">
           <span class="data-label">密码</span>
-          <input type="password" id="input-mail2925-password" class="data-input" placeholder="2925 登录密码" />
+          <div class="input-with-icon">
+            <input type="password" id="input-mail2925-password" class="data-input data-input-with-icon"
+              placeholder="2925 登录密码" />
+            <button id="btn-toggle-mail2925-password" class="input-icon-btn" type="button"
+              data-password-toggle="input-mail2925-password" data-show-label="显示 2925 密码"
+              data-hide-label="隐藏 2925 密码" aria-label="显示 2925 密码" title="显示 2925 密码"></button>
+          </div>
         </div>
         <div class="data-row hotmail-actions-row">
           <span class="data-label"></span>
@@ -760,7 +806,13 @@
       </div>
       <div class="data-row">
         <span class="data-label">API Key</span>
-        <input type="password" id="input-luckmail-api-key" class="data-input mono" placeholder="请输入 LuckMail API Key" />
+        <div class="input-with-icon">
+          <input type="password" id="input-luckmail-api-key" class="data-input data-input-with-icon mono"
+            placeholder="请输入 LuckMail API Key" />
+          <button id="btn-toggle-luckmail-api-key" class="input-icon-btn" type="button"
+            data-password-toggle="input-luckmail-api-key" data-show-label="显示 LuckMail API Key"
+            data-hide-label="隐藏 LuckMail API Key" aria-label="显示 LuckMail API Key" title="显示 LuckMail API Key"></button>
+        </div>
       </div>
       <div class="data-row">
         <span class="data-label">Base URL</span>

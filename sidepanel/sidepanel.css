@@ -2747,6 +2747,10 @@ header {
   width: 100%;
 }
 
+.modal-form-row .input-with-icon {
+  width: 100%;
+}
+
 .modal-form-alert {
   margin-top: -4px;
   margin-bottom: 14px;
