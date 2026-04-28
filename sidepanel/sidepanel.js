@@ -748,7 +748,7 @@ const IP_PROXY_SERVICE_LOGIN_CONFIGS = {
   '711proxy': {
     label: '711Proxy',
     url: 'https://www.711proxy.com/signup?code=AD2497',
-    buttonLabel: '登录',
+    buttonLabel: '注册',
   },
 };
 
@@ -3844,9 +3844,10 @@ function updateIpProxyServiceLoginButtonState(options = {}) {
     ? Boolean(options.enabled)
     : Boolean(getSelectedIpProxyEnabled());
   btnIpProxyServiceLogin.disabled = !enabled || !loginUrl;
-  btnIpProxyServiceLogin.textContent = loginConfig?.buttonLabel || '登录';
+  const buttonLabel = loginConfig?.buttonLabel || '登录';
+  btnIpProxyServiceLogin.textContent = buttonLabel;
   btnIpProxyServiceLogin.title = loginUrl
-    ? `打开 ${loginConfig?.label || service} 登录页`
+    ? `打开 ${loginConfig?.label || service} ${buttonLabel}页`
     : '当前代理服务没有可跳转的登录页';
 }
 
