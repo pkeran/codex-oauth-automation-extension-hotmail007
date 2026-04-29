@@ -32,11 +32,14 @@
       executeStepViaCompletionSignal,
       exportSettingsBundle,
       fetchGeneratedEmail,
+      finalizePhoneActivationAfterSuccessfulFlow,
       finalizeStep3Completion,
       finalizeIcloudAliasAfterSuccessfulFlow,
       findHotmailAccount,
+      findPayPalAccount,
       flushCommand,
       getCurrentLuckmailPurchase,
+      getCurrentPayPalAccount,
       getCurrentMail2925Account,
       getPendingAutoRunTimerPlan,
       getSourceLabel,
@@ -62,6 +65,7 @@
       refreshIpProxyPool,
       normalizeHotmailAccounts,
       normalizeMail2925Accounts,
+      normalizePayPalAccounts,
       normalizeRunCount,
       AUTO_RUN_TIMER_KIND_SCHEDULED_START,
       notifyStepComplete,
@@ -79,6 +83,7 @@
       selectLuckmailPurchase,
       switchIpProxy,
       changeIpProxyExit,
+      setCurrentPayPalAccount,
       setCurrentMail2925Account,
       setCurrentHotmailAccount,
       setContributionMode,
@@ -99,7 +104,9 @@
       deleteMail2925Account,
       deleteMail2925Accounts,
       syncHotmailAccounts,
+      syncPayPalAccounts,
       testHotmailAccountMailAccess,
+      upsertPayPalAccount,
       upsertMail2925Account,
       upsertHotmailAccount,
       verifyHotmailAccount,
@@ -203,9 +210,33 @@
         });
       }
       await finalizeIcloudAliasAfterSuccessfulFlow(latestState);
+      if (typeof finalizePhoneActivationAfterSuccessfulFlow === 'function') {
+        await finalizePhoneActivationAfterSuccessfulFlow(latestState);
+      }
     }
 
     async function handleStepData(step, payload) {
+      if (step === 1) {
+        const updates = {};
+        if (payload.oauthUrl) {
+          updates.oauthUrl = payload.oauthUrl;
+          broadcastDataUpdate({ oauthUrl: payload.oauthUrl });
+        }
+        if (payload.sub2apiSessionId !== undefined) updates.sub2apiSessionId = payload.sub2apiSessionId || null;
+        if (payload.sub2apiOAuthState !== undefined) updates.sub2apiOAuthState = payload.sub2apiOAuthState || null;
+        if (payload.sub2apiGroupId !== undefined) updates.sub2apiGroupId = payload.sub2apiGroupId || null;
+        if (payload.sub2apiDraftName !== undefined) updates.sub2apiDraftName = payload.sub2apiDraftName || null;
+        if (payload.sub2apiProxyId !== undefined) updates.sub2apiProxyId = payload.sub2apiProxyId || null;
+        if (payload.cpaOAuthState !== undefined) updates.cpaOAuthState = payload.cpaOAuthState || null;
+        if (payload.cpaManagementOrigin !== undefined) updates.cpaManagementOrigin = payload.cpaManagementOrigin || null;
+        if (payload.codex2apiSessionId !== undefined) updates.codex2apiSessionId = payload.codex2apiSessionId || null;
+        if (payload.codex2apiOAuthState !== undefined) updates.codex2apiOAuthState = payload.codex2apiOAuthState || null;
+        if (Object.keys(updates).length) {
+          await setState(updates);
+        }
+        return;
+      }
+
       const stateForStep = await getState();
       const stepKey = getStepKeyForState(step, stateForStep);
 
@@ -252,24 +283,6 @@
       }
 
       switch (step) {
-        case 1: {
-          const updates = {};
-          if (payload.oauthUrl) {
-            updates.oauthUrl = payload.oauthUrl;
-            broadcastDataUpdate({ oauthUrl: payload.oauthUrl });
-          }
-          if (payload.sub2apiSessionId !== undefined) updates.sub2apiSessionId = payload.sub2apiSessionId || null;
-          if (payload.sub2apiOAuthState !== undefined) updates.sub2apiOAuthState = payload.sub2apiOAuthState || null;
-          if (payload.sub2apiGroupId !== undefined) updates.sub2apiGroupId = payload.sub2apiGroupId || null;
-          if (payload.sub2apiDraftName !== undefined) updates.sub2apiDraftName = payload.sub2apiDraftName || null;
-          if (payload.sub2apiProxyId !== undefined) updates.sub2apiProxyId = payload.sub2apiProxyId || null;
-          if (payload.codex2apiSessionId !== undefined) updates.codex2apiSessionId = payload.codex2apiSessionId || null;
-          if (payload.codex2apiOAuthState !== undefined) updates.codex2apiOAuthState = payload.codex2apiOAuthState || null;
-          if (Object.keys(updates).length) {
-            await setState(updates);
-          }
-          break;
-        }
         case 2:
           if (payload.email) {
             await setEmailState(payload.email);
@@ -776,6 +789,16 @@
 
         case 'UPSERT_HOTMAIL_ACCOUNT': {
           const account = await upsertHotmailAccount(message.payload || {});
+          return { ok: true, account };
+        }
+
+        case 'UPSERT_PAYPAL_ACCOUNT': {
+          const account = await upsertPayPalAccount(message.payload || {});
+          return { ok: true, account };
+        }
+
+        case 'SELECT_PAYPAL_ACCOUNT': {
+          const account = await setCurrentPayPalAccount(String(message.payload?.accountId || ''));
           return { ok: true, account };
         }
 
