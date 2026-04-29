@@ -2381,9 +2381,16 @@ function collectSettingsPayload() {
   const heroSmsReuseEnabledValue = typeof inputHeroSmsReuseEnabled !== 'undefined' && inputHeroSmsReuseEnabled
     ? normalizeHeroSmsReuseEnabledValue(inputHeroSmsReuseEnabled.checked)
     : defaultHeroSmsReuseEnabled;
+  const normalizeHeroSmsAcquirePriorityValue = typeof normalizeHeroSmsAcquirePriority === 'function'
+    ? normalizeHeroSmsAcquirePriority
+    : (value) => (String(value || '').trim().toLowerCase() === 'price' ? 'price' : 'country');
   const heroSmsAcquirePriorityValue = typeof selectHeroSmsAcquirePriority !== 'undefined' && selectHeroSmsAcquirePriority
-    ? normalizeHeroSmsAcquirePriority(selectHeroSmsAcquirePriority.value)
-    : DEFAULT_HERO_SMS_ACQUIRE_PRIORITY;
+    ? normalizeHeroSmsAcquirePriorityValue(selectHeroSmsAcquirePriority.value)
+    : normalizeHeroSmsAcquirePriorityValue(
+      typeof DEFAULT_HERO_SMS_ACQUIRE_PRIORITY !== 'undefined'
+        ? DEFAULT_HERO_SMS_ACQUIRE_PRIORITY
+        : 'country'
+    );
   const heroSmsMaxPriceValue = typeof inputHeroSmsMaxPrice !== 'undefined' && inputHeroSmsMaxPrice
     ? normalizeHeroSmsMaxPriceValue(inputHeroSmsMaxPrice.value)
     : '';
