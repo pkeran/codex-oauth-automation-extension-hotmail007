@@ -135,6 +135,7 @@
       }
     }
 
+<<<<<<< HEAD
     function resolveLastStepIdForState(state = {}) {
       if (typeof getLastStepIdForState === 'function') {
         const fromResolver = Number(getLastStepIdForState(state));
@@ -147,56 +148,149 @@
         : Object.keys(state?.stepStatuses || {}).map((step) => Number(step)).filter(Number.isFinite);
       const sorted = stepIds.slice().sort((left, right) => left - right);
       return Math.max(10, sorted[sorted.length - 1] || 0);
+=======
+    function getStepKeyForState(step, state = {}) {
+      if (typeof getStepDefinitionForState === 'function') {
+        return String(getStepDefinitionForState(step, state)?.key || '').trim();
+      }
+      return '';
+    }
+
+    function isStepProtectedFromAutoSkip(status) {
+      return status === 'running'
+        || status === 'completed'
+        || status === 'manual_completed'
+        || status === 'skipped';
+    }
+
+    function findStepByKeyAfter(currentStep, targetKey, state = {}) {
+      const activeStepIds = typeof getStepIdsForState === 'function'
+        ? getStepIdsForState(state)
+        : [];
+      const candidates = activeStepIds.length ? activeStepIds : [Number(currentStep) + 1, 8];
+      return candidates.find((stepId) => {
+        const numericStep = Number(stepId);
+        if (!Number.isFinite(numericStep) || numericStep <= Number(currentStep)) {
+          return false;
+        }
+        const stepKey = getStepKeyForState(numericStep, state);
+        if (stepKey) {
+          return stepKey === targetKey;
+        }
+        return targetKey === 'fetch-login-code' && Number(currentStep) === 7 && numericStep === 8;
+      }) || null;
+    }
+
+    async function handlePlatformVerifyStepData(payload) {
+      if (payload.localhostUrl) {
+        await closeLocalhostCallbackTabs(payload.localhostUrl);
+      }
+      const latestState = await getState();
+      if (latestState.currentHotmailAccountId && isHotmailProvider(latestState)) {
+        await patchHotmailAccount(latestState.currentHotmailAccountId, {
+          used: true,
+          lastUsedAt: Date.now(),
+        });
+        await addLog('当前 Hotmail 账号已自动标记为已用。', 'ok');
+      }
+      if (String(latestState.mailProvider || '').trim().toLowerCase() === '2925' && latestState.currentMail2925AccountId) {
+        await patchMail2925Account(latestState.currentMail2925AccountId, {
+          lastUsedAt: Date.now(),
+          lastError: '',
+        });
+        await addLog('当前 2925 账号已记录最近使用时间。', 'ok');
+      }
+      if (isLuckmailProvider(latestState)) {
+        const currentPurchase = getCurrentLuckmailPurchase(latestState);
+        if (currentPurchase?.id) {
+          await setLuckmailPurchaseUsedState(currentPurchase.id, true);
+          await addLog(`当前 LuckMail 邮箱 ${currentPurchase.email_address} 已在本地标记为已用。`, 'ok');
+        }
+        await clearLuckmailRuntimeState({ clearEmail: true });
+        await addLog('当前 LuckMail 邮箱运行态已清空，下轮将优先复用未用邮箱或重新购买邮箱。', 'ok');
+      }
+      const localhostPrefix = buildLocalhostCleanupPrefix(payload.localhostUrl);
+      if (localhostPrefix) {
+        await closeTabsByUrlPrefix(localhostPrefix, {
+          excludeUrls: [payload.localhostUrl],
+          excludeLocalhostCallbacks: true,
+        });
+      }
+      await finalizeIcloudAliasAfterSuccessfulFlow(latestState);
+      if (typeof finalizePhoneActivationAfterSuccessfulFlow === 'function') {
+        await finalizePhoneActivationAfterSuccessfulFlow(latestState);
+      }
+>>>>>>> 705c749 (fix(flow): restore dynamic router handling and downstream reset safety)
     }
 
     async function handleStepData(step, payload) {
-      if (payload.skipLoginVerificationStep || payload.directOAuthConsentPage) {
-        const latestState = await getState();
-        const currentDefinition = typeof getStepDefinitionForState === 'function'
-          ? getStepDefinitionForState(step, latestState)
-          : null;
-        const currentKey = String(currentDefinition?.key || '').trim();
-        if (currentKey === 'oauth-login') {
-          const stepIds = typeof getStepIdsForState === 'function'
-            ? (getStepIdsForState(latestState) || [])
-            : Object.keys(latestState?.stepStatuses || {}).map((item) => Number(item)).filter(Number.isFinite);
-          const ordered = stepIds.slice().sort((left, right) => left - right);
-          const currentIndex = ordered.indexOf(Number(step));
-          const nextStep = currentIndex >= 0 ? ordered[currentIndex + 1] : null;
-          const nextDefinition = Number.isFinite(nextStep) && typeof getStepDefinitionForState === 'function'
-            ? getStepDefinitionForState(nextStep, latestState)
-            : null;
-          if (Number.isFinite(nextStep) && String(nextDefinition?.key || '').trim() === 'fetch-login-code') {
-            const nextStatus = latestState.stepStatuses?.[nextStep];
-            if (nextStatus !== 'running' && nextStatus !== 'completed' && nextStatus !== 'manual_completed') {
-              await setStepStatus(nextStep, 'skipped');
-              await addLog(`步骤 ${step}：检测到已直达 OAuth 授权页，已自动跳过步骤 ${nextStep} 登录验证码。`, 'warn');
+      if (step === 1) {
+        const updates = {};
+        if (payload.oauthUrl) {
+          updates.oauthUrl = payload.oauthUrl;
+          broadcastDataUpdate({ oauthUrl: payload.oauthUrl });
+        }
+        if (payload.sub2apiSessionId !== undefined) updates.sub2apiSessionId = payload.sub2apiSessionId || null;
+        if (payload.sub2apiOAuthState !== undefined) updates.sub2apiOAuthState = payload.sub2apiOAuthState || null;
+        if (payload.sub2apiGroupId !== undefined) updates.sub2apiGroupId = payload.sub2apiGroupId || null;
+        if (payload.sub2apiDraftName !== undefined) updates.sub2apiDraftName = payload.sub2apiDraftName || null;
+        if (payload.sub2apiProxyId !== undefined) updates.sub2apiProxyId = payload.sub2apiProxyId || null;
+        if (payload.cpaOAuthState !== undefined) updates.cpaOAuthState = payload.cpaOAuthState || null;
+        if (payload.cpaManagementOrigin !== undefined) updates.cpaManagementOrigin = payload.cpaManagementOrigin || null;
+        if (payload.codex2apiSessionId !== undefined) updates.codex2apiSessionId = payload.codex2apiSessionId || null;
+        if (payload.codex2apiOAuthState !== undefined) updates.codex2apiOAuthState = payload.codex2apiOAuthState || null;
+        if (Object.keys(updates).length) {
+          await setState(updates);
+        }
+        return;
+      }
+
+      const stateForStep = await getState();
+      const stepKey = getStepKeyForState(step, stateForStep);
+
+      if (stepKey === 'oauth-login') {
+        if (payload.skipLoginVerificationStep) {
+          await setState({ loginVerificationRequestedAt: null });
+          const latestState = await getState();
+          const loginCodeStep = findStepByKeyAfter(step, 'fetch-login-code', latestState);
+          if (loginCodeStep) {
+            const currentStatus = latestState.stepStatuses?.[loginCodeStep];
+            if (!isStepProtectedFromAutoSkip(currentStatus)) {
+              await setStepStatus(loginCodeStep, 'skipped');
+              await addLog(`步骤 ${step}：认证页已直接进入 OAuth 授权页，已自动跳过步骤 ${loginCodeStep} 的登录验证码。`, 'warn');
             }
           }
+        } else if (payload.loginVerificationRequestedAt) {
+          await setState({ loginVerificationRequestedAt: payload.loginVerificationRequestedAt });
         }
+        return;
+      }
+
+      if (stepKey === 'fetch-login-code') {
+        await setState({
+          lastEmailTimestamp: payload.emailTimestamp || null,
+          loginVerificationRequestedAt: null,
+        });
+        return;
+      }
+
+      if (stepKey === 'confirm-oauth') {
+        if (payload.localhostUrl) {
+          if (!isLocalhostOAuthCallbackUrl(payload.localhostUrl)) {
+            throw new Error(`步骤 ${step} 返回了无效的 localhost OAuth 回调地址。`);
+          }
+          await setState({ localhostUrl: payload.localhostUrl });
+          broadcastDataUpdate({ localhostUrl: payload.localhostUrl });
+        }
+        return;
+      }
+
+      if (stepKey === 'platform-verify') {
+        await handlePlatformVerifyStepData(payload);
+        return;
       }
 
       switch (step) {
-        case 1: {
-          const updates = {};
-          if (payload.oauthUrl) {
-            updates.oauthUrl = payload.oauthUrl;
-            broadcastDataUpdate({ oauthUrl: payload.oauthUrl });
-          }
-          if (payload.sub2apiSessionId !== undefined) updates.sub2apiSessionId = payload.sub2apiSessionId || null;
-          if (payload.sub2apiOAuthState !== undefined) updates.sub2apiOAuthState = payload.sub2apiOAuthState || null;
-          if (payload.sub2apiGroupId !== undefined) updates.sub2apiGroupId = payload.sub2apiGroupId || null;
-          if (payload.sub2apiDraftName !== undefined) updates.sub2apiDraftName = payload.sub2apiDraftName || null;
-          if (payload.sub2apiProxyId !== undefined) updates.sub2apiProxyId = payload.sub2apiProxyId || null;
-          if (payload.cpaOAuthState !== undefined) updates.cpaOAuthState = payload.cpaOAuthState || null;
-          if (payload.cpaManagementOrigin !== undefined) updates.cpaManagementOrigin = payload.cpaManagementOrigin || null;
-          if (payload.codex2apiSessionId !== undefined) updates.codex2apiSessionId = payload.codex2apiSessionId || null;
-          if (payload.codex2apiOAuthState !== undefined) updates.codex2apiOAuthState = payload.codex2apiOAuthState || null;
-          if (Object.keys(updates).length) {
-            await setState(updates);
-          }
-          break;
-        }
         case 2:
           if (payload.email) {
             await setEmailState(payload.email);
@@ -231,11 +325,6 @@
             await setState({ loginVerificationRequestedAt: payload.loginVerificationRequestedAt });
           }
           break;
-        case 7:
-          if (payload.loginVerificationRequestedAt) {
-            await setState({ loginVerificationRequestedAt: payload.loginVerificationRequestedAt });
-          }
-          break;
         case 4:
           await setState({
             lastEmailTimestamp: payload.emailTimestamp || null,
@@ -250,60 +339,6 @@
             }
           }
           break;
-        case 8:
-          await setState({
-            lastEmailTimestamp: payload.emailTimestamp || null,
-            loginVerificationRequestedAt: null,
-          });
-          break;
-        case 9:
-          if (payload.localhostUrl) {
-            if (!isLocalhostOAuthCallbackUrl(payload.localhostUrl)) {
-              throw new Error('步骤 9 返回了无效的 localhost OAuth 回调地址。');
-            }
-            await setState({ localhostUrl: payload.localhostUrl });
-            broadcastDataUpdate({ localhostUrl: payload.localhostUrl });
-          }
-          break;
-        case 10:
-        case 13: {
-          if (payload.localhostUrl) {
-            await closeLocalhostCallbackTabs(payload.localhostUrl);
-          }
-          const latestState = await getState();
-          if (latestState.currentHotmailAccountId && isHotmailProvider(latestState)) {
-            await patchHotmailAccount(latestState.currentHotmailAccountId, {
-              used: true,
-              lastUsedAt: Date.now(),
-            });
-            await addLog('当前 Hotmail 账号已自动标记为已用。', 'ok');
-          }
-          if (String(latestState.mailProvider || '').trim().toLowerCase() === '2925' && latestState.currentMail2925AccountId) {
-            await patchMail2925Account(latestState.currentMail2925AccountId, {
-              lastUsedAt: Date.now(),
-              lastError: '',
-            });
-            await addLog('当前 2925 账号已记录最近使用时间。', 'ok');
-          }
-          if (isLuckmailProvider(latestState)) {
-            const currentPurchase = getCurrentLuckmailPurchase(latestState);
-            if (currentPurchase?.id) {
-              await setLuckmailPurchaseUsedState(currentPurchase.id, true);
-              await addLog(`当前 LuckMail 邮箱 ${currentPurchase.email_address} 已在本地标记为已用。`, 'ok');
-            }
-            await clearLuckmailRuntimeState({ clearEmail: true });
-            await addLog('当前 LuckMail 邮箱运行态已清空，下轮将优先复用未用邮箱或重新购买邮箱。', 'ok');
-          }
-          const localhostPrefix = buildLocalhostCleanupPrefix(payload.localhostUrl);
-          if (localhostPrefix) {
-            await closeTabsByUrlPrefix(localhostPrefix, {
-              excludeUrls: [payload.localhostUrl],
-              excludeLocalhostCallbacks: true,
-            });
-          }
-          await finalizeIcloudAliasAfterSuccessfulFlow(latestState);
-          break;
-        }
         default:
           break;
       }
@@ -354,9 +389,11 @@
             return { ok: true, error: errorMessage };
           }
 
-          const latestState = await getState();
-          const lastStepId = resolveLastStepIdForState(latestState);
-          const completionState = message.step === lastStepId ? latestState : null;
+          const completionStateCandidate = await getState();
+          const lastStepId = typeof getLastStepIdForState === 'function'
+            ? getLastStepIdForState(completionStateCandidate)
+            : 10;
+          const completionState = message.step === lastStepId ? completionStateCandidate : null;
           await setStepStatus(message.step, 'completed');
           await addLog(`步骤 ${message.step} 已完成`, 'ok');
           await handleStepData(message.step, message.payload);
@@ -509,7 +546,8 @@
             await setPersistentSettings({ emailPrefix: message.payload.emailPrefix });
             await setState({ emailPrefix: message.payload.emailPrefix });
           }
-          if (doesStepUseCompletionSignal(step)) {
+          const executionState = await getState();
+          if (doesStepUseCompletionSignal(step, executionState)) {
             await executeStepViaCompletionSignal(step);
           } else {
             await executeStep(step);

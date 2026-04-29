@@ -4770,7 +4770,15 @@ function hasSavedProgress(statuses = {}) {
   return Object.values({ ...DEFAULT_STATE.stepStatuses, ...statuses }).some((status) => status !== 'pending');
 }
 
-function getDownstreamStateResets(step) {
+function getDownstreamStateResets(step, state = {}) {
+  const stepKey = typeof getStepExecutionKeyForState === 'function'
+    ? getStepExecutionKeyForState(step, state)
+    : String(
+      typeof getStepDefinitionForState === 'function'
+        ? (getStepDefinitionForState(step, state)?.key || '')
+        : ''
+    ).trim();
+
   if (step <= 1) {
     return {
       oauthUrl: null,
@@ -4861,7 +4869,7 @@ async function invalidateDownstreamAfterStepRestart(step, options = {}) {
     await addLog(`${logLabel}，已重置后续步骤状态：${changedSteps.join(', ')}`, 'warn');
   }
 
-  const resets = getDownstreamStateResets(step);
+  const resets = getDownstreamStateResets(step, state);
   if (Object.keys(resets).length) {
     await setState(resets);
     broadcastDataUpdate(resets);
