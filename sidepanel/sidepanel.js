@@ -7846,7 +7846,6 @@ selectHeroSmsAcquirePriority?.addEventListener('change', () => {
 });
 inputHeroSmsMaxPrice?.addEventListener('input', () => {
   markSettingsDirty(true);
-  scheduleSettingsAutoSave();
 });
 inputHeroSmsMaxPrice?.addEventListener('blur', () => {
   inputHeroSmsMaxPrice.value = normalizeHeroSmsMaxPriceValue(inputHeroSmsMaxPrice.value);
