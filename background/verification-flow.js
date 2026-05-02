@@ -1254,6 +1254,9 @@
             code: result.code,
             phoneVerificationRequired: Boolean(submitResult.addPhonePage),
             ...(step === 4 && submitResult?.skipProfileStep ? { skipProfileStep: true } : {}),
+            ...(step === 4 && submitResult?.skipProfileStepReason
+              ? { skipProfileStepReason: submitResult.skipProfileStepReason }
+              : {}),
           });
           triggerPostSuccessMailboxCleanup(step, mail);
           return {
