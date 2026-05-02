@@ -1144,10 +1144,11 @@ function isLikelyLoggedInChatgptHomeUrl(rawUrl = location.href) {
   }
 }
 
-function getStep4PostVerificationState() {
+function getStep4PostVerificationState(options = {}) {
+  const { ignoreVerificationVisibility = false } = options;
   // Newer auth flows can briefly render profile fields before the email-verification
   // form fully exits. Do not advance to Step 5 while verification UI is still present.
-  if (isVerificationPageStillVisible()) {
+  if (!ignoreVerificationVisibility && isVerificationPageStillVisible()) {
     return null;
   }
 
@@ -2388,7 +2389,7 @@ async function waitForVerificationSubmitOutcome(step, timeout) {
     }
 
     if (step === 4) {
-      const postVerificationState = getStep4PostVerificationState();
+      const postVerificationState = getStep4PostVerificationState({ ignoreVerificationVisibility: true });
       if (postVerificationState?.state === 'logged_in_home') {
         return {
           success: true,
@@ -2423,7 +2424,7 @@ async function waitForVerificationSubmitOutcome(step, timeout) {
       throw createSignupUserAlreadyExistsError();
     }
 
-    const postVerificationState = getStep4PostVerificationState();
+    const postVerificationState = getStep4PostVerificationState({ ignoreVerificationVisibility: true });
     if (postVerificationState?.state === 'logged_in_home') {
       return {
         success: true,
