@@ -56,8 +56,9 @@ test('step definitions module exposes ordered normal and Plus step metadata', ()
   assert.equal(plusSteps.some((step) => step.key === 'clear-login-cookies'), false);
   assert.equal(plusSteps.some((step) => step.key === 'fetch-login-code'), true);
   assert.equal(plusSteps.find((step) => step.key === 'paypal-approve')?.title, 'PayPal 登录与授权');
-  assert.equal(goPaySteps.find((step) => step.key === 'paypal-approve')?.title, 'GoPay 手机验证与授权');
-  assert.equal(api.getStepById(8, { plusModeEnabled: true, plusPaymentMethod: 'gopay' })?.title, 'GoPay 手机验证与授权');
+  assert.equal(goPaySteps.some((step) => step.key === 'paypal-approve'), false);
+  assert.equal(api.getStepById(8, { plusModeEnabled: true, plusPaymentMethod: 'gopay' }), null);
+  assert.equal(api.getPlusPaymentStepTitle({ plusModeEnabled: true, plusPaymentMethod: 'gopay' }), '');
   assert.deepStrictEqual(api.getStepIds({ plusModeEnabled: true }), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
   assert.equal(api.getLastStepId({ plusModeEnabled: true }), 13);
   assert.equal(plusSteps[5].title, '创建 Plus Checkout');

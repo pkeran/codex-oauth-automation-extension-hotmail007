@@ -16,6 +16,8 @@ test('background imports step registry and shared step definitions', () => {
   assert.match(source, /activeStepRegistry\.executeStep\(step,\s*\{/);
   assert.match(source, /background\/steps\/create-plus-checkout\.js/);
   assert.match(source, /background\/steps\/fill-plus-checkout\.js/);
+  assert.match(source, /background\/steps\/gopay-manual-confirm\.js/);
+  assert.match(source, /'gopay-subscription-confirm': \(state\) => goPayManualConfirmExecutor\.executeGoPayManualConfirm\(state\)/);
   assert.match(source, /background\/steps\/paypal-approve\.js/);
   assert.match(source, /background\/steps\/gopay-approve\.js/);
   assert.match(source, /background\/steps\/plus-return-confirm\.js/);

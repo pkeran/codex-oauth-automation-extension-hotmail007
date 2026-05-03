@@ -1,6 +1,10 @@
 (function attachStepDefinitions(root, factory) {
   root.MultiPageStepDefinitions = factory();
 })(typeof self !== 'undefined' ? self : globalThis, function createStepDefinitionsModule() {
+  const PLUS_PAYMENT_METHOD_PAYPAL = 'paypal';
+  const PLUS_PAYMENT_METHOD_GOPAY = 'gopay';
+  const PLUS_PAYMENT_STEP_KEY = 'paypal-approve';
+
   const NORMAL_STEP_DEFINITIONS = [
     { id: 1, order: 10, key: 'open-chatgpt', title: '打开 ChatGPT 官网' },
     { id: 2, order: 20, key: 'submit-signup-email', title: '注册并输入邮箱' },
@@ -37,9 +41,7 @@
     { id: 4, order: 40, key: 'fetch-signup-code', title: '获取注册验证码' },
     { id: 5, order: 50, key: 'fill-profile', title: '填写姓名和生日' },
     { id: 6, order: 60, key: 'plus-checkout-create', title: '打开 GoPay 订阅页' },
-    { id: 7, order: 70, key: 'plus-checkout-billing', title: '填写 GoPay 账单并提交订阅' },
-    { id: 8, order: 80, key: 'paypal-approve', title: 'GoPay 手机验证与授权' },
-    { id: 9, order: 90, key: 'plus-checkout-return', title: '订阅回跳确认' },
+    { id: 7, order: 70, key: 'gopay-subscription-confirm', title: '等待 GoPay 订阅确认' },
     { id: 10, order: 100, key: 'oauth-login', title: '刷新 OAuth 并登录' },
     { id: 11, order: 110, key: 'fetch-login-code', title: '获取登录验证码' },
     { id: 12, order: 120, key: 'confirm-oauth', title: '自动确认 OAuth' },
@@ -53,20 +55,14 @@
   function normalizePlusPaymentMethod(value = '') {
     return String(value || '').trim().toLowerCase() === PLUS_PAYMENT_METHOD_GOPAY
       ? PLUS_PAYMENT_METHOD_GOPAY
-      : 'paypal';
-  }
-
-  function getPlusPaymentStepTitle(options = {}) {
-    return normalizePlusPaymentMethod(options?.plusPaymentMethod) === PLUS_PAYMENT_METHOD_GOPAY
-      ? 'GoPay 手机验证与授权'
-      : 'PayPal 登录与授权';
+      : PLUS_PAYMENT_METHOD_PAYPAL;
   }
 
   function getModeStepDefinitions(options = {}) {
     if (!isPlusModeEnabled(options)) {
       return NORMAL_STEP_DEFINITIONS;
     }
-    return normalizePlusPaymentMethod(options?.plusPaymentMethod || options?.paymentMethod) === 'gopay'
+    return normalizePlusPaymentMethod(options?.plusPaymentMethod || options?.paymentMethod) === PLUS_PAYMENT_METHOD_GOPAY
       ? PLUS_GOPAY_STEP_DEFINITIONS
       : PLUS_PAYPAL_STEP_DEFINITIONS;
   }

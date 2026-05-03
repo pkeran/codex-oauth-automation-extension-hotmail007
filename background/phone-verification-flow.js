@@ -71,8 +71,19 @@
     const DEFAULT_PHONE_ACTIVATION_RETRY_DELAY_MS = 2000;
     const HERO_SMS_ACQUIRE_PRIORITY_COUNTRY = 'country';
     const HERO_SMS_ACQUIRE_PRIORITY_PRICE = 'price';
-    const PHONE_SMS_PROVIDER_HERO_SMS = 'hero-sms';
-    const PHONE_SMS_PROVIDER_FIVE_SIM = '5sim';
+    const HERO_SMS_ACQUIRE_PRIORITY_PRICE_HIGH = 'price_high';
+    const PHONE_SMS_PROVIDER_HERO = 'hero-sms';
+    const PHONE_SMS_PROVIDER_5SIM = '5sim';
+    const PHONE_SMS_PROVIDER_HERO_SMS = PHONE_SMS_PROVIDER_HERO;
+    const PHONE_SMS_PROVIDER_FIVE_SIM = PHONE_SMS_PROVIDER_5SIM;
+    const PHONE_SMS_PROVIDER_NEXSMS = 'nexsms';
+    const DEFAULT_PHONE_SMS_PROVIDER = PHONE_SMS_PROVIDER_HERO;
+    const DEFAULT_PHONE_SMS_PROVIDER_ORDER = Object.freeze([
+      PHONE_SMS_PROVIDER_HERO,
+      PHONE_SMS_PROVIDER_5SIM,
+      PHONE_SMS_PROVIDER_NEXSMS,
+    ]);
+    const MAX_PHONE_REUSABLE_POOL = 12;
     const PHONE_CODE_TIMEOUT_ERROR_PREFIX = 'PHONE_CODE_TIMEOUT::';
     const PHONE_RESTART_STEP7_ERROR_PREFIX = 'PHONE_RESTART_STEP7::';
     const PHONE_RESEND_THROTTLED_ERROR_PREFIX = 'PHONE_RESEND_THROTTLED::';
@@ -666,19 +677,19 @@
       return normalizedMap;
     }
 
-    function normalizePhoneSmsProvider(value = '') {
-      const normalized = String(value || '').trim().toLowerCase();
-      return normalized === PHONE_SMS_PROVIDER_FIVE_SIM
-        ? PHONE_SMS_PROVIDER_FIVE_SIM
-        : PHONE_SMS_PROVIDER_HERO_SMS;
-    }
-
     function getActivationProviderId(activation = {}, state = {}) {
       return normalizePhoneSmsProvider(activation?.provider || state?.phoneSmsProvider);
     }
 
     function getPhoneSmsProviderLabel(providerId) {
-      return normalizePhoneSmsProvider(providerId) === PHONE_SMS_PROVIDER_FIVE_SIM ? '5sim' : 'HeroSMS';
+      const provider = normalizePhoneSmsProvider(providerId);
+      if (provider === PHONE_SMS_PROVIDER_FIVE_SIM) {
+        return '5sim';
+      }
+      if (provider === PHONE_SMS_PROVIDER_NEXSMS) {
+        return 'NexSMS';
+      }
+      return 'HeroSMS';
     }
 
     function formatStep9Reason(reason = '') {
@@ -717,7 +728,7 @@
       const rootScope = typeof self !== 'undefined' ? self : globalThis;
       const factory = createFiveSimProvider || rootScope.PhoneSmsFiveSimProvider?.createProvider;
       if (typeof factory !== 'function') {
-        throw new Error('5sim 平台适配器未加载。');
+        return null;
       }
       return factory({
         addLog,
@@ -895,14 +906,29 @@
       const provider = normalizePhoneSmsProvider(rawProvider);
       const rawCountryId = record.countryId ?? record.country;
       const fallbackCountryId = provider === PHONE_SMS_PROVIDER_FIVE_SIM ? 'england' : HERO_SMS_COUNTRY_ID;
+      const expiresAt = normalizeTimestampMs(record.expiresAt);
+      const serviceCode = String(
+        record.serviceCode
+        || (
+          provider === PHONE_SMS_PROVIDER_FIVE_SIM
+            ? DEFAULT_FIVE_SIM_PRODUCT
+            : (provider === PHONE_SMS_PROVIDER_NEXSMS ? DEFAULT_NEX_SMS_SERVICE_CODE : HERO_SMS_SERVICE_CODE)
+        )
+      ).trim();
+      const countryId = provider === PHONE_SMS_PROVIDER_FIVE_SIM
+        ? normalizeFiveSimCountryId(record.countryCode ?? rawCountryId, fallbackCountryId)
+        : (
+          provider === PHONE_SMS_PROVIDER_NEXSMS
+            ? normalizeNexSmsCountryId(rawCountryId, 0)
+            : normalizeCountryId(rawCountryId, fallbackCountryId)
+        );
       return {
         activationId,
         phoneNumber,
         provider,
-        serviceCode: String(record.serviceCode || HERO_SMS_SERVICE_CODE).trim() || HERO_SMS_SERVICE_CODE,
-        countryId: provider === PHONE_SMS_PROVIDER_FIVE_SIM
-          ? normalizeFiveSimCountryId(rawCountryId, fallbackCountryId)
-          : normalizeCountryId(rawCountryId, fallbackCountryId),
+        serviceCode,
+        countryId,
+        ...(provider === PHONE_SMS_PROVIDER_FIVE_SIM ? { countryCode: countryId } : {}),
         ...(countryLabel ? { countryLabel } : {}),
         successfulUses: normalizeUseCount(record.successfulUses),
         maxUses: Math.max(1, Math.floor(Number(record.maxUses) || DEFAULT_PHONE_NUMBER_MAX_USES)),
@@ -2788,7 +2814,9 @@
     async function requestPhoneActivation(state = {}, options = {}) {
       if (normalizePhoneSmsProvider(state?.phoneSmsProvider) === PHONE_SMS_PROVIDER_FIVE_SIM) {
         const provider = getFiveSimProviderForState(state);
-        return provider.requestActivation(state, options);
+        if (provider) {
+          return provider.requestActivation(state, options);
+        }
       }
       const config = resolvePhoneConfig(state);
       if (config.provider === PHONE_SMS_PROVIDER_5SIM) {
@@ -3100,7 +3128,9 @@
       }
       if (getActivationProviderId(normalizedActivation, state) === PHONE_SMS_PROVIDER_FIVE_SIM) {
         const provider = getFiveSimProviderForState(state);
-        return provider.reuseActivation(state, normalizedActivation);
+        if (provider) {
+          return provider.reuseActivation(state, normalizedActivation);
+        }
       }
 
       const config = resolvePhoneConfig(state);
@@ -3184,8 +3214,10 @@
     async function completePhoneActivation(state = {}, activation) {
       if (getActivationProviderId(activation, state) === PHONE_SMS_PROVIDER_FIVE_SIM) {
         const provider = getFiveSimProviderForState(state);
-        await provider.finishActivation(state, activation);
-        return;
+        if (provider) {
+          await provider.finishActivation(state, activation);
+          return;
+        }
       }
       await setPhoneActivationStatus(state, activation, 6, 'HeroSMS setStatus(6)');
     }
@@ -3194,8 +3226,10 @@
       try {
         if (getActivationProviderId(activation, state) === PHONE_SMS_PROVIDER_FIVE_SIM) {
           const provider = getFiveSimProviderForState(state);
-          await provider.cancelActivation(state, activation);
-          return;
+          if (provider) {
+            await provider.cancelActivation(state, activation);
+            return;
+          }
         }
         await setPhoneActivationStatus(state, activation, 8, 'HeroSMS setStatus(8)');
       } catch (_) {
@@ -3207,8 +3241,10 @@
       try {
         if (getActivationProviderId(activation, state) === PHONE_SMS_PROVIDER_FIVE_SIM) {
           const provider = getFiveSimProviderForState(state);
-          await provider.banActivation(state, activation);
-          return;
+          if (provider) {
+            await provider.banActivation(state, activation);
+            return;
+          }
         }
         await setPhoneActivationStatus(state, activation, 8, 'HeroSMS setStatus(8)');
       } catch (_) {
@@ -3239,7 +3275,9 @@
       }
       if (getActivationProviderId(normalizedActivation, state) === PHONE_SMS_PROVIDER_FIVE_SIM) {
         const provider = getFiveSimProviderForState(state);
-        return provider.pollActivationCode(state, normalizedActivation, options);
+        if (provider) {
+          return provider.pollActivationCode(state, normalizedActivation, options);
+        }
       }
       const statusAction = resolveActivationStatusAction(normalizedActivation);
 
@@ -3460,7 +3498,14 @@
 
     function resolveCountryCandidatesForProvider(state = {}, providerId = normalizePhoneSmsProvider(state?.phoneSmsProvider)) {
       if (normalizePhoneSmsProvider(providerId) === PHONE_SMS_PROVIDER_FIVE_SIM) {
-        return getFiveSimProviderForState(state).resolveCountryCandidates(state);
+        const provider = getFiveSimProviderForState(state);
+        if (provider) {
+          return provider.resolveCountryCandidates(state);
+        }
+        return resolveFiveSimCountryCandidates(state);
+      }
+      if (normalizePhoneSmsProvider(providerId) === PHONE_SMS_PROVIDER_NEXSMS) {
+        return resolveNexSmsCountryCandidates(state);
       }
       return resolveCountryCandidates(state);
     }
@@ -3541,6 +3586,12 @@
       });
 
       if (result?.error) {
+        if (isPhoneNumberUsedError(result.error)) {
+          return {
+            invalidCode: true,
+            errorText: String(result.error || ''),
+          };
+        }
         throw new Error(result.error);
       }
       return result || {};
@@ -3677,59 +3728,212 @@
     }
 
     async function acquirePhoneActivation(state = {}, options = {}) {
-      const activeProviderId = normalizePhoneSmsProvider(state?.phoneSmsProvider);
-      const countryCandidates = resolveCountryCandidatesForProvider(state, activeProviderId);
-      const normalizeBlockedCountryId = (value) => (
-        activeProviderId === PHONE_SMS_PROVIDER_FIVE_SIM
-          ? normalizeFiveSimCountryId(value, '')
-          : normalizeCountryId(value, 0)
+      const provider = normalizePhoneSmsProvider(state?.phoneSmsProvider || DEFAULT_PHONE_SMS_PROVIDER);
+      const providerOrder = resolvePhoneProviderOrder(state, provider);
+      const countryCandidates = resolveCountryCandidatesForProvider(state, provider);
+      if (
+        (provider === PHONE_SMS_PROVIDER_5SIM || provider === PHONE_SMS_PROVIDER_NEXSMS)
+        && !countryCandidates.length
+      ) {
+        throw new Error(`Step 9: ${provider === PHONE_SMS_PROVIDER_5SIM ? '5sim' : 'NexSMS'} countries are empty. Please select at least one country in 接码设置。`);
+      }
+      const normalizeCountryKey = (value) => (
+        provider === PHONE_SMS_PROVIDER_5SIM
+          ? normalizeFiveSimCountryCode(value, '')
+          : (
+            provider === PHONE_SMS_PROVIDER_NEXSMS
+              ? String(normalizeNexSmsCountryId(value, -1))
+              : String(normalizeCountryId(value, 0))
+          )
       );
       const blockedCountryIds = new Set(
         (Array.isArray(options?.blockedCountryIds) ? options.blockedCountryIds : [])
-          .map(normalizeBlockedCountryId)
-          .filter(Boolean)
+          .map((value) => normalizeCountryKey(value))
+          .filter((id) => (
+            provider === PHONE_SMS_PROVIDER_NEXSMS
+              ? (id !== '' && id !== null && id !== undefined)
+              : Boolean(id && id !== '0')
+          ))
       );
       const allowedCountryIds = new Set(
         countryCandidates
-          .map((entry) => normalizeBlockedCountryId(entry.id))
-          .filter((id) => id && !blockedCountryIds.has(id))
+          .map((entry) => normalizeCountryKey(entry.id || entry.code))
+          .filter((id) => (
+            provider === PHONE_SMS_PROVIDER_NEXSMS
+              ? (id !== '' && id !== null && id !== undefined && !blockedCountryIds.has(id))
+              : Boolean(id && id !== '0' && !blockedCountryIds.has(id))
+          ))
       );
-      const preferredCountryLabel = countryCandidates[0]?.label || (activeProviderId === PHONE_SMS_PROVIDER_FIVE_SIM ? 'England' : HERO_SMS_COUNTRY_LABEL);
-      const resolveCountryLabelById = (countryId) => (
-        countryCandidates.find((entry) => normalizeBlockedCountryId(entry.id) === normalizeBlockedCountryId(countryId))?.label
-        || preferredCountryLabel
+      const preferredCountryLabel = countryCandidates[0]?.label || (
+        provider === PHONE_SMS_PROVIDER_5SIM
+          ? ''
+          : (
+            provider === PHONE_SMS_PROVIDER_NEXSMS
+              ? ''
+              : HERO_SMS_COUNTRY_LABEL
+          )
       );
-      const reuseEnabled = isPhoneSmsReuseEnabled(state);
-      const reusableActivation = normalizeActivation(state[REUSABLE_PHONE_ACTIVATION_STATE_KEY]);
-      if (
-        reuseEnabled
-        &&
-        reusableActivation
-        && reusableActivation.provider === activeProviderId
-        && !blockedCountryIds.has(normalizeBlockedCountryId(reusableActivation.countryId))
-        && allowedCountryIds.has(normalizeBlockedCountryId(reusableActivation.countryId))
-        && reusableActivation.successfulUses < reusableActivation.maxUses
-      ) {
+      const resolveCountryLabelById = (countryId) => {
+        const normalizedCountryKey = normalizeCountryKey(countryId);
+        return countryCandidates.find((entry) => normalizeCountryKey(entry.id || entry.code) === normalizedCountryKey)?.label
+          || preferredCountryLabel;
+      };
+      const scopedStateForProvider = (providerName) => ({
+        ...state,
+        phoneSmsProvider: normalizePhoneSmsProvider(providerName),
+      });
+      const preferredActivation = normalizeActivation(state[PREFERRED_PHONE_ACTIVATION_STATE_KEY]);
+      let failedPreferredActivation = null;
+      const canTryPreferredActivation = (
+        !Boolean(options?.skipPreferredActivation)
+        && preferredActivation
+        && (provider === PHONE_SMS_PROVIDER_HERO || provider === PHONE_SMS_PROVIDER_5SIM)
+        && preferredActivation.provider === provider
+        && !blockedCountryIds.has(normalizeCountryKey(preferredActivation.countryId))
+        && allowedCountryIds.has(normalizeCountryKey(preferredActivation.countryId))
+        && preferredActivation.successfulUses < preferredActivation.maxUses
+      );
+      if (canTryPreferredActivation) {
         try {
           const reactivated = await reactivatePhoneActivation(state, preferredActivation);
           await addLog(
-            `步骤 9：复用 ${resolveCountryLabelById(reactivated.countryId)} 号码 ${reactivated.phoneNumber}（第 ${reactivated.successfulUses + 1}/${reactivated.maxUses} 次）。`,
+            `步骤 9：优先复用手动选择号码 ${reactivated.phoneNumber}${reactivated.countryId ? `（${resolveCountryLabelById(reactivated.countryId)}）` : ''}。`,
             'info'
           );
           await resetPhoneNoSupplyFailureStreak(state);
           return reactivated;
         } catch (error) {
-          await addLog(`步骤 9：复用号码 ${reusableActivation.phoneNumber} 失败，将改为获取新号码。${error.message}`, 'warn');
-          await clearReusableActivation();
+          failedPreferredActivation = preferredActivation;
+          await removeReusableActivationFromPool(preferredActivation, { state }).catch(() => {});
+          await addLog(
+            `步骤 9：手动选择号码 ${preferredActivation.phoneNumber} 不可用，将改为获取新号码。${error.message}`,
+            'warn'
+          );
+        }
+      }
+      const reuseEnabled = isPhoneSmsReuseEnabled(state);
+      const reusableActivation = normalizeActivation(state[REUSABLE_PHONE_ACTIVATION_STATE_KEY]);
+      const reusableActivationPool = readReusableActivationPoolFromState(state);
+      const reusableCandidates = [];
+      const seenReusableKeys = new Set();
+      const pushReusableCandidate = (candidate) => {
+        const normalizedCandidate = normalizeActivation(candidate);
+        if (!normalizedCandidate) {
+          return;
+        }
+        const candidateKey = buildActivationIdentityKey(normalizedCandidate);
+        if (!candidateKey || seenReusableKeys.has(candidateKey)) {
+          return;
+        }
+        seenReusableKeys.add(candidateKey);
+        reusableCandidates.push(normalizedCandidate);
+      };
+      pushReusableCandidate(reusableActivation);
+      reusableActivationPool.forEach((candidate) => pushReusableCandidate(candidate));
+
+      if (reuseEnabled && (provider === PHONE_SMS_PROVIDER_HERO || provider === PHONE_SMS_PROVIDER_5SIM)) {
+        for (const candidateActivation of reusableCandidates) {
+          if (candidateActivation.provider !== provider) {
+            continue;
+          }
+          if (isSameActivation(candidateActivation, failedPreferredActivation)) {
+            continue;
+          }
+          if (candidateActivation.successfulUses >= candidateActivation.maxUses) {
+            continue;
+          }
+          if (blockedCountryIds.has(normalizeCountryKey(candidateActivation.countryId))) {
+            continue;
+          }
+          if (!allowedCountryIds.has(normalizeCountryKey(candidateActivation.countryId))) {
+            continue;
+          }
+          try {
+            const reactivated = await reactivatePhoneActivation(state, candidateActivation);
+            await addLog(
+              `步骤 9：复用 ${resolveCountryLabelById(reactivated.countryId)} 号码 ${reactivated.phoneNumber}（第 ${reactivated.successfulUses + 1}/${reactivated.maxUses} 次）。`,
+              'info'
+            );
+            await resetPhoneNoSupplyFailureStreak(state);
+            return reactivated;
+          } catch (error) {
+            await addLog(`步骤 9：复用号码 ${candidateActivation.phoneNumber} 失败，将改为获取新号码。${error.message}`, 'warn');
+            await removeReusableActivationFromPool(candidateActivation, { state }).catch(() => {});
+            if (isSameActivation(reusableActivation, candidateActivation)) {
+              await clearReusableActivation();
+            }
+          }
         }
       }
 
-      const activation = await requestPhoneActivation(state, { blockedCountryIds: Array.from(blockedCountryIds) });
-      await addLog(
-        `步骤 9：已从 ${getPhoneSmsProviderLabel(activation.provider)} 获取 ${resolveCountryLabelById(activation.countryId)} 号码 ${activation.phoneNumber}。`,
-        'info'
-      );
-      return activation;
+      let lastProviderError = null;
+      const providerErrors = [];
+      const skippedFallbackProviders = [];
+      for (const providerCandidate of providerOrder) {
+        const useBlockedCountryIds = providerCandidate === provider
+          ? Array.from(blockedCountryIds)
+          : [];
+        const useCountryPriceFloorByCountryId = (
+          providerCandidate === provider
+          && options?.countryPriceFloorByCountryId
+          && typeof options.countryPriceFloorByCountryId === 'object'
+        )
+          ? options.countryPriceFloorByCountryId
+          : {};
+        try {
+          const activation = await requestPhoneActivation(
+            scopedStateForProvider(providerCandidate),
+            {
+              blockedCountryIds: useBlockedCountryIds,
+              countryPriceFloorByCountryId: useCountryPriceFloorByCountryId,
+            }
+          );
+          const providerLabel = getPhoneSmsProviderLabel(providerCandidate);
+          const providerCountryLabel = providerCandidate === provider
+            ? resolveCountryLabelById(activation.countryId)
+            : String(activation?.countryLabel || activation?.countryId || '').trim();
+          if (providerCandidate !== provider) {
+            await addLog(
+              `步骤 9：主接码平台 ${getPhoneSmsProviderLabel(provider)} 暂无可用号码，已回退到 ${providerLabel}${providerCountryLabel ? ` / ${providerCountryLabel}` : ''}。`,
+              'warn'
+            );
+          }
+          await addLog(
+            `步骤 9：已从 ${providerLabel}${providerCountryLabel ? ` / ${providerCountryLabel}` : ''} 获取号码 ${activation.phoneNumber}。`,
+            'info'
+          );
+          await resetPhoneNoSupplyFailureStreak(state);
+          return activation;
+        } catch (error) {
+          if (isStopRequestedError(error)) {
+            throw error;
+          }
+          const providerErrorMessage = String(error?.message || error || 'unknown error');
+          const providerLabel = getPhoneSmsProviderLabel(providerCandidate);
+          if (
+            providerCandidate !== provider
+            && /step\s*9:\s*(?:5sim|nexsms)\s+countries\s+are\s+empty/i.test(providerErrorMessage)
+          ) {
+            skippedFallbackProviders.push(`${providerLabel}: countries are empty`);
+            await addLog(
+              `步骤 9：跳过回退接码平台 ${providerLabel}，因为接码设置中未选择国家。`,
+              'warn'
+            );
+            continue;
+          }
+          lastProviderError = error;
+          providerErrors.push(`${providerCandidate}: ${providerErrorMessage}`);
+        }
+      }
+
+      if (providerErrors.length) {
+        await logNoSupplyDiagnostics(state, providerOrder, providerErrors);
+        const skippedSuffix = skippedFallbackProviders.length
+          ? ` | skipped fallback providers: ${skippedFallbackProviders.join('; ')}`
+          : '';
+        throw new Error(`Step 9: all provider candidates failed to acquire number. ${providerErrors.join(' | ')}${skippedSuffix}`);
+      }
+      throw lastProviderError || new Error('Step 9: failed to acquire phone activation.');
     }
 
     async function markActivationReusableAfterSuccess(state, activation) {
@@ -3742,13 +3946,18 @@
         await clearReusableActivation();
         return;
       }
+      const reusableProvider = normalizedActivation.provider;
+      const canPersistReusableActivation = reusableProvider === PHONE_SMS_PROVIDER_HERO
+        || reusableProvider === PHONE_SMS_PROVIDER_5SIM;
+      if (!canPersistReusableActivation) {
+        await clearReusableActivation();
+        return;
+      }
 
       const successfulUses = normalizedActivation.successfulUses + 1;
       const nextReusableActivation = {
         ...normalizedActivation,
-        successfulUses: normalizedActivation.provider === PHONE_SMS_PROVIDER_5SIM
-          ? 1
-          : successfulUses,
+        successfulUses,
       };
       await upsertReusableActivationPool(nextReusableActivation, { state });
       if (!normalizeHeroSmsReuseEnabled(state?.heroSmsReuseEnabled)) {
@@ -4015,24 +4224,23 @@
       );
 
       const getCountryFailureCount = (countryId, providerId = normalizePhoneSmsProvider(state?.phoneSmsProvider)) => {
-        const normalizedCountryId = getCountryFailureKey(countryId, providerId);
-        if (!normalizedCountryId) {
+        const countryKey = normalizeCountryFailureKey(countryId, providerId);
+        if (!countryKey) {
           return 0;
         }
         return Math.max(0, Math.floor(Number(countrySmsFailureCounts.get(countryKey)) || 0));
       };
 
       const markCountrySmsFailure = async (countryId, reason = 'sms_timeout', providerId = normalizePhoneSmsProvider(state?.phoneSmsProvider)) => {
-        const normalizedCountryId = getCountryFailureKey(countryId, providerId);
-        if (!normalizedCountryId) {
+        const countryKey = normalizeCountryFailureKey(countryId, providerId);
+        if (!countryKey) {
           return;
         }
-        const nextCount = getCountryFailureCount(countryKey) + 1;
+        const parsed = splitCountryFailureKey(countryKey, providerId);
+        const nextCount = getCountryFailureCount(parsed.countryKey, parsed.provider) + 1;
         countrySmsFailureCounts.set(countryKey, nextCount);
         if (nextCount >= PHONE_SMS_FAILURE_SKIP_THRESHOLD) {
-          const matched = resolveCountryCandidatesForProvider(state, providerId)
-            .find((entry) => getCountryFailureKey(entry.id, providerId) === normalizedCountryId);
-          const countryLabel = matched?.label || (providerId === PHONE_SMS_PROVIDER_FIVE_SIM ? normalizedCountryId : `Country #${normalizedCountryId}`);
+          const countryLabel = resolveCountryLabelByFailureKey(countryKey, providerId);
           await addLog(
             `步骤 9：${countryLabel} 已累计 ${nextCount} 次短信失败（${formatStep9Reason(reason)}）；下次获取号码会优先尝试其它已选国家。`,
             'warn'
@@ -4041,8 +4249,8 @@
       };
 
       const clearCountrySmsFailure = (countryId, providerId = normalizePhoneSmsProvider(state?.phoneSmsProvider)) => {
-        const normalizedCountryId = getCountryFailureKey(countryId, providerId);
-        if (!normalizedCountryId) {
+        const countryKey = normalizeCountryFailureKey(countryId, providerId);
+        if (!countryKey) {
           return;
         }
         countrySmsFailureCounts.delete(countryKey);
@@ -4054,7 +4262,10 @@
           state?.phoneSmsProvider || activation?.provider || DEFAULT_PHONE_SMS_PROVIDER
         );
         return Array.from(countrySmsFailureCounts.entries())
-          .filter(([, count]) => Number(count) >= PHONE_SMS_FAILURE_SKIP_THRESHOLD)
+          .filter(([countryKey, count]) => (
+            Number(count) >= PHONE_SMS_FAILURE_SKIP_THRESHOLD
+            || !countryPriceFloorByKey.has(countryKey)
+          ))
           .map(([countryKey]) => splitCountryFailureKey(countryKey, activeProvider))
           .filter((entry) => entry.provider === activeProvider)
           .map((entry) => String(entry.countryKey || '').trim())
@@ -4462,6 +4673,7 @@
               || /^sms_timeout_after_/i.test(String(replaceReason || ''))
             )
           ) {
+            await setCountryPriceFloorFromActivation(activation, replaceReason || 'sms_timeout');
             await markCountrySmsFailure(activation.countryId, replaceReason || 'sms_timeout', activation.provider);
           }
           await markPreferredActivationExhausted(replaceReason || 'replace_number');
