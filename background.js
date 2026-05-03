@@ -84,6 +84,7 @@ const PLUS_GOPAY_STEP_IDS = PLUS_GOPAY_STEP_DEFINITIONS
   .map((definition) => Number(definition?.id))
   .filter(Number.isFinite)
   .sort((left, right) => left - right);
+const PLUS_STEP_IDS = PLUS_PAYPAL_STEP_IDS;
 const LAST_STEP_ID = Math.max(
   NORMAL_STEP_IDS[NORMAL_STEP_IDS.length - 1] || 10,
   PLUS_PAYPAL_STEP_IDS[PLUS_PAYPAL_STEP_IDS.length - 1] || 10,
@@ -445,7 +446,7 @@ function getStepDefinitionsForState(state = {}) {
   if (!isPlusModeState(state)) {
     return NORMAL_STEP_DEFINITIONS;
   }
-  return normalizePlusPaymentMethod(state?.plusPaymentMethod) === 'gopay'
+  return normalizePlusPaymentMethod(state?.plusPaymentMethod) === PLUS_PAYMENT_METHOD_GOPAY
     ? PLUS_GOPAY_STEP_DEFINITIONS
     : PLUS_PAYPAL_STEP_DEFINITIONS;
 }
@@ -454,7 +455,7 @@ function getStepIdsForState(state = {}) {
   if (!isPlusModeState(state)) {
     return NORMAL_STEP_IDS;
   }
-  return normalizePlusPaymentMethod(state?.plusPaymentMethod) === 'gopay'
+  return normalizePlusPaymentMethod(state?.plusPaymentMethod) === PLUS_PAYMENT_METHOD_GOPAY
     ? PLUS_GOPAY_STEP_IDS
     : PLUS_PAYPAL_STEP_IDS;
 }
@@ -10054,7 +10055,7 @@ function getStepRegistryForState(state = {}) {
   if (!isPlusModeState(state)) {
     return normalStepRegistry;
   }
-  return normalizePlusPaymentMethod(state?.plusPaymentMethod) === 'gopay'
+  return normalizePlusPaymentMethod(state?.plusPaymentMethod) === PLUS_PAYMENT_METHOD_GOPAY
     ? plusGoPayStepRegistry
     : plusPayPalStepRegistry;
 }
