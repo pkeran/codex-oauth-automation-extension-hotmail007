@@ -360,7 +360,6 @@ const inputNexSmsApiKey = document.getElementById('input-nex-sms-api-key');
 const btnToggleNexSmsApiKey = document.getElementById('btn-toggle-nex-sms-api-key');
 const inputNexSmsServiceCode = document.getElementById('input-nex-sms-service-code');
 const inputHeroSmsMaxPrice = document.getElementById('input-hero-sms-max-price');
-const inputFiveSimOperator = document.getElementById('input-five-sim-operator');
 const inputPhoneReplacementLimit = document.getElementById('input-phone-replacement-limit');
 const inputPhoneCodeWaitSeconds = document.getElementById('input-phone-code-wait-seconds');
 const inputPhoneCodeTimeoutWindows = document.getElementById('input-phone-code-timeout-windows');
@@ -430,8 +429,6 @@ const PLUS_PAYMENT_METHOD_GOPAY = 'gopay';
 const DEFAULT_PLUS_PAYMENT_METHOD = PLUS_PAYMENT_METHOD_PAYPAL;
 let currentPlusModeEnabled = false;
 let currentPlusPaymentMethod = DEFAULT_PLUS_PAYMENT_METHOD;
-let activePlusManualConfirmationRequestId = '';
-let plusManualConfirmationDialogInFlight = false;
 let heroSmsCountrySelectionOrder = [];
 let phoneSmsProviderOrderSelection = [];
 let heroSmsCountryMenuSearchKeyword = '';
@@ -480,6 +477,7 @@ const PHONE_CODE_POLL_MAX_ROUNDS_MAX = 120;
 const DEFAULT_PHONE_CODE_POLL_MAX_ROUNDS = 4;
 const PHONE_SMS_PROVIDER_HERO = 'hero-sms';
 const PHONE_SMS_PROVIDER_FIVE_SIM = '5sim';
+const PHONE_SMS_PROVIDER_HERO_SMS = PHONE_SMS_PROVIDER_HERO;
 const PHONE_SMS_PROVIDER_NEXSMS = 'nexsms';
 const DEFAULT_PHONE_SMS_PROVIDER = PHONE_SMS_PROVIDER_HERO;
 const DEFAULT_PHONE_SMS_PROVIDER_ORDER = Object.freeze([
@@ -699,9 +697,6 @@ const CONTRIBUTION_UPLOAD_URL = 'https://apikey.qzz.io/';
 const DEFAULT_PHONE_VERIFICATION_ENABLED = false;
 const DEFAULT_HERO_SMS_COUNTRY_ID = 52;
 const DEFAULT_HERO_SMS_COUNTRY_LABEL = 'Thailand';
-const PHONE_SMS_PROVIDER_HERO_SMS = 'hero-sms';
-const PHONE_SMS_PROVIDER_FIVE_SIM = '5sim';
-const DEFAULT_PHONE_SMS_PROVIDER = PHONE_SMS_PROVIDER_HERO_SMS;
 const DEFAULT_FIVE_SIM_COUNTRY_ID = 'vietnam';
 const DEFAULT_FIVE_SIM_COUNTRY_LABEL = '越南 (Vietnam)';
 const FIVE_SIM_SUPPORTED_COUNTRY_ITEMS = Object.freeze([
@@ -710,7 +705,6 @@ const FIVE_SIM_SUPPORTED_COUNTRY_ITEMS = Object.freeze([
   { id: 'vietnam', chn: '越南', eng: 'Vietnam', searchText: 'vietnam 越南 Vietnam VN +84' },
 ]);
 const FIVE_SIM_SUPPORTED_COUNTRY_ID_SET = new Set(FIVE_SIM_SUPPORTED_COUNTRY_ITEMS.map((item) => item.id));
-const DEFAULT_FIVE_SIM_OPERATOR = 'any';
 const DEFAULT_IP_PROXY_SERVICE = '711proxy';
 const SUPPORTED_IP_PROXY_SERVICES = ['711proxy', 'lumiproxy', 'iproyal', 'omegaproxy'];
 const IP_PROXY_ENABLED_SERVICES = ['711proxy'];
@@ -5293,118 +5287,27 @@ function renderFiveSimCountryChoiceButtons() {
     return;
   }
 
-  const provider = getSelectedPhoneSmsProvider();
-  const selectedCountries = syncHeroSmsFallbackSelectionOrderFromSelect({
-    enforceMax: true,
-    ensureDefault: false,
-    showLimitToast: false,
+  options.forEach((option) => {
+    const countryId = normalizeFiveSimCountryId(option.value, '');
+    if (!countryId) {
+      return;
+    }
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'hero-sms-country-menu-item';
+    item.dataset.countryId = countryId;
+    item.dataset.searchText = fiveSimCountrySearchTextByCode.get(countryId)
+      || `${countryId} ${option.textContent || ''}`;
+    const selected = selectedSet.has(countryId);
+    item.setAttribute('aria-pressed', selected ? 'true' : 'false');
+    item.textContent = option.textContent || countryId;
+    item.addEventListener('click', (event) => {
+      event.preventDefault();
+      toggleFiveSimCountryInOrder(countryId);
+    });
+    fiveSimCountryMenu.appendChild(item);
   });
-  const candidates = selectedCountries.length
-    ? selectedCountries
-    : [getSelectedHeroSmsCountryOption()];
-  const maxPriceText = normalizePhoneSmsMaxPriceValue(inputHeroSmsMaxPrice?.value || '', provider);
-  const maxPrice = maxPriceText ? Number(maxPriceText) : null;
-  const apiKey = String(inputNexSmsApiKey?.value || '').trim();
-
-  displayHeroSmsPriceTiers.textContent = '查询中...';
-  if (rowHeroSmsPriceTiers) {
-    rowHeroSmsPriceTiers.style.display = '';
-  }
-
-  const previews = [];
-  if (!apiKey && provider === PHONE_SMS_PROVIDER_HERO_SMS) {
-    displayHeroSmsPriceTiers.textContent = '请先填写接码 API Key，再查询价格';
-    if (rowHeroSmsPriceTiers) {
-      rowHeroSmsPriceTiers.style.display = '';
-    }
-    return;
-  }
-
-  for (const country of candidates) {
-    const countryId = normalizePhoneSmsCountryId(country.id, provider);
-    const countryLabel = normalizePhoneSmsCountryLabel(
-      country.label || getHeroSmsCountryLabelById(countryId),
-      provider
-    );
-    try {
-      let productPrice = null;
-      let productQty = null;
-      if (provider === PHONE_SMS_PROVIDER_FIVE_SIM) {
-        const operator = normalizeFiveSimOperator(inputFiveSimOperator?.value || latestState?.fiveSimOperator);
-        const productsUrl = new URL(`https://5sim.net/v1/guest/products/${encodeURIComponent(String(countryId))}/${encodeURIComponent(operator)}`);
-        const productsResponse = await fetch(productsUrl.toString(), { headers: { Accept: 'application/json' } });
-        const productsRawText = await productsResponse.text();
-        let productsPayload = productsRawText;
-        try {
-          productsPayload = productsRawText ? JSON.parse(productsRawText) : '';
-        } catch {
-          productsPayload = productsRawText;
-        }
-        if (productsResponse.ok) {
-          const openaiProduct = productsPayload?.openai;
-          productPrice = normalizeHeroSmsPriceForPreview(openaiProduct?.Price ?? openaiProduct?.price ?? openaiProduct?.cost);
-          const qty = Number(openaiProduct?.Qty ?? openaiProduct?.qty ?? openaiProduct?.count);
-          productQty = Number.isFinite(qty) ? qty : null;
-        }
-      }
-
-      const url = provider === PHONE_SMS_PROVIDER_FIVE_SIM
-        ? new URL('https://5sim.net/v1/guest/prices')
-        : new URL('https://hero-sms.com/stubs/handler_api.php');
-      if (provider === PHONE_SMS_PROVIDER_FIVE_SIM) {
-        url.searchParams.set('country', String(countryId));
-        url.searchParams.set('product', 'openai');
-      } else {
-        url.searchParams.set('action', 'getPrices');
-        url.searchParams.set('service', 'dr');
-        url.searchParams.set('country', String(countryId));
-        if (apiKey) {
-          url.searchParams.set('api_key', apiKey);
-        }
-      }
-      const requestOptions = provider === PHONE_SMS_PROVIDER_FIVE_SIM
-        ? { headers: { Accept: 'application/json' } }
-        : {};
-      const response = await fetch(url.toString(), requestOptions);
-      const rawText = await response.text();
-      let payload = rawText;
-      try {
-        payload = rawText ? JSON.parse(rawText) : '';
-      } catch {
-        payload = rawText;
-      }
-
-      if (!response.ok) {
-        previews.push(`${countryLabel}: ${summarizeHeroSmsPreviewError(payload, response.status)}`);
-        continue;
-      }
-
-      const { inStockPrices, allPrices } = formatPhoneSmsPriceEntriesSummary(payload);
-      if (provider === PHONE_SMS_PROVIDER_FIVE_SIM && productPrice !== null && (productQty === null || productQty > 0)) {
-        inStockPrices.unshift(productPrice);
-        inStockPrices.sort((left, right) => left - right);
-      }
-      if (!inStockPrices.length) {
-        if (allPrices.length) {
-          const lowestKnown = formatHeroSmsPriceForPreview(allPrices[0]) || String(allPrices[0]);
-          previews.push(`${countryLabel}: 最低 ${lowestKnown}（库存为 0，当前无可用号源）`);
-          continue;
-        }
-        const reason = summarizeHeroSmsPreviewError(payload, response.status);
-        previews.push(`${countryLabel}: ${reason || '无可用价格'}`);
-        continue;
-      }
-      const tierText = formatPriceTiersForPreview(tierEntries, { maxPrice });
-      if (Number.isFinite(maxPrice) && maxPrice > 0 && lowest > maxPrice) {
-        previews.push(`${countryLabel}: 最低 ${lowest}（高于上限 ${maxPrice}）${tierText ? `；档位：${tierText}` : ''}`);
-      } else {
-        previews.push(`${countryLabel}: 最低 ${lowest}${tierText ? `；档位：${tierText}` : ''}`);
-      }
-    } catch (error) {
-      previews.push(`${countryLabel}: 查询失败（${normalizeHeroSmsFetchErrorMessage(error)}）`);
-    }
-  }
-  displayHeroSmsPriceTiers.textContent = previews.join('\n') || '未获取';
+  applyFiveSimCountryMenuFilter(fiveSimCountryMenuSearchKeyword);
 }
 
 async function buildNexSmsPricePreviewLines(options = {}) {

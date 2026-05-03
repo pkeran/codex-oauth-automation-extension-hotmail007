@@ -880,7 +880,6 @@
       if (!record || typeof record !== 'object' || Array.isArray(record)) {
         return null;
       }
-      const provider = normalizePhoneSmsProvider(record.provider || '');
       const activationId = String(
         record.activationId ?? record.id ?? record.activation ?? ''
       ).trim();
@@ -3551,7 +3550,7 @@
       const timeoutMs = typeof getOAuthFlowStepTimeoutMs === 'function'
         ? await getOAuthFlowStepTimeoutMs(65000, { step: 9, actionLabel: 'resend phone verification code' })
         : 65000;
-      const request = {
+      const result = await sendToContentScriptResilient('signup-page', {
         type: 'RESEND_PHONE_VERIFICATION_CODE',
         source: 'background',
         payload: {},
