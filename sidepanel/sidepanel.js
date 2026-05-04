@@ -1034,6 +1034,8 @@ let currentAutoRun = {
   countdownTitle: '',
   countdownNote: '',
 };
+let pendingAutoRunStartTotalRuns = 0;
+let pendingAutoRunStartExpiresAt = 0;
 let settingsDirty = false;
 let settingsSaveInFlight = false;
 let settingsAutoSaveTimer = null;
@@ -2011,6 +2013,34 @@ function readAutoRunStateValue(source, keys, fallback) {
   return fallback;
 }
 
+function normalizePendingAutoRunStartRunCount(value) {
+  const numeric = Math.floor(Number(value) || 0);
+  return numeric > 0 ? numeric : 0;
+}
+
+function registerPendingAutoRunStartRunCount(totalRuns) {
+  pendingAutoRunStartTotalRuns = normalizePendingAutoRunStartRunCount(totalRuns);
+  pendingAutoRunStartExpiresAt = pendingAutoRunStartTotalRuns > 0
+    ? Date.now() + 30000
+    : 0;
+}
+
+function clearPendingAutoRunStartRunCount() {
+  pendingAutoRunStartTotalRuns = 0;
+  pendingAutoRunStartExpiresAt = 0;
+}
+
+function getPendingAutoRunStartRunCount() {
+  if (pendingAutoRunStartTotalRuns > 0 && pendingAutoRunStartExpiresAt > 0 && Date.now() > pendingAutoRunStartExpiresAt) {
+    clearPendingAutoRunStartRunCount();
+  }
+  return pendingAutoRunStartTotalRuns;
+}
+
+function getAutoRunSourceTotalRuns(source = {}) {
+  return normalizePendingAutoRunStartRunCount(readAutoRunStateValue(source, ['autoRunTotalRuns', 'totalRuns'], 0));
+}
+
 function syncAutoRunState(source = {}) {
   const phase = source.autoRunPhase ?? source.phase ?? currentAutoRun.phase;
   const autoRunning = source.autoRunning !== undefined
@@ -2074,7 +2104,22 @@ function shouldSyncRunCountFromAutoRunSource(source = {}) {
   const autoRunning = source.autoRunning !== undefined
     ? Boolean(source.autoRunning)
     : isAutoRunSourceSyncPhase(phase);
-  return autoRunning || isAutoRunSourceSyncPhase(phase);
+  const shouldSync = autoRunning || isAutoRunSourceSyncPhase(phase);
+  if (!shouldSync) {
+    return false;
+  }
+
+  const pendingTotalRuns = getPendingAutoRunStartRunCount();
+  if (pendingTotalRuns > 0) {
+    const sourceTotalRuns = getAutoRunSourceTotalRuns(source);
+    if (sourceTotalRuns > 0 && sourceTotalRuns !== pendingTotalRuns) {
+      return false;
+    }
+    if (sourceTotalRuns === pendingTotalRuns) {
+      clearPendingAutoRunStartRunCount();
+    }
+  }
+  return true;
 }
 
 function getAutoRunLabel(payload = currentAutoRun) {
@@ -10142,6 +10187,14 @@ autoStartModal?.addEventListener('click', (event) => {
 btnAutoStartClose?.addEventListener('click', () => resolveModalChoice(null));
 
 async function startAutoRunFromCurrentSettings() {
+  const initialLockedRunCount = typeof getLockedRunCountFromEmailPool === 'function'
+    ? getLockedRunCountFromEmailPool()
+    : 0;
+  const requestedTotalRuns = initialLockedRunCount > 0
+    ? initialLockedRunCount
+    : getRunCountValue();
+  registerPendingAutoRunStartRunCount(requestedTotalRuns);
+
   try {
     await refreshContributionContentHint();
   } catch (error) {
@@ -10160,7 +10213,8 @@ async function startAutoRunFromCurrentSettings() {
   if (customEmailPoolEnabled && lockedRunCount <= 0) {
     throw new Error('请先在邮箱池里至少填写 1 个邮箱。');
   }
-  const totalRuns = lockedRunCount > 0 ? lockedRunCount : getRunCountValue();
+  const totalRuns = lockedRunCount > 0 ? lockedRunCount : requestedTotalRuns;
+  registerPendingAutoRunStartRunCount(totalRuns);
   if (lockedRunCount > 0) {
     inputRunCount.value = String(lockedRunCount);
   }
@@ -10181,6 +10235,7 @@ async function startAutoRunFromCurrentSettings() {
     const runningStep = getRunningSteps()[0] ?? null;
     const choice = await openAutoStartChoiceDialog(startStep, { runningStep });
     if (!choice) {
+      clearPendingAutoRunStartRunCount();
       return false;
     }
     mode = choice;
@@ -10188,6 +10243,7 @@ async function startAutoRunFromCurrentSettings() {
 
   const confirmedPlusContributionPrompt = await maybeShowPlusContributionPromptBeforeAutoRun(plusModeEnabled);
   if (!confirmedPlusContributionPrompt) {
+    clearPendingAutoRunStartRunCount();
     return false;
   }
 
@@ -10195,6 +10251,7 @@ async function startAutoRunFromCurrentSettings() {
     && !isAutoRunFallbackRiskPromptDismissed()) {
     const result = await openAutoRunFallbackRiskConfirmModal(totalRuns);
     if (!result.confirmed) {
+      clearPendingAutoRunStartRunCount();
       return false;
     }
     if (result.dismissPrompt) {
@@ -10206,6 +10263,7 @@ async function startAutoRunFromCurrentSettings() {
     && !isAutoRunPlusRiskPromptDismissed()) {
     const result = await openPlusAutoRunRiskConfirmModal(totalRuns);
     if (!result.confirmed) {
+      clearPendingAutoRunStartRunCount();
       return false;
     }
     if (result.dismissPrompt) {
@@ -10235,6 +10293,7 @@ async function startAutoRunFromCurrentSettings() {
     },
   });
   if (response?.error) {
+    clearPendingAutoRunStartRunCount();
     throw new Error(response.error);
   }
   return true;
@@ -10245,6 +10304,7 @@ btnAutoRun.addEventListener('click', async () => {
   try {
     await startAutoRunFromCurrentSettings();
   } catch (err) {
+    clearPendingAutoRunStartRunCount();
     setDefaultAutoRunButton();
     inputRunCount.disabled = shouldLockRunCountToEmailPool();
     showToast(err.message, 'error');
@@ -11227,6 +11287,7 @@ inputInbucketHost.addEventListener('blur', () => {
 });
 
 inputRunCount.addEventListener('input', () => {
+  clearPendingAutoRunStartRunCount();
   updateFallbackThreadIntervalInputState();
 });
 inputRunCount.addEventListener('blur', () => {

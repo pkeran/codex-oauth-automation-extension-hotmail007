@@ -56,8 +56,14 @@ function createApi({
   plusRiskConfirmed = true,
   plusRiskDismissPrompt = false,
   plusContributionImpl,
+  persistImpl,
 } = {}) {
-  const bundle = extractFunction('startAutoRunFromCurrentSettings');
+  const bundle = [
+    extractFunction('normalizePendingAutoRunStartRunCount'),
+    extractFunction('registerPendingAutoRunStartRunCount'),
+    extractFunction('clearPendingAutoRunStartRunCount'),
+    extractFunction('startAutoRunFromCurrentSettings'),
+  ].join('\n');
 
   return new Function(`
 const events = [];
@@ -72,6 +78,9 @@ const inputAutoDelayEnabled = { checked: false };
 const inputAutoDelayMinutes = { value: '30' };
 const btnAutoRun = { disabled: false, innerHTML: '' };
 const inputRunCount = { disabled: false };
+let runCountValue = ${Math.max(1, Number(runCount) || 1)};
+let pendingAutoRunStartTotalRuns = 0;
+let pendingAutoRunStartExpiresAt = 0;
 const chrome = {
   runtime: {
     async sendMessage(message) {
@@ -87,8 +96,16 @@ const console = {
 };
 async function persistCurrentSettingsForAction() {
   events.push({ type: 'sync-settings' });
+  ${persistImpl ? `return (${persistImpl})(events, {
+    setRunCount(value) {
+      runCountValue = Math.max(1, Number(value) || 1);
+    },
+    getRunCount() {
+      return runCountValue;
+    },
+  });` : ''}
 }
-function getRunCountValue() { return ${Math.max(1, Number(runCount) || 1)}; }
+function getRunCountValue() { return Math.max(1, Number(runCountValue) || 1); }
 function normalizeAutoRunThreadIntervalMinutes(value) { return Number(value) || 0; }
 function shouldOfferAutoModeChoice() { return false; }
 async function openAutoStartChoiceDialog() { throw new Error('should not be called'); }
@@ -175,6 +192,26 @@ test('startAutoRunFromCurrentSettings does not block auto run when contribution 
     api.getEvents().map((entry) => entry.type),
     ['refresh', 'sync-settings', 'send']
   );
+});
+
+test('startAutoRunFromCurrentSettings freezes run count before async settings sync can repaint it', async () => {
+  const api = createApi({
+    runCount: 20,
+    persistImpl: `(events, controls) => {
+      controls.setRunCount(1);
+      events.push({ type: 'stale-status-reset', runCount: controls.getRunCount() });
+    }`,
+  });
+
+  const result = await api.startAutoRunFromCurrentSettings();
+  const events = api.getEvents();
+
+  assert.equal(result, true);
+  assert.deepEqual(
+    events.map((entry) => entry.type),
+    ['refresh', 'sync-settings', 'stale-status-reset', 'send']
+  );
+  assert.equal(events[3].message.payload.totalRuns, 20);
 });
 
 test('startAutoRunFromCurrentSettings shows Plus risk warning before starting more than 3 runs', async () => {
