@@ -2117,7 +2117,7 @@ const VERIFICATION_PAGE_PATTERN = /检查您的收件箱|输入我们刚刚向|�
 const OAUTH_CONSENT_PAGE_PATTERN = /使用\s*ChatGPT\s*登录到\s*Codex|sign\s+in\s+to\s+codex(?:\s+with\s+chatgpt)?|login\s+to\s+codex|log\s+in\s+to\s+codex|authorize|授权/i;
 const OAUTH_CONSENT_FORM_SELECTOR = 'form[action*="/sign-in-with-chatgpt/" i][action*="/consent" i]';
 const CONTINUE_ACTION_PATTERN = /继续|continue/i;
-const ADD_PHONE_PAGE_PATTERN = /add[\s-]*phone|添加手机号|手机号码|手机号|phone\s+number|telephone/i;
+const ADD_PHONE_PAGE_PATTERN = /add[\s-]*(?:a\s+)?phone|添加(?:手机|手机号|电话号码)|绑定(?:手机|手机号|电话号码)|验证(?:你的|您)?(?:手机|手机号|电话号码)|需要(?:手机|手机号|电话号码)|提供(?:手机|手机号|电话号码)|provide\s+(?:a\s+)?phone\s+number|phone\s+number\s+(?:required|verification)|verify\s+(?:your\s+)?phone|confirm\s+(?:your\s+)?phone/i;
 const STEP5_SUBMIT_ERROR_PATTERN = /无法根据该信息创建帐户|请重试|unable\s+to\s+create\s+(?:your\s+)?account|couldn'?t\s+create\s+(?:your\s+)?account|something\s+went\s+wrong|invalid\s+(?:birthday|birth|date)|生日|出生日期/i;
 const AUTH_TIMEOUT_ERROR_TITLE_PATTERN = /糟糕，出错了|something\s+went\s+wrong|oops/i;
 const AUTH_TIMEOUT_ERROR_DETAIL_PATTERN = /operation\s+timed\s+out|timed\s+out|请求超时|操作超时|failed\s+to\s+fetch|network\s+error|fetch\s+failed/i;
@@ -2398,10 +2398,8 @@ function isAddPhonePageReady() {
   const path = `${location.pathname || ''} ${location.href || ''}`;
   if (/\/add-phone(?:[/?#]|$)/i.test(path)) return true;
 
-  const phoneInput = document.querySelector(
-    'input[type="tel"]:not([maxlength="6"]), input[name*="phone" i], input[id*="phone" i], input[autocomplete="tel"]'
-  );
-  if (phoneInput && isVisibleElement(phoneInput)) {
+  const addPhoneForm = document.querySelector('form[action*="/add-phone" i]');
+  if (addPhoneForm && isVisibleElement(addPhoneForm)) {
     return true;
   }
 
@@ -2880,10 +2878,85 @@ function getLoginEmailInput() {
 }
 
 function getLoginPhoneInput() {
-  const input = document.querySelector(
-    'input[type="tel"], input[autocomplete="tel"], input[name*="phone" i], input[id*="phone" i], input[placeholder*="phone" i], input[aria-label*="phone" i], input[placeholder*="telephone" i], input[aria-label*="telephone" i]'
-  );
-  return input && isVisibleElement(input) ? input : null;
+  const input = document.querySelector([
+    'input[type="tel"]:not([maxlength="6"])',
+    'input[autocomplete="tel"]',
+    'input[inputmode="tel"]',
+    'input[name*="phone" i]',
+    'input[id*="phone" i]',
+    'input[name*="telephone" i]',
+    'input[id*="telephone" i]',
+    'input[placeholder*="phone" i]',
+    'input[aria-label*="phone" i]',
+    'input[placeholder*="telephone" i]',
+    'input[aria-label*="telephone" i]',
+    'input[placeholder*="手机"]',
+    'input[aria-label*="手机"]',
+    'input[placeholder*="电话"]',
+    'input[aria-label*="电话"]',
+  ].join(', '));
+  if (input && isVisibleElement(input)) {
+    return input;
+  }
+
+  return Array.from(document.querySelectorAll('input')).find((el) => {
+    if (!isVisibleElement(el)) return false;
+    const type = String(el.getAttribute?.('type') || el.type || '').trim().toLowerCase();
+    if (['email', 'password', 'hidden', 'submit', 'button', 'checkbox', 'radio'].includes(type)) return false;
+    const maxLength = Number(el.getAttribute?.('maxlength') || el.maxLength || 0);
+    if (maxLength > 0 && maxLength <= 6) return false;
+
+    const id = String(el.getAttribute?.('id') || '').trim();
+    const ariaLabelledBy = String(el.getAttribute?.('aria-labelledby') || '').trim();
+    const labelTexts = [];
+    if (id && typeof CSS !== 'undefined' && typeof CSS.escape === 'function') {
+      document.querySelectorAll(`label[for="${CSS.escape(id)}"]`).forEach((label) => {
+        labelTexts.push(label.textContent || '');
+      });
+    }
+    if (ariaLabelledBy) {
+      ariaLabelledBy.split(/\s+/).forEach((labelId) => {
+        if (labelId && typeof CSS !== 'undefined' && typeof CSS.escape === 'function') {
+          labelTexts.push(document.getElementById?.(labelId)?.textContent || '');
+        }
+      });
+    }
+    const closestLabel = el.closest?.('label');
+    if (closestLabel) {
+      labelTexts.push(closestLabel.textContent || '');
+    }
+
+    const attributeText = [
+      el.getAttribute?.('name'),
+      el.getAttribute?.('id'),
+      el.getAttribute?.('placeholder'),
+      el.getAttribute?.('aria-label'),
+      el.getAttribute?.('autocomplete'),
+      el.getAttribute?.('inputmode'),
+      ...labelTexts,
+    ].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+    if (/phone|telephone|tel|手机|手机号|电话|电话号码/i.test(attributeText)) {
+      return true;
+    }
+    if (/email|邮箱|电子邮件/i.test(attributeText)) {
+      return false;
+    }
+
+    const fieldRoot = el.closest?.('fieldset, [role="group"], [data-rac]');
+    const fieldText = String(fieldRoot?.textContent || '').replace(/\s+/g, ' ').trim();
+    if (fieldText && /phone|telephone|手机|手机号|电话|电话号码/i.test(fieldText) && !/email|邮箱|电子邮件/i.test(fieldText)) {
+      return true;
+    }
+
+    const compactRoot = el.closest?.('div');
+    const compactText = String(compactRoot?.textContent || '').replace(/\s+/g, ' ').trim();
+    return Boolean(
+      compactText
+      && compactText.length <= 220
+      && /phone|telephone|手机|手机号|电话|电话号码/i.test(compactText)
+      && !/email|邮箱|电子邮件/i.test(compactText)
+    );
+  }) || null;
 }
 
 function getLoginPasswordInput() {
@@ -3034,23 +3107,29 @@ function findLoginPhoneCountryOptionByNumber(select, phoneNumber) {
   return bestMatch;
 }
 
-async function selectCountryForPhoneInput(phoneInput, phoneNumber = '', countryLabel = '') {
+async function selectCountryForPhoneInput(phoneInput, phoneNumber = '', countryLabel = '', options = {}) {
+  const visibleStep = Math.floor(Number(options?.visibleStep) || 0) || 7;
+  const selection = await ensureSignupPhoneCountrySelected(phoneInput, {
+    countryLabel,
+    phoneNumber,
+  });
+  const selectedOption = selection.selectedOption || getSignupPhoneSelectedCountryOption(phoneInput);
+  const targetDialCode = resolveSignupPhoneTargetDialCode({ countryLabel, phoneNumber }, selectedOption);
+  const displayedDialCode = getSignupPhoneDisplayedDialCode(phoneInput);
+
+  if (selection.hasCountryControl && targetDialCode) {
+    if (!selection.matched || (displayedDialCode && displayedDialCode !== targetDialCode)) {
+      const currentCountryText = getSignupPhoneCountryButtonText(phoneInput) || displayedDialCode || '未知';
+      throw new Error(`步骤 ${visibleStep}：手机号登录国家下拉框未能自动切换到 ${countryLabel || phoneNumber}，当前显示为 ${currentCountryText}，已停止提交以避免区号不匹配。`);
+    }
+    return targetDialCode;
+  }
+
   const select = getLoginPhoneCountrySelect(phoneInput);
-  if (!select) {
-    return '';
-  }
-
-  const targetOption = findLoginPhoneCountryOptionByLabel(select, countryLabel)
-    || findLoginPhoneCountryOptionByNumber(select, phoneNumber);
-  if (targetOption && String(select.value || '') !== String(targetOption.value || '')) {
-    select.value = String(targetOption.value || '');
-    select.dispatchEvent(new Event('input', { bubbles: true }));
-    select.dispatchEvent(new Event('change', { bubbles: true }));
-    await sleep(250);
-  }
-
-  const selectedOption = select.options?.[select.selectedIndex] || targetOption || null;
-  return extractDialCodeFromText(getLoginPhoneCountryOptionLabel(selectedOption));
+  const fallbackSelectedOption = select?.options?.[select.selectedIndex] || null;
+  return extractDialCodeFromText(getLoginPhoneCountryOptionLabel(fallbackSelectedOption))
+    || displayedDialCode
+    || resolveSignupPhoneDialCodeFromNumber(phoneNumber);
 }
 
 function resolveLoginPhoneDialCode(phoneInput, options = {}) {
@@ -4496,7 +4575,7 @@ async function step6LoginFromPhonePage(payload, snapshot) {
     });
   }
 
-  const dialCodeFromSelection = await selectCountryForPhoneInput(phoneInput, phoneNumber, countryLabel);
+  const dialCodeFromSelection = await selectCountryForPhoneInput(phoneInput, phoneNumber, countryLabel, { visibleStep });
   const dialCode = dialCodeFromSelection || resolveLoginPhoneDialCode(phoneInput, {
     phoneNumber,
     countryId,
@@ -4579,7 +4658,7 @@ async function switchFromEmailPageToPhoneLogin(payload, snapshot) {
   log(`步骤 ${visibleStep}：当前在邮箱入口，正在切换到手机号登录...`, 'info', { step: visibleStep, stepKey: 'oauth-login' });
   await humanPause(350, 900);
   simulateClick(phoneEntryTrigger);
-  const nextSnapshot = normalizeStep6Snapshot(await waitForPhoneLoginEntrySwitchTransition());
+  const nextSnapshot = normalizeStep6Snapshot(await waitForPhoneLoginEntrySwitchTransition(20000));
   if (nextSnapshot.state === 'phone_entry_page') {
     return step6LoginFromPhonePage(payload, nextSnapshot);
   }

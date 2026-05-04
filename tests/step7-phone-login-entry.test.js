@@ -1,0 +1,313 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+
+const source = fs.readFileSync('content/signup-page.js', 'utf8');
+
+function extractFunction(name) {
+  const markers = [`async function ${name}(`, `function ${name}(`];
+  const start = markers
+    .map((marker) => source.indexOf(marker))
+    .find((index) => index >= 0);
+  if (start < 0) {
+    throw new Error(`missing function ${name}`);
+  }
+
+  let parenDepth = 0;
+  let signatureEnded = false;
+  let braceStart = -1;
+  for (let i = start; i < source.length; i += 1) {
+    const ch = source[i];
+    if (ch === '(') {
+      parenDepth += 1;
+    } else if (ch === ')') {
+      parenDepth -= 1;
+      if (parenDepth === 0) {
+        signatureEnded = true;
+      }
+    } else if (ch === '{' && signatureEnded) {
+      braceStart = i;
+      break;
+    }
+  }
+  if (braceStart < 0) {
+    throw new Error(`missing body for function ${name}`);
+  }
+
+  let depth = 0;
+  let end = braceStart;
+  for (; end < source.length; end += 1) {
+    const ch = source[end];
+    if (ch === '{') depth += 1;
+    if (ch === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        end += 1;
+        break;
+      }
+    }
+  }
+
+  return source.slice(start, end);
+}
+
+function extractConst(name) {
+  const pattern = new RegExp(`const\\s+${name}\\s*=\\s*[\\s\\S]*?;`);
+  const match = source.match(pattern);
+  if (!match) {
+    throw new Error(`missing const ${name}`);
+  }
+  return match[0];
+}
+
+function createPhoneLoginEntryApi(options = {}) {
+  const {
+    href = 'https://auth.openai.com/log-in',
+    pathname = '/log-in',
+    inputAttributes = {},
+    inputRootText = '',
+    pageText = '',
+    addPhoneForm = false,
+  } = options;
+
+  return new Function(`
+${extractConst('ADD_PHONE_PAGE_PATTERN')}
+
+const location = {
+  href: ${JSON.stringify(href)},
+  pathname: ${JSON.stringify(pathname)},
+};
+
+const phoneInput = {
+  type: ${JSON.stringify(inputAttributes.type || 'text')},
+  maxLength: ${JSON.stringify(inputAttributes.maxLength ?? -1)},
+  getAttribute(name) {
+    return Object.prototype.hasOwnProperty.call(this.attributes, name) ? this.attributes[name] : '';
+  },
+  closest(selector) {
+    if (!${JSON.stringify(Boolean(inputRootText))}) return null;
+    if (String(selector || '').includes('fieldset') || String(selector || '').includes('div')) {
+      return { textContent: ${JSON.stringify(inputRootText)} };
+    }
+    return null;
+  },
+  attributes: ${JSON.stringify(inputAttributes)},
+};
+
+const form = ${addPhoneForm ? '{ textContent: "Add phone number" }' : 'null'};
+
+const document = {
+  body: {
+    innerText: ${JSON.stringify(pageText || inputRootText)},
+    textContent: ${JSON.stringify(pageText || inputRootText)},
+  },
+  querySelector(selector) {
+    const text = String(selector || '');
+    if (text === 'form[action*="/add-phone" i]') return form;
+    return null;
+  },
+  querySelectorAll(selector) {
+    if (selector === 'input') return [phoneInput];
+    return [];
+  },
+  getElementById() {
+    return null;
+  },
+};
+
+const CSS = {
+  escape(value) {
+    return String(value || '');
+  },
+};
+
+function isVisibleElement(element) {
+  return Boolean(element);
+}
+
+${extractFunction('getPageTextSnapshot')}
+${extractFunction('getLoginPhoneInput')}
+${extractFunction('isAddPhonePageReady')}
+
+return {
+  getLoginPhoneInput,
+  isAddPhonePageReady,
+};
+  `)();
+}
+
+test('step 7 treats localized phone login entry as phone input instead of add-phone', () => {
+  const api = createPhoneLoginEntryApi({
+    inputRootText: '\u6b22\u8fce\u56de\u6765 \u7535\u8bdd\u53f7\u7801 +61 \u7ee7\u7eed \u8fd8\u6ca1\u6709\u5e10\u6237\uff1f\u8bf7\u6ce8\u518c',
+  });
+
+  assert.ok(api.getLoginPhoneInput(), 'localized phone login input should be detected');
+  assert.equal(api.isAddPhonePageReady(), false);
+});
+
+test('step 7 does not mistake email entry with a phone switch action for phone input', () => {
+  const api = createPhoneLoginEntryApi({
+    inputRootText: '\u7ee7\u7eed \u7ee7\u7eed\u4f7f\u7528\u624b\u673a\u767b\u5f55',
+    inputAttributes: { type: 'text', placeholder: '\u7535\u5b50\u90ae\u4ef6\u5730\u5740' },
+  });
+
+  assert.equal(api.getLoginPhoneInput(), null);
+  assert.equal(api.isAddPhonePageReady(), false);
+});
+
+test('add-phone detection stays true for real add-phone urls and forms', () => {
+  assert.equal(
+    createPhoneLoginEntryApi({
+      href: 'https://auth.openai.com/add-phone',
+      pathname: '/add-phone',
+      inputRootText: '\u7535\u8bdd\u53f7\u7801',
+    }).isAddPhonePageReady(),
+    true
+  );
+
+  assert.equal(
+    createPhoneLoginEntryApi({
+      addPhoneForm: true,
+      inputRootText: 'Add phone number',
+    }).isAddPhonePageReady(),
+    true
+  );
+});
+
+test('phone login switch waits longer for slow OpenAI entry transitions', () => {
+  assert.match(
+    extractFunction('switchFromEmailPageToPhoneLogin'),
+    /waitForPhoneLoginEntrySwitchTransition\(20000\)/
+  );
+});
+
+test('step 7 switches visible phone login country by provider dial code before filling number', async () => {
+  const api = new Function(`
+const clicks = [];
+let visibleCountryText = '\\u6fb3\\u5927\\u5229\\u4e9a (+61)';
+let listboxOpen = false;
+
+const phoneInput = {
+  closest() {
+    return null;
+  },
+};
+
+const countryButton = {
+  textContent: '',
+  querySelector(selector) {
+    if (selector === '.react-aria-SelectValue') {
+      return {
+        get textContent() {
+          return visibleCountryText;
+        },
+      };
+    }
+    return null;
+  },
+};
+
+const indonesiaOption = { textContent: '\\u5370\\u5ea6\\u5c3c\\u897f\\u4e9a +(62)' };
+const unitedKingdomOption = { textContent: '\\u82f1\\u56fd +(44)' };
+
+const document = {
+  querySelectorAll(selector) {
+    const text = String(selector || '');
+    if (text === '[role="listbox"] [role="option"], [role="option"]') {
+      return listboxOpen ? [indonesiaOption, unitedKingdomOption] : [];
+    }
+    if (text.includes('aria-haspopup="listbox"') || text.includes('aria-expanded')) {
+      return [countryButton];
+    }
+    if (text === 'select') {
+      return [];
+    }
+    return [];
+  },
+  querySelector(selector) {
+    const matches = this.querySelectorAll(selector);
+    return matches[0] || null;
+  },
+};
+
+function isVisibleElement(element) {
+  return Boolean(element);
+}
+
+function getActionText(element) {
+  if (element === countryButton) return visibleCountryText;
+  return String(element?.textContent || '').replace(/\\s+/g, ' ').trim();
+}
+
+function getPageTextSnapshot() {
+  return visibleCountryText;
+}
+
+function simulateClick(target) {
+  clicks.push(getActionText(target));
+  if (target === countryButton) {
+    listboxOpen = true;
+  }
+  if (target === unitedKingdomOption) {
+    visibleCountryText = '\\u82f1\\u56fd +(44)';
+    listboxOpen = false;
+  }
+}
+
+async function sleep() {}
+function throwIfStopped() {}
+
+${extractFunction('normalizePhoneDigits')}
+${extractFunction('extractDialCodeFromText')}
+${extractFunction('dispatchSignupPhoneFieldEvents')}
+${extractFunction('normalizeSignupCountryLabel')}
+${extractFunction('getSignupCountryLabelAliases')}
+${extractFunction('getSignupPhoneOptionLabel')}
+${extractFunction('normalizeSignupCountryOptionValue')}
+${extractFunction('getSignupRegionDisplayName')}
+${extractFunction('getSignupPhoneCountryMatchLabels')}
+${extractFunction('isSameSignupCountryOption')}
+${extractFunction('getSignupPhoneInput')}
+${extractFunction('getSignupPhoneControlRoots')}
+${extractFunction('querySignupPhoneCountryElements')}
+${extractFunction('isSignupPhoneCountrySelect')}
+${extractFunction('getSignupPhoneCountrySelect')}
+${extractFunction('getSignupPhoneSelectedCountryOption')}
+${extractFunction('getSignupPhoneCountryButtonText')}
+${extractFunction('getSignupPhoneCountryButton')}
+${extractFunction('getSignupPhoneDisplayedDialCode')}
+${extractFunction('resolveSignupPhoneDialCodeFromNumber')}
+${extractFunction('resolveSignupPhoneTargetDialCode')}
+${extractFunction('getSignupPhoneCountryTargetLabels')}
+${extractFunction('doesSignupPhoneCountryTextMatchTarget')}
+${extractFunction('isSignupPhoneCountrySelectionSynced')}
+${extractFunction('findSignupPhoneCountryOptionByLabel')}
+${extractFunction('findSignupPhoneCountryOptionByPhoneNumber')}
+${extractFunction('trySelectSignupPhoneCountryOption')}
+${extractFunction('getVisibleSignupPhoneCountryListboxOptions')}
+${extractFunction('findSignupPhoneCountryListboxOption')}
+${extractFunction('trySelectSignupPhoneCountryListboxOption')}
+${extractFunction('ensureSignupPhoneCountrySelected')}
+function getLoginPhoneCountrySelect() { return null; }
+function getLoginPhoneCountryOptionLabel() { return ''; }
+${extractFunction('selectCountryForPhoneInput')}
+
+return {
+  async run() {
+    return selectCountryForPhoneInput(phoneInput, '447423278610', '', { visibleStep: 7 });
+  },
+  getClicks() {
+    return clicks.slice();
+  },
+  getVisibleCountryText() {
+    return visibleCountryText;
+  },
+};
+  `)();
+
+  const dialCode = await api.run();
+
+  assert.equal(dialCode, '44');
+  assert.equal(api.getVisibleCountryText(), '\u82f1\u56fd +(44)');
+  assert.deepEqual(api.getClicks(), ['\u6fb3\u5927\u5229\u4e9a (+61)', '\u82f1\u56fd +(44)']);
+});
