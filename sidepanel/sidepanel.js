@@ -663,6 +663,46 @@ const AUTO_RUN_FALLBACK_RISK_PROMPT_DISMISSED_STORAGE_KEY = 'multipage-auto-run-
 const AUTO_RUN_PLUS_RISK_PROMPT_DISMISSED_STORAGE_KEY = 'multipage-auto-run-plus-risk-prompt-dismissed';
 const PLUS_CONTRIBUTION_PROMPT_LEDGER_STORAGE_KEY = 'multipage-plus-contribution-prompt-ledger';
 const PHONE_VERIFICATION_SECTION_EXPANDED_STORAGE_KEY = 'multipage-phone-verification-section-expanded';
+let phoneVerificationSectionExpanded = false;
+
+function readPhoneVerificationSectionExpanded() {
+  try {
+    return window.localStorage?.getItem(PHONE_VERIFICATION_SECTION_EXPANDED_STORAGE_KEY) === '1';
+  } catch (err) {
+    return false;
+  }
+}
+
+function persistPhoneVerificationSectionExpanded(expanded) {
+  try {
+    if (expanded) {
+      window.localStorage?.setItem(PHONE_VERIFICATION_SECTION_EXPANDED_STORAGE_KEY, '1');
+    } else {
+      window.localStorage?.removeItem(PHONE_VERIFICATION_SECTION_EXPANDED_STORAGE_KEY);
+    }
+  } catch (err) {
+    // Ignore storage errors; the current in-memory state is enough for this session.
+  }
+}
+
+function setPhoneVerificationSectionExpanded(expanded) {
+  phoneVerificationSectionExpanded = Boolean(expanded);
+  persistPhoneVerificationSectionExpanded(phoneVerificationSectionExpanded);
+  if (typeof updatePhoneVerificationSettingsUI === 'function') {
+    updatePhoneVerificationSettingsUI();
+  }
+}
+
+function togglePhoneVerificationSectionExpanded() {
+  setPhoneVerificationSectionExpanded(!phoneVerificationSectionExpanded);
+}
+
+function initPhoneVerificationSectionExpandedState() {
+  phoneVerificationSectionExpanded = readPhoneVerificationSectionExpanded();
+  if (typeof updatePhoneVerificationSettingsUI === 'function') {
+    updatePhoneVerificationSettingsUI();
+  }
+}
 
 function getStepDefinitionsForMode(plusModeEnabled = false, options = {}) {
   const defaultMethod = typeof DEFAULT_PLUS_PAYMENT_METHOD !== 'undefined' ? DEFAULT_PLUS_PAYMENT_METHOD : 'paypal';
@@ -12646,7 +12686,9 @@ initMail2925ListExpandedState();
 if (typeof initIpProxySectionExpandedState === 'function') {
   initIpProxySectionExpandedState();
 }
-initPhoneVerificationSectionExpandedState();
+if (typeof initPhoneVerificationSectionExpandedState === 'function') {
+  initPhoneVerificationSectionExpandedState();
+}
 applyPhoneSmsProviderOrderSelection([], { ensureDefault: false, syncProvider: false });
 updateSaveButtonState();
 updateConfigMenuControls();
