@@ -3061,6 +3061,11 @@ function collectSettingsPayload() {
   const phoneSmsProviderValue = typeof selectPhoneSmsProvider !== 'undefined' && selectPhoneSmsProvider
     ? normalizePhoneSmsProvider(selectPhoneSmsProvider.value)
     : normalizePhoneSmsProvider(latestState?.phoneSmsProvider);
+  const phoneSmsProviderOrderValue = typeof getSelectedPhoneSmsProviderOrder === 'function'
+    ? getSelectedPhoneSmsProviderOrder()
+    : (typeof normalizePhoneSmsProviderOrderValue === 'function'
+      ? normalizePhoneSmsProviderOrderValue(latestState?.phoneSmsProviderOrder || [], [])
+      : []);
   const currentPhoneSmsApiKeyValue = typeof inputHeroSmsApiKey !== 'undefined' && inputHeroSmsApiKey
     ? (inputHeroSmsApiKey.value || '')
     : '';
@@ -3424,6 +3429,7 @@ function collectSettingsPayload() {
     phoneVerificationEnabled: Boolean(inputPhoneVerificationEnabled?.checked),
     signupMethod: selectedSignupMethod,
     phoneSmsProvider: phoneSmsProviderValue,
+    phoneSmsProviderOrder: phoneSmsProviderOrderValue,
     verificationResendCount: normalizeVerificationResendCount(
       inputVerificationResendCount?.value,
       DEFAULT_VERIFICATION_RESEND_COUNT
@@ -8098,6 +8104,13 @@ function applySettingsState(state) {
     ? DEFAULT_NEX_SMS_SERVICE_CODE
     : 'ot';
   setPhoneSmsProviderSelectValue(restoredPhoneSmsProvider);
+  const restoredPhoneSmsProviderOrder = typeof applyPhoneSmsProviderOrderSelection === 'function'
+    ? applyPhoneSmsProviderOrderSelection(state?.phoneSmsProviderOrder || [], {
+      ensureDefault: false,
+      syncProvider: false,
+    })
+    : [];
+  updatePhoneSmsProviderOrderSummary(restoredPhoneSmsProviderOrder);
   if (previousPhoneSmsProvider !== restoredPhoneSmsProvider) {
     heroSmsCountrySelectionOrder = [];
     loadHeroSmsCountries().catch((error) => {

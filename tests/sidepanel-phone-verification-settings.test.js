@@ -691,6 +691,7 @@ ${extractFunction('normalizeNexSmsCountryIdValue')}
 ${extractFunction('normalizeNexSmsCountryOrderValue')}
 ${extractFunction('normalizeNexSmsServiceCodeValue')}
 function getSelectedPhoneSmsProvider() { return normalizePhoneSmsProvider(selectPhoneSmsProvider?.value || latestState?.phoneSmsProvider); }
+function getSelectedPhoneSmsProviderOrder() { return ['nexsms', '5sim']; }
 ${extractFunction('normalizeFiveSimCountryId')}
 ${extractFunction('normalizeFiveSimCountryLabel')}
 ${extractFunction('normalizeFiveSimOperator')}
@@ -727,6 +728,7 @@ return { collectSettingsPayload };
   assert.equal(payload.phoneVerificationEnabled, true);
   assert.equal(payload.signupMethod, 'phone');
   assert.equal(payload.phoneSmsProvider, 'hero-sms');
+  assert.deepStrictEqual(payload.phoneSmsProviderOrder, ['nexsms', '5sim']);
   assert.equal(payload.accountRunHistoryTextEnabled, true);
   assert.equal(payload.accountRunHistoryHelperBaseUrl, 'http://127.0.0.1:17373');
   assert.equal(payload.heroSmsApiKey, 'demo-key');
