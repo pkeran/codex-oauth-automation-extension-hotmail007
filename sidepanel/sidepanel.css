@@ -1971,6 +1971,102 @@ header {
 .data-select:focus { border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-soft); }
 [data-theme="dark"] .data-select { color-scheme: dark; }
 
+.sub2api-group-picker {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.sub2api-group-trigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-family: 'JetBrains Mono', monospace;
+  text-align: left;
+}
+
+.sub2api-group-caret {
+  width: 8px;
+  height: 8px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: translateY(-2px) rotate(45deg);
+  flex: 0 0 auto;
+  opacity: 0.7;
+}
+
+.sub2api-group-trigger.is-open .sub2api-group-caret {
+  transform: translateY(2px) rotate(225deg);
+}
+
+.sub2api-group-menu {
+  position: absolute;
+  z-index: 70;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 220px;
+  overflow: auto;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-base);
+  box-shadow: var(--shadow-md);
+}
+
+.sub2api-group-option-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 30px;
+}
+
+.sub2api-group-option,
+.sub2api-group-delete {
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+}
+
+.sub2api-group-option {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  text-align: left;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sub2api-group-option[aria-selected="true"] {
+  color: var(--blue);
+  background: var(--blue-soft);
+}
+
+.sub2api-group-option:hover,
+.sub2api-group-delete:hover:not(:disabled) {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.sub2api-group-delete {
+  flex: 0 0 auto;
+  padding: 5px 7px;
+  font-size: 11px;
+}
+
+.sub2api-group-delete:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
 .data-check {
   display: flex;
   align-items: flex-start;

@@ -10,6 +10,7 @@
       ensureHotmailAccountForFlow,
       ensureMail2925AccountForFlow,
       ensureLuckmailPurchaseForFlow,
+      fetchGeneratedEmail,
       isGeneratedAliasProvider,
       isReusableGeneratedAliasEmail,
       isHotmailProvider,
@@ -22,6 +23,7 @@
       reuseOrCreateTab,
       sendToContentScriptResilient,
       setEmailState,
+      setState,
       SIGNUP_ENTRY_URL,
       SIGNUP_PAGE_INJECT_FILES,
       waitForTabStableComplete = null,
@@ -256,8 +258,52 @@
       return result || {};
     }
 
-    async function resolveSignupEmailForFlow(state) {
+    function getPreservedPhoneIdentityForEmailResolution(state = {}, options = {}) {
+      if (!Boolean(options?.preserveAccountIdentity)) {
+        return null;
+      }
+      const accountIdentifierType = String(state?.accountIdentifierType || '').trim().toLowerCase();
+      const signupPhoneNumber = String(
+        state?.signupPhoneNumber
+        || (accountIdentifierType === 'phone' ? state?.accountIdentifier : '')
+        || state?.signupPhoneCompletedActivation?.phoneNumber
+        || state?.signupPhoneActivation?.phoneNumber
+        || ''
+      ).trim();
+      if (accountIdentifierType !== 'phone' && !signupPhoneNumber) {
+        return null;
+      }
+      return {
+        accountIdentifierType: 'phone',
+        accountIdentifier: signupPhoneNumber || String(state?.accountIdentifier || '').trim(),
+        signupPhoneNumber,
+        signupPhoneActivation: state?.signupPhoneActivation || null,
+        signupPhoneCompletedActivation: state?.signupPhoneCompletedActivation || null,
+        signupPhoneVerificationRequestedAt: state?.signupPhoneVerificationRequestedAt ?? null,
+        signupPhoneVerificationPurpose: state?.signupPhoneVerificationPurpose || '',
+      };
+    }
+
+    async function persistResolvedSignupEmail(resolvedEmail, state = {}, options = {}) {
+      if (resolvedEmail === state.email && !options?.preserveAccountIdentity) {
+        return;
+      }
+      const preservedPhoneIdentity = getPreservedPhoneIdentityForEmailResolution(state, options);
+      if (preservedPhoneIdentity && typeof setState === 'function') {
+        await setState({
+          email: resolvedEmail,
+          ...preservedPhoneIdentity,
+        });
+        return;
+      }
+      if (resolvedEmail !== state.email) {
+        await setEmailState(resolvedEmail);
+      }
+    }
+
+    async function resolveSignupEmailForFlow(state, options = {}) {
       let resolvedEmail = state.email;
+      let generatedEmailAlreadyPersisted = false;
       if (isHotmailProvider(state)) {
         const account = await ensureHotmailAccountForFlow({
           allowAllocate: true,
@@ -281,14 +327,17 @@
         if (!isReusableGeneratedAliasEmail?.(state, resolvedEmail)) {
           resolvedEmail = buildGeneratedAliasEmail(state);
         }
+      } else if (!resolvedEmail && typeof fetchGeneratedEmail === 'function') {
+        resolvedEmail = await fetchGeneratedEmail(state, options);
+        generatedEmailAlreadyPersisted = true;
       }
 
       if (!resolvedEmail) {
         throw new Error('缺少邮箱地址，请先在侧边栏粘贴邮箱。');
       }
 
-      if (resolvedEmail !== state.email) {
-        await setEmailState(resolvedEmail);
+      if (!generatedEmailAlreadyPersisted || options?.preserveAccountIdentity) {
+        await persistResolvedSignupEmail(resolvedEmail, state, options);
       }
 
       return resolvedEmail;

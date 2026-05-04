@@ -141,6 +141,9 @@ test('sidepanel html contains account records overlay and manager script', () =>
   assert.match(html, /id="btn-toggle-account-records-selection"/);
   assert.match(html, /id="btn-delete-selected-account-records"/);
   assert.match(html, /id="input-sub2api-default-proxy"/);
+  assert.match(html, /id="sub2api-group-picker"/);
+  assert.match(html, /id="input-sub2api-group" value="codex"/);
+  assert.match(html, /id="btn-add-sub2api-group"/);
   assert.notEqual(managerIndex, -1);
   assert.notEqual(sidepanelIndex, -1);
   assert.ok(managerIndex < sidepanelIndex);

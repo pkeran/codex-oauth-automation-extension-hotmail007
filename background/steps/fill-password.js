@@ -9,22 +9,47 @@
       generatePassword,
       getTabId,
       isTabAlive,
+      resolveSignupMethod,
       sendToContentScript,
       setPasswordState,
       setState,
       SIGNUP_PAGE_INJECT_FILES,
     } = deps;
 
+    function normalizeSignupMethod(value = '') {
+      return String(value || '').trim().toLowerCase() === 'phone'
+        ? 'phone'
+        : 'email';
+    }
+
+    function getResolvedSignupMethodForStep3(state = {}) {
+      if (typeof resolveSignupMethod === 'function') {
+        return normalizeSignupMethod(resolveSignupMethod(state));
+      }
+      const frozenMethod = String(state?.resolvedSignupMethod || '').trim().toLowerCase();
+      if (frozenMethod === 'phone' || frozenMethod === 'email') {
+        return normalizeSignupMethod(frozenMethod);
+      }
+      return normalizeSignupMethod(state?.signupMethod);
+    }
+
     function resolveStep3AccountIdentity(state = {}) {
       const resolvedEmail = String(state?.email || '').trim();
+      const rawAccountIdentifierType = String(state?.accountIdentifierType || '').trim().toLowerCase();
       const signupPhoneNumber = String(
         state?.signupPhoneNumber
-        || (state?.accountIdentifierType === 'phone' ? state?.accountIdentifier : '')
+        || (rawAccountIdentifierType === 'phone' ? state?.accountIdentifier : '')
         || ''
       ).trim();
-      const accountIdentifierType = signupPhoneNumber && state?.accountIdentifierType === 'phone'
+      const explicitEmailIdentity = rawAccountIdentifierType === 'email' && resolvedEmail;
+      const shouldUsePhoneIdentity = !explicitEmailIdentity && (
+        rawAccountIdentifierType === 'phone'
+        || Boolean(signupPhoneNumber)
+        || getResolvedSignupMethodForStep3(state) === 'phone'
+      );
+      const accountIdentifierType = shouldUsePhoneIdentity
         ? 'phone'
-        : (resolvedEmail ? 'email' : (signupPhoneNumber ? 'phone' : 'email'));
+        : (resolvedEmail ? 'email' : 'email');
       const accountIdentifier = accountIdentifierType === 'phone'
         ? signupPhoneNumber
         : resolvedEmail;
@@ -40,6 +65,9 @@
     async function executeStep3(state) {
       const identity = resolveStep3AccountIdentity(state);
       if (!identity.accountIdentifier) {
+        if (identity.accountIdentifierType === 'phone') {
+          throw new Error('缺少注册手机号，请先完成步骤 2 或在侧栏填写注册手机号后再执行步骤 3。');
+        }
         throw new Error('缺少注册账号，请先完成步骤 2。');
       }
 

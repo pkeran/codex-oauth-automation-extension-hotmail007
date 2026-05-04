@@ -300,8 +300,9 @@ test('step 8 submits add-email before polling the email verification code', asyn
     isTabAlive: async () => true,
     isVerificationMailPollingError: () => false,
     LUCKMAIL_PROVIDER: 'luckmail-api',
-    resolveSignupEmailForFlow: async (state) => {
+    resolveSignupEmailForFlow: async (state, options = {}) => {
       calls.resolvedStates.push(state);
+      calls.resolveOptions = options;
       return 'new.user@example.com';
     },
     resolveVerificationStep: async (_step, state, _mail, options) => {
@@ -336,6 +337,7 @@ test('step 8 submits add-email before polling the email verification code', asyn
 
   assert.equal(calls.contentMessages.length, 1);
   assert.equal(calls.resolvedStates.length, 1);
+  assert.equal(calls.resolveOptions.preserveAccountIdentity, true);
   assert.equal(calls.mailStates[0].email, 'new.user@example.com');
   assert.equal(calls.resolvedVerification.state.email, 'new.user@example.com');
   assert.equal(calls.resolvedVerification.options.targetEmail, 'new.user@example.com');

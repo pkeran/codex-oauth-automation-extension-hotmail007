@@ -197,7 +197,18 @@
       </div>
       <div class="data-row" id="row-sub2api-group" style="display:none;">
         <span class="data-label">分组</span>
-        <input type="text" id="input-sub2api-group" class="data-input" placeholder="默认 codex；多个用逗号或换行分隔" />
+        <div class="data-inline">
+          <input type="hidden" id="input-sub2api-group" value="codex" />
+          <div id="sub2api-group-picker" class="sub2api-group-picker">
+            <button id="btn-sub2api-group-menu" class="data-select sub2api-group-trigger" type="button"
+              aria-haspopup="listbox" aria-expanded="false">
+              <span id="sub2api-group-current" class="truncate">codex</span>
+              <span class="sub2api-group-caret" aria-hidden="true"></span>
+            </button>
+            <div id="sub2api-group-menu" class="sub2api-group-menu" role="listbox" hidden></div>
+          </div>
+          <button id="btn-add-sub2api-group" class="btn btn-outline btn-sm data-inline-btn" type="button">添加</button>
+        </div>
       </div>
       <div class="data-row" id="row-sub2api-default-proxy" style="display:none;">
         <span class="data-label">默认代理</span>

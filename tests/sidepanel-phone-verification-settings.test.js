@@ -136,6 +136,7 @@ test('sidepanel html exposes phone verification toggle and multi-provider SMS ro
 
 test('sidepanel source wires runtime signup phone field to background sync messages', () => {
   assert.match(sidepanelSource, /function getRuntimeSignupPhoneValue\(state = latestState\)/);
+  assert.match(sidepanelSource, /function shouldExecuteStep3WithSignupPhoneIdentity\(state = latestState\)/);
   assert.match(sidepanelSource, /function shouldPreserveSignupPhoneInputValue\(stateSignupPhone = ''\)/);
   assert.match(sidepanelSource, /function syncSignupPhoneInputFromState\(state = latestState\)/);
   assert.match(sidepanelSource, /async function persistSignupPhoneInputForAction\(\)/);
@@ -143,8 +144,38 @@ test('sidepanel source wires runtime signup phone field to background sync messa
   assert.match(sidepanelSource, /final \? 'SAVE_SIGNUP_PHONE' : 'SET_SIGNUP_PHONE_STATE'/);
   assert.match(sidepanelSource, /message\.payload\.signupPhoneNumber !== undefined/);
   assert.match(sidepanelSource, /await persistSignupPhoneInputForAction\(\);\s*await saveSettings/);
+  assert.match(sidepanelSource, /if \(shouldExecuteStep3WithSignupPhoneIdentity\(latestState\)\)[\s\S]*payload: \{ step \}/);
   assert.match(sidepanelSource, /async function handleSkipStep\(step\)[\s\S]*await persistCurrentSettingsForAction\(\);/);
   assert.match(sidepanelSource, /inputSignupPhone\.addEventListener\('input'[\s\S]*signupPhoneInputDirty = true/);
+});
+
+test('manual step 3 uses phone identity without requiring registration email', () => {
+  const api = new Function(`
+let latestState = { signupMethod: 'phone', phoneVerificationEnabled: true, signupPhoneNumber: '+441111111111', accountIdentifierType: 'phone', accountIdentifier: '+441111111111' };
+const DEFAULT_SIGNUP_METHOD = 'email';
+const SIGNUP_METHOD_PHONE = 'phone';
+function getSelectedSignupMethod() { return 'phone'; }
+${extractFunction('normalizeSignupMethod')}
+${extractFunction('getRuntimeSignupPhoneValue')}
+${extractFunction('shouldExecuteStep3WithSignupPhoneIdentity')}
+return { shouldExecuteStep3WithSignupPhoneIdentity };
+`)();
+
+  assert.equal(api.shouldExecuteStep3WithSignupPhoneIdentity({
+    signupMethod: 'phone',
+    phoneVerificationEnabled: true,
+    accountIdentifierType: 'phone',
+    accountIdentifier: '+441111111111',
+    signupPhoneNumber: '+441111111111',
+    email: '',
+  }), true);
+  assert.equal(api.shouldExecuteStep3WithSignupPhoneIdentity({
+    signupMethod: 'email',
+    accountIdentifierType: 'email',
+    accountIdentifier: 'user@example.com',
+    signupPhoneNumber: '',
+    email: 'user@example.com',
+  }), false);
 });
 
 test('runtime signup phone sync preserves active manual input until it is saved', () => {

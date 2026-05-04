@@ -512,6 +512,73 @@ test('signup flow helper reuses existing managed alias email when it is still co
   assert.equal(setEmailCalls, 0);
 });
 
+test('signup flow helper can generate an email on demand when add-email starts from phone signup', async () => {
+  const fetchedStates = [];
+  const setStateCalls = [];
+
+  const helpers = signupFlowApi.createSignupFlowHelpers({
+    buildGeneratedAliasEmail: () => '',
+    chrome: { tabs: { get: async () => ({ id: 21, url: 'https://auth.openai.com/create-account/password' }) } },
+    ensureContentScriptReadyOnTab: async () => {},
+    ensureHotmailAccountForFlow: async () => ({}),
+    ensureLuckmailPurchaseForFlow: async () => ({}),
+    fetchGeneratedEmail: async (state, options) => {
+      fetchedStates.push({ state, options });
+      return 'duck.generated@example.com';
+    },
+    isGeneratedAliasProvider: () => false,
+    isReusableGeneratedAliasEmail: () => false,
+    isHotmailProvider: () => false,
+    isLuckmailProvider: () => false,
+    isSignupEmailVerificationPageUrl: () => false,
+    isSignupPasswordPageUrl: () => true,
+    reuseOrCreateTab: async () => 21,
+    sendToContentScriptResilient: async () => ({}),
+    setEmailState: async () => {
+      throw new Error('fetchGeneratedEmail already persists the generated email');
+    },
+    setState: async (updates) => {
+      setStateCalls.push(updates);
+    },
+    SIGNUP_ENTRY_URL: 'https://chatgpt.com/',
+    SIGNUP_PAGE_INJECT_FILES: [],
+    waitForTabUrlMatch: async () => null,
+  });
+
+  const email = await helpers.resolveSignupEmailForFlow({
+    email: '',
+    emailGenerator: 'duck',
+    accountIdentifierType: 'phone',
+    accountIdentifier: '+447780579093',
+    signupPhoneNumber: '+447780579093',
+    signupPhoneCompletedActivation: {
+      activationId: 'signup-completed',
+      phoneNumber: '+447780579093',
+    },
+  }, {
+    preserveAccountIdentity: true,
+  });
+
+  assert.equal(email, 'duck.generated@example.com');
+  assert.equal(fetchedStates.length, 1);
+  assert.equal(fetchedStates[0].options.preserveAccountIdentity, true);
+  assert.deepStrictEqual(setStateCalls, [
+    {
+      email: 'duck.generated@example.com',
+      accountIdentifierType: 'phone',
+      accountIdentifier: '+447780579093',
+      signupPhoneNumber: '+447780579093',
+      signupPhoneActivation: null,
+      signupPhoneCompletedActivation: {
+        activationId: 'signup-completed',
+        phoneNumber: '+447780579093',
+      },
+      signupPhoneVerificationRequestedAt: null,
+      signupPhoneVerificationPurpose: '',
+    },
+  ]);
+});
+
 test('signup flow helper finalizes step 3 submit by reusing signup verification preparation', async () => {
   let ensureCalls = 0;
   const messages = [];

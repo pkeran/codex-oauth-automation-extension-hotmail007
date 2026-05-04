@@ -245,6 +245,10 @@ const CONTRIBUTION_SOURCE_CPA = 'cpa';
 const CONTRIBUTION_SOURCE_SUB2API = 'sub2api';
 const CONTRIBUTION_SUB2API_DEFAULT_GROUP_NAME = 'codex号池';
 const CONTRIBUTION_SUB2API_PLUS_GROUP_NAME = 'openai-plus';
+const DEFAULT_SUB2API_GROUP_NAMES = [
+  DEFAULT_SUB2API_GROUP_NAME,
+  CONTRIBUTION_SUB2API_PLUS_GROUP_NAME,
+];
 const DEFAULT_SUB2API_REDIRECT_URI = 'http://localhost:1455/auth/callback';
 const DEFAULT_IP_PROXY_SERVICE = '711proxy';
 const IP_PROXY_SERVICE_VALUES = ['711proxy', 'lumiproxy', 'iproyal', 'omegaproxy'];
@@ -568,6 +572,7 @@ const PERSISTED_SETTING_DEFAULTS = {
   sub2apiEmail: '',
   sub2apiPassword: '',
   sub2apiGroupName: DEFAULT_SUB2API_GROUP_NAME,
+  sub2apiGroupNames: DEFAULT_SUB2API_GROUP_NAMES,
   sub2apiDefaultProxyName: DEFAULT_SUB2API_PROXY_NAME,
   ipProxyEnabled: false,
   ipProxyService: DEFAULT_IP_PROXY_SERVICE,
@@ -2058,6 +2063,24 @@ function resolveCloudflareTempEmailPollTargetEmail(state = {}, pollPayload = {},
   return normalizeCloudflareTempEmailReceiveMailbox(state.email);
 }
 
+function normalizeSub2ApiGroupNames(value = '') {
+  const source = Array.isArray(value)
+    ? value
+    : String(value || '').split(/[\r\n,，、]+/);
+  const names = [];
+  const seen = new Set();
+  for (const item of source) {
+    const name = String(item || '').trim();
+    const key = name.toLowerCase();
+    if (!key || seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    names.push(name);
+  }
+  return names;
+}
+
 function normalizePersistentSettingValue(key, value) {
   switch (key) {
     case 'panelMode':
@@ -2076,6 +2099,8 @@ function normalizePersistentSettingValue(key, value) {
       return String(value || '');
     case 'sub2apiGroupName':
       return String(value || '').trim();
+    case 'sub2apiGroupNames':
+      return normalizeSub2ApiGroupNames(value);
     case 'sub2apiDefaultProxyName':
       return String(value || '').trim();
     case 'ipProxyEnabled':
@@ -2412,6 +2437,18 @@ function buildPersistentSettingsPayload(input = {}, options = {}) {
       domains.unshift(payload.cloudflareTempEmailDomain);
     }
     payload.cloudflareTempEmailDomains = domains;
+  }
+  if (
+    Object.prototype.hasOwnProperty.call(payload, 'sub2apiGroupName')
+    || Object.prototype.hasOwnProperty.call(payload, 'sub2apiGroupNames')
+  ) {
+    const groupNames = normalizeSub2ApiGroupNames([
+      ...(Array.isArray(payload.sub2apiGroupNames) ? payload.sub2apiGroupNames : []),
+      payload.sub2apiGroupName,
+    ]);
+    payload.sub2apiGroupNames = groupNames.length
+      ? groupNames
+      : [...DEFAULT_SUB2API_GROUP_NAMES];
   }
   const nextSignupConstraintState = {
     ...PERSISTED_SETTING_DEFAULTS,
@@ -10137,6 +10174,7 @@ const signupFlowHelpers = self.MultiPageSignupFlowHelpers?.createSignupFlowHelpe
   ensureHotmailAccountForFlow,
   ensureMail2925AccountForFlow,
   ensureLuckmailPurchaseForFlow,
+  fetchGeneratedEmail,
   getTabId,
   isGeneratedAliasProvider,
   isReusableGeneratedAliasEmail,
@@ -10157,6 +10195,7 @@ const signupFlowHelpers = self.MultiPageSignupFlowHelpers?.createSignupFlowHelpe
   reuseOrCreateTab,
   sendToContentScriptResilient,
   setEmailState,
+  setState,
   SIGNUP_ENTRY_URL,
   SIGNUP_PAGE_INJECT_FILES,
   waitForTabStableComplete,
@@ -10256,6 +10295,7 @@ const step3Executor = self.MultiPageBackgroundStep3?.createStep3Executor({
   generatePassword,
   getTabId,
   isTabAlive,
+  resolveSignupMethod,
   sendToContentScript,
   setPasswordState,
   setState,

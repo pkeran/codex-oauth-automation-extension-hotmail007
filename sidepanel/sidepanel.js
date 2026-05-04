@@ -95,6 +95,11 @@ const rowSub2ApiPassword = document.getElementById('row-sub2api-password');
 const inputSub2ApiPassword = document.getElementById('input-sub2api-password');
 const rowSub2ApiGroup = document.getElementById('row-sub2api-group');
 const inputSub2ApiGroup = document.getElementById('input-sub2api-group');
+const sub2ApiGroupPicker = document.getElementById('sub2api-group-picker');
+const btnSub2ApiGroupMenu = document.getElementById('btn-sub2api-group-menu');
+const sub2ApiGroupCurrent = document.getElementById('sub2api-group-current');
+const sub2ApiGroupMenu = document.getElementById('sub2api-group-menu');
+const btnAddSub2ApiGroup = document.getElementById('btn-add-sub2api-group');
 const rowSub2ApiDefaultProxy = document.getElementById('row-sub2api-default-proxy');
 const inputSub2ApiDefaultProxy = document.getElementById('input-sub2api-default-proxy');
 const rowIpProxyEnabled = document.getElementById('row-ip-proxy-enabled');
@@ -1092,6 +1097,138 @@ let configActionInFlight = false;
 let currentReleaseSnapshot = null;
 let currentContributionContentSnapshot = null;
 let contributionContentSnapshotRequestInFlight = null;
+
+const DEFAULT_SUB2API_GROUP_OPTIONS = ['codex', 'openai-plus'];
+let sub2ApiGroupMenuOpen = false;
+
+function splitSub2ApiGroupNames(value = '') {
+  return String(value || '')
+    .split(/[\r\n,，、]+/)
+    .map((name) => name.trim())
+    .filter(Boolean);
+}
+
+function normalizeSub2ApiGroupOptions(...sources) {
+  const groups = [];
+  const seen = new Set();
+
+  const append = (value) => {
+    if (Array.isArray(value)) {
+      value.forEach(append);
+      return;
+    }
+    for (const name of splitSub2ApiGroupNames(value)) {
+      const key = name.toLowerCase();
+      if (!key || seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      groups.push(name);
+    }
+  };
+
+  sources.forEach(append);
+  return groups;
+}
+
+function getSelectedSub2ApiGroupName() {
+  return String(inputSub2ApiGroup?.value || '').trim()
+    || DEFAULT_SUB2API_GROUP_OPTIONS[0];
+}
+
+function getSub2ApiGroupOptionsState(state = latestState) {
+  const options = normalizeSub2ApiGroupOptions(
+    state?.sub2apiGroupNames,
+    state?.sub2apiGroupName
+  );
+  return options.length ? options : [...DEFAULT_SUB2API_GROUP_OPTIONS];
+}
+
+function setSub2ApiGroupMenuOpen(open) {
+  sub2ApiGroupMenuOpen = Boolean(open);
+  if (sub2ApiGroupMenu) {
+    sub2ApiGroupMenu.hidden = !sub2ApiGroupMenuOpen;
+  }
+  if (btnSub2ApiGroupMenu) {
+    btnSub2ApiGroupMenu.setAttribute('aria-expanded', sub2ApiGroupMenuOpen ? 'true' : 'false');
+    btnSub2ApiGroupMenu.classList?.toggle('is-open', sub2ApiGroupMenuOpen);
+  }
+}
+
+function setSub2ApiGroupSelection(groupName, options = {}) {
+  const selected = String(groupName || '').trim() || DEFAULT_SUB2API_GROUP_OPTIONS[0];
+  if (inputSub2ApiGroup) {
+    inputSub2ApiGroup.value = selected;
+    if (options.emit && typeof inputSub2ApiGroup.dispatchEvent === 'function') {
+      inputSub2ApiGroup.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+  }
+  if (sub2ApiGroupCurrent) {
+    sub2ApiGroupCurrent.textContent = selected;
+  }
+}
+
+function renderSub2ApiGroupOptions(state = latestState, selectedValue = '') {
+  if (!inputSub2ApiGroup) {
+    return;
+  }
+
+  const selected = String(selectedValue || state?.sub2apiGroupName || '').trim();
+  const options = getSub2ApiGroupOptionsState({
+    ...(state || {}),
+    sub2apiGroupName: selected || state?.sub2apiGroupName,
+  });
+  if (selected && !options.some((name) => name.toLowerCase() === selected.toLowerCase())) {
+    options.unshift(selected);
+  }
+
+  if (
+    !sub2ApiGroupMenu
+    || typeof sub2ApiGroupMenu.appendChild !== 'function'
+    || typeof document === 'undefined'
+    || typeof document.createElement !== 'function'
+  ) {
+    setSub2ApiGroupSelection(selected || options[0] || DEFAULT_SUB2API_GROUP_OPTIONS[0]);
+    return;
+  }
+
+  sub2ApiGroupMenu.innerHTML = '';
+  options.forEach((name) => {
+    const row = document.createElement('div');
+    row.className = 'sub2api-group-option-row';
+
+    const option = document.createElement('button');
+    option.type = 'button';
+    option.className = 'sub2api-group-option';
+    option.setAttribute('role', 'option');
+    option.setAttribute('aria-selected', name === selected ? 'true' : 'false');
+    option.textContent = name;
+    option.addEventListener('click', () => {
+      setSub2ApiGroupSelection(name, { emit: true });
+      setSub2ApiGroupMenuOpen(false);
+    });
+
+    const deleteButton = document.createElement('button');
+    deleteButton.type = 'button';
+    deleteButton.className = 'sub2api-group-delete';
+    deleteButton.textContent = '删除';
+    deleteButton.title = `删除分组 ${name}`;
+    deleteButton.setAttribute('aria-label', `删除分组 ${name}`);
+    deleteButton.disabled = options.length <= 1;
+    deleteButton.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      handleDeleteSub2ApiGroup(name).catch((error) => {
+        showToast(error?.message || '删除 SUB2API 分组失败。', 'error');
+      });
+    });
+
+    row.appendChild(option);
+    row.appendChild(deleteButton);
+    sub2ApiGroupMenu.appendChild(row);
+  });
+  setSub2ApiGroupSelection(selected || options[0] || DEFAULT_SUB2API_GROUP_OPTIONS[0]);
+}
 let customEmailPoolEntriesState = [];
 
 const EYE_OPEN_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>';
@@ -3118,6 +3255,35 @@ function collectSettingsPayload() {
         : (String(latestState?.signupMethod || '').trim().toLowerCase() === 'phone' ? 'phone' : 'email'))
     );
   const plusPaymentMethod = getSelectedPlusPaymentMethod();
+  const selectedSub2ApiGroupName = String(inputSub2ApiGroup.value || '').trim();
+  const sub2apiGroupNames = [];
+  const seenSub2ApiGroupNames = new Set();
+  const appendSub2ApiGroupNames = (value) => {
+    if (Array.isArray(value)) {
+      value.forEach(appendSub2ApiGroupNames);
+      return;
+    }
+    String(value || '')
+      .split(/[\r\n,，、]+/)
+      .map((name) => name.trim())
+      .filter(Boolean)
+      .forEach((name) => {
+        const key = name.toLowerCase();
+        if (!key || seenSub2ApiGroupNames.has(key)) {
+          return;
+        }
+        seenSub2ApiGroupNames.add(key);
+        sub2apiGroupNames.push(name);
+      });
+  };
+  [
+    latestState?.sub2apiGroupNames,
+    latestState?.sub2apiGroupName,
+    selectedSub2ApiGroupName,
+  ].forEach(appendSub2ApiGroupNames);
+  if (sub2apiGroupNames.length === 0) {
+    appendSub2ApiGroupNames(['codex', 'openai-plus']);
+  }
   return {
     ...(contributionModeEnabled ? {} : {
       panelMode: selectPanelMode.value,
@@ -3128,7 +3294,8 @@ function collectSettingsPayload() {
     sub2apiUrl: inputSub2ApiUrl.value.trim(),
     sub2apiEmail: inputSub2ApiEmail.value.trim(),
     sub2apiPassword: inputSub2ApiPassword.value,
-    sub2apiGroupName: inputSub2ApiGroup.value.trim(),
+    sub2apiGroupName: selectedSub2ApiGroupName,
+    sub2apiGroupNames,
     sub2apiDefaultProxyName: inputSub2ApiDefaultProxy.value.trim(),
     ipProxyEnabled: getSelectedIpProxyEnabledSafe(),
     ipProxyService: selectedIpProxyService,
@@ -7015,6 +7182,18 @@ function getRuntimeSignupPhoneValue(state = latestState) {
   ).trim();
 }
 
+function shouldExecuteStep3WithSignupPhoneIdentity(state = latestState) {
+  const identifierType = String(state?.accountIdentifierType || '').trim().toLowerCase();
+  const resolvedMethod = normalizeSignupMethod(
+    state?.resolvedSignupMethod
+    || state?.signupMethod
+    || (typeof getSelectedSignupMethod === 'function' ? getSelectedSignupMethod() : DEFAULT_SIGNUP_METHOD)
+  );
+  return identifierType === 'phone'
+    || Boolean(getRuntimeSignupPhoneValue(state))
+    || resolvedMethod === SIGNUP_METHOD_PHONE;
+}
+
 function getSignupPhoneInputValue() {
   return typeof inputSignupPhone !== 'undefined' && inputSignupPhone
     ? String(inputSignupPhone.value || '').trim()
@@ -7715,7 +7894,7 @@ function applySettingsState(state) {
   inputSub2ApiUrl.value = state?.sub2apiUrl || '';
   inputSub2ApiEmail.value = state?.sub2apiEmail || '';
   inputSub2ApiPassword.value = state?.sub2apiPassword || '';
-  inputSub2ApiGroup.value = state?.sub2apiGroupName || '';
+  renderSub2ApiGroupOptions(state, state?.sub2apiGroupName || '');
   inputSub2ApiDefaultProxy.value = state?.sub2apiDefaultProxyName || '';
   const normalizedIpProxyService = resolveIpProxyService(state?.ipProxyService);
   const normalizedIpProxyServiceProfiles = typeof normalizeIpProxyServiceProfiles === 'function'
@@ -9336,6 +9515,90 @@ async function saveCloudflareTempEmailDomainSettings(domains, activeDomain, opti
   }
 }
 
+async function handleAddSub2ApiGroup() {
+  if (!sharedFormDialog?.open) {
+    showToast('表单弹窗未加载，请刷新扩展后重试。', 'error');
+    return;
+  }
+
+  const result = await sharedFormDialog.open({
+    title: '添加 SUB2API 分组',
+    confirmLabel: '添加',
+    confirmVariant: 'btn-primary',
+    fields: [
+      {
+        key: 'groupName',
+        label: '分组',
+        type: 'text',
+        placeholder: '例如 openai-plus',
+        autocomplete: 'off',
+        required: true,
+        requiredMessage: '请先填写 SUB2API 分组名称。',
+        validate: (value) => {
+          const names = normalizeSub2ApiGroupOptions(value);
+          return names.length ? '' : '请先填写 SUB2API 分组名称。';
+        },
+      },
+    ],
+  });
+  if (!result) {
+    return;
+  }
+
+  const newGroups = normalizeSub2ApiGroupOptions(result.groupName);
+  if (!newGroups.length) {
+    return;
+  }
+
+  const selectedGroup = newGroups[0];
+  const nextGroups = normalizeSub2ApiGroupOptions(
+    getSub2ApiGroupOptionsState(latestState),
+    newGroups
+  );
+  syncLatestState({
+    sub2apiGroupName: selectedGroup,
+    sub2apiGroupNames: nextGroups,
+  });
+  renderSub2ApiGroupOptions(latestState, selectedGroup);
+  markSettingsDirty(true);
+  await saveSettings({ silent: true }).catch(() => { });
+  showToast(`已添加并切换到 SUB2API 分组：${selectedGroup}`, 'success', 1800);
+}
+
+async function handleDeleteSub2ApiGroup(groupName) {
+  const targetName = String(groupName || '').trim();
+  if (!targetName) {
+    return;
+  }
+
+  const currentGroups = getSub2ApiGroupOptionsState(latestState);
+  if (currentGroups.length <= 1) {
+    showToast('至少保留一个 SUB2API 分组。', 'warn', 1800);
+    return;
+  }
+
+  const targetKey = targetName.toLowerCase();
+  const nextGroups = currentGroups.filter((name) => name.toLowerCase() !== targetKey);
+  if (nextGroups.length === currentGroups.length) {
+    return;
+  }
+
+  const currentGroup = getSelectedSub2ApiGroupName();
+  const nextSelectedGroup = currentGroup.toLowerCase() === targetKey
+    ? nextGroups[0]
+    : (nextGroups.find((name) => name.toLowerCase() === currentGroup.toLowerCase()) || nextGroups[0]);
+
+  syncLatestState({
+    sub2apiGroupName: nextSelectedGroup,
+    sub2apiGroupNames: nextGroups,
+  });
+  renderSub2ApiGroupOptions(latestState, nextSelectedGroup);
+  setSub2ApiGroupMenuOpen(true);
+  markSettingsDirty(true);
+  await saveSettings({ silent: true }).catch(() => { });
+  showToast(`已删除 SUB2API 分组：${targetName}`, 'success', 1600);
+}
+
 function updatePanelModeUI() {
   const useSub2Api = selectPanelMode.value === 'sub2api';
   const useCodex2Api = selectPanelMode.value === 'codex2api';
@@ -10338,8 +10601,12 @@ stepsList?.addEventListener('click', async (event) => {
         });
         syncLatestState({ customPassword: inputPassword.value });
       }
-      let email = inputEmail.value.trim();
-      if (selectMailProvider.value === 'hotmail-api' || isLuckmailProvider()) {
+      if (shouldExecuteStep3WithSignupPhoneIdentity(latestState)) {
+        const response = await chrome.runtime.sendMessage({ type: 'EXECUTE_STEP', source: 'sidepanel', payload: { step } });
+        if (response?.error) {
+          throw new Error(response.error);
+        }
+      } else if (selectMailProvider.value === 'hotmail-api' || isLuckmailProvider()) {
         const response = await chrome.runtime.sendMessage({ type: 'EXECUTE_STEP', source: 'sidepanel', payload: { step } });
         if (response?.error) {
           throw new Error(response.error);
@@ -11412,12 +11679,33 @@ inputSub2ApiPassword.addEventListener('blur', () => {
   saveSettings({ silent: true }).catch(() => { });
 });
 
-inputSub2ApiGroup.addEventListener('input', () => {
+inputSub2ApiGroup.addEventListener('change', () => {
+  syncLatestState({
+    sub2apiGroupName: getSelectedSub2ApiGroupName(),
+    sub2apiGroupNames: normalizeSub2ApiGroupOptions(
+      getSub2ApiGroupOptionsState(latestState),
+      getSelectedSub2ApiGroupName()
+    ),
+  });
   markSettingsDirty(true);
-  scheduleSettingsAutoSave();
-});
-inputSub2ApiGroup.addEventListener('blur', () => {
   saveSettings({ silent: true }).catch(() => { });
+});
+btnSub2ApiGroupMenu?.addEventListener('click', (event) => {
+  event.stopPropagation();
+  setSub2ApiGroupMenuOpen(!sub2ApiGroupMenuOpen);
+});
+btnSub2ApiGroupMenu?.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') {
+    setSub2ApiGroupMenuOpen(false);
+  }
+});
+sub2ApiGroupMenu?.addEventListener('click', (event) => {
+  event.stopPropagation();
+});
+btnAddSub2ApiGroup?.addEventListener('click', () => {
+  handleAddSub2ApiGroup().catch((error) => {
+    showToast(error?.message || '添加 SUB2API 分组失败。', 'error');
+  });
 });
 
 inputSub2ApiDefaultProxy.addEventListener('input', () => {
@@ -12571,6 +12859,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         updatePanelModeUI();
       }
       if (
+        message.payload.sub2apiGroupName !== undefined
+        || message.payload.sub2apiGroupNames !== undefined
+      ) {
+        renderSub2ApiGroupOptions(latestState, latestState?.sub2apiGroupName || '');
+      }
+      if (
         message.payload.ipProxyEnabled !== undefined
         || message.payload.ipProxyService !== undefined
         || message.payload.ipProxyServiceProfiles !== undefined
@@ -13171,6 +13465,7 @@ document.addEventListener('click', (event) => {
   const clickedInsideFiveSimCountryMenu = Boolean(fiveSimCountryMenuShell?.contains(event.target));
   const clickedInsideNexSmsCountryMenu = Boolean(nexSmsCountryMenuShell?.contains(event.target));
   const clickedInsideProviderOrderMenu = Boolean(phoneSmsProviderOrderMenuShell?.contains(event.target));
+  const clickedInsideSub2ApiGroupPicker = Boolean(sub2ApiGroupPicker?.contains(event.target));
 
   if (configMenuOpen && !clickedInsideConfigMenu) {
     closeConfigMenu();
@@ -13192,6 +13487,9 @@ document.addEventListener('click', (event) => {
   if (providerOrderMenuOpen && !clickedInsideProviderOrderMenu) {
     setPhoneSmsProviderOrderMenuOpen(false);
   }
+  if (sub2ApiGroupMenuOpen && !clickedInsideSub2ApiGroupPicker) {
+    setSub2ApiGroupMenuOpen(false);
+  }
 });
 
 document.addEventListener('keydown', (event) => {
@@ -13212,6 +13510,9 @@ document.addEventListener('keydown', (event) => {
   }
   if (btnPhoneSmsProviderOrderMenu?.getAttribute('aria-expanded') === 'true') {
     setPhoneSmsProviderOrderMenuOpen(false);
+  }
+  if (sub2ApiGroupMenuOpen) {
+    setSub2ApiGroupMenuOpen(false);
   }
 });
 

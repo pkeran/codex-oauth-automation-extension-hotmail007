@@ -77,6 +77,7 @@ test('background account history settings are normalized independently from hotm
     extractFunction('normalizeFiveSimOperator'),
     extractFunction('normalizeFiveSimMaxPrice'),
     extractFunction('normalizeFiveSimCountryFallback'),
+    extractFunction('normalizeSub2ApiGroupNames'),
     extractFunction('normalizePersistentSettingValue'),
   ].join('\n');
 
@@ -246,6 +247,10 @@ return {
   assert.equal(
     api.normalizePersistentSettingValue('sub2apiDefaultProxyName', ' proxy-a '),
     'proxy-a'
+  );
+  assert.deepStrictEqual(
+    api.normalizePersistentSettingValue('sub2apiGroupNames', [' codex ', 'openai-plus', 'CODEX']),
+    ['codex', 'openai-plus']
   );
   assert.equal(
     api.normalizePersistentSettingValue('codex2apiUrl', 'localhost:8080/admin'),

@@ -145,7 +145,9 @@
       }
 
       const latestState = typeof getState === 'function' ? await getState() : state;
-      const resolvedEmail = await resolveSignupEmailForFlow(latestState);
+      const resolvedEmail = await resolveSignupEmailForFlow(latestState, {
+        preserveAccountIdentity: true,
+      });
       await addLog(`步骤 ${visibleStep}：检测到添加邮箱页，正在添加邮箱 ${resolvedEmail} 并进入邮箱验证码页...`);
 
       const timeoutMs = typeof getOAuthFlowStepTimeoutMs === 'function'
