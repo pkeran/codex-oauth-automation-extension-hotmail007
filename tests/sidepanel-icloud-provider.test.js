@@ -504,6 +504,7 @@ function normalizePhoneCodePollMaxRoundsValue(value, fallback = 4) { const parse
 function getSelectedHeroSmsCountryOption() { return { id: 52, label: 'Thailand' }; }
 function applyHeroSmsFallbackSelection() {}
 function updateHeroSmsPlatformDisplay() {}
+function updatePhoneSmsProviderOrderSummary() {}
 function applyAutoRunStatus() {}
 function markSettingsDirty() {}
 function updateAutoDelayInputState() {}

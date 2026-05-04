@@ -345,6 +345,162 @@ return {
   assert.deepEqual(api.getClicks(), ['\u6fb3\u5927\u5229\u4e9a (+61)', '\u82f1\u56fd +(44)']);
 });
 
+test('step 7 scrolls the phone login country listbox until the dial code option is rendered', async () => {
+  const api = new Function(`
+const clicks = [];
+const scrollEvents = [];
+let visibleCountryText = '\\u6fb3\\u5927\\u5229\\u4e9a (+61)';
+let listboxOpen = false;
+let ukRendered = false;
+
+const phoneInput = {
+  closest() {
+    return null;
+  },
+};
+
+const countryButton = {
+  textContent: '',
+  querySelector(selector) {
+    if (selector === '.react-aria-SelectValue') {
+      return {
+        get textContent() {
+          return visibleCountryText;
+        },
+      };
+    }
+    return null;
+  },
+};
+
+const listbox = {
+  scrollTop: 0,
+  scrollHeight: 3200,
+  clientHeight: 420,
+  dispatchEvent(event) {
+    scrollEvents.push({ type: event?.type || '', scrollTop: this.scrollTop });
+    if (this.scrollTop >= 900) {
+      ukRendered = true;
+    }
+    return true;
+  },
+};
+
+const albaniaOption = { textContent: '\\u963f\\u5c14\\u5df4\\u5c3c\\u4e9a +(355)', parentElement: listbox };
+const unitedKingdomOption = { textContent: '\\u82f1\\u56fd +(44)', parentElement: listbox };
+
+const document = {
+  body: {},
+  documentElement: {},
+  querySelectorAll(selector) {
+    const text = String(selector || '');
+    if (text === '[role="listbox"]') {
+      return listboxOpen ? [listbox] : [];
+    }
+    if (text === '[role="listbox"] [role="option"], [role="option"]') {
+      if (!listboxOpen) return [];
+      return ukRendered ? [albaniaOption, unitedKingdomOption] : [albaniaOption];
+    }
+    if (text.includes('aria-haspopup="listbox"') || text.includes('aria-expanded')) {
+      return [countryButton];
+    }
+    if (text === 'select') {
+      return [];
+    }
+    return [];
+  },
+  querySelector(selector) {
+    const items = this.querySelectorAll(selector);
+    return items[0] || null;
+  },
+};
+
+function isVisibleElement(element) {
+  return Boolean(element);
+}
+
+function getActionText(element) {
+  if (element === countryButton) return visibleCountryText;
+  return String(element?.textContent || '').replace(/\\s+/g, ' ').trim();
+}
+
+function getPageTextSnapshot() {
+  return visibleCountryText;
+}
+
+function simulateClick(target) {
+  clicks.push(getActionText(target));
+  if (target === countryButton) {
+    listboxOpen = true;
+  }
+  if (target === unitedKingdomOption) {
+    visibleCountryText = '\\u82f1\\u56fd +(44)';
+    listboxOpen = false;
+  }
+}
+
+async function sleep() {}
+function throwIfStopped() {}
+
+${extractFunction('normalizePhoneDigits')}
+${extractFunction('extractDialCodeFromText')}
+${extractFunction('dispatchSignupPhoneFieldEvents')}
+${extractFunction('normalizeSignupCountryLabel')}
+${extractFunction('getSignupCountryLabelAliases')}
+${extractFunction('getSignupPhoneOptionLabel')}
+${extractFunction('normalizeSignupCountryOptionValue')}
+${extractFunction('getSignupRegionDisplayName')}
+${extractFunction('getSignupPhoneCountryMatchLabels')}
+${extractFunction('isSameSignupCountryOption')}
+${extractFunction('getSignupPhoneInput')}
+${extractFunction('getSignupPhoneControlRoots')}
+${extractFunction('querySignupPhoneCountryElements')}
+${extractFunction('isSignupPhoneCountrySelect')}
+${extractFunction('getSignupPhoneCountrySelect')}
+${extractFunction('getSignupPhoneSelectedCountryOption')}
+${extractFunction('getSignupPhoneCountryButtonText')}
+${extractFunction('getSignupPhoneCountryButton')}
+${extractFunction('getSignupPhoneDisplayedDialCode')}
+${extractFunction('resolveSignupPhoneDialCodeFromNumber')}
+${extractFunction('resolveSignupPhoneTargetDialCode')}
+${extractFunction('getSignupPhoneCountryTargetLabels')}
+${extractFunction('doesSignupPhoneCountryTextMatchTarget')}
+${extractFunction('isSignupPhoneCountrySelectionSynced')}
+${extractFunction('findSignupPhoneCountryOptionByLabel')}
+${extractFunction('findSignupPhoneCountryOptionByPhoneNumber')}
+${extractFunction('trySelectSignupPhoneCountryOption')}
+${extractFunction('getVisibleSignupPhoneCountryListboxOptions')}
+${extractFunction('findSignupPhoneCountryListboxOption')}
+${extractFunction('trySelectSignupPhoneCountryListboxOption')}
+${extractFunction('ensureSignupPhoneCountrySelected')}
+function getLoginPhoneCountrySelect() { return null; }
+function getLoginPhoneCountryOptionLabel() { return ''; }
+${extractFunction('selectCountryForPhoneInput')}
+
+return {
+  async run() {
+    return selectCountryForPhoneInput(phoneInput, '447799342687', '', { visibleStep: 7 });
+  },
+  getClicks() {
+    return clicks.slice();
+  },
+  getScrollEvents() {
+    return scrollEvents.slice();
+  },
+  getVisibleCountryText() {
+    return visibleCountryText;
+  },
+};
+  `)();
+
+  const dialCode = await api.run();
+
+  assert.equal(dialCode, '44');
+  assert.equal(api.getVisibleCountryText(), '\u82f1\u56fd +(44)');
+  assert.equal(api.getScrollEvents().length > 0, true);
+  assert.deepEqual(api.getClicks(), ['\u6fb3\u5927\u5229\u4e9a (+61)', '\u82f1\u56fd +(44)']);
+});
+
 function createPhoneFillApi(fillBehavior, options = {}) {
   const {
     initialValue = '+44',
