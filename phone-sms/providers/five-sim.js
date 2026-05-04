@@ -15,6 +15,10 @@
   const SUPPORTED_COUNTRY_ITEMS = Object.freeze([
     { id: 'indonesia', label: '印度尼西亚 (Indonesia)' },
     { id: 'thailand', label: '泰国 (Thailand)' },
+    { id: 'england', label: '英国 (England)' },
+    { id: 'usa', label: '美国 (United States)' },
+    { id: 'japan', label: '日本 (Japan)' },
+    { id: 'germany', label: '德国 (Germany)' },
     { id: 'vietnam', label: '越南 (Vietnam)' },
   ]);
   const SUPPORTED_COUNTRY_ID_SET = new Set(SUPPORTED_COUNTRY_ITEMS.map((item) => item.id));
@@ -115,7 +119,7 @@
 
   function normalizeFiveSimCountryId(value, fallback = DEFAULT_COUNTRY_ID) {
     const normalized = String(value || '').trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '');
-    if (SUPPORTED_COUNTRY_ID_SET.has(normalized)) {
+    if (normalized) {
       return normalized;
     }
     const fallbackSource = fallback === undefined || fallback === null ? DEFAULT_COUNTRY_ID : fallback;
@@ -123,7 +127,7 @@
     if (!normalizedFallback) {
       return '';
     }
-    return SUPPORTED_COUNTRY_ID_SET.has(normalizedFallback) ? normalizedFallback : DEFAULT_COUNTRY_ID;
+    return normalizedFallback || DEFAULT_COUNTRY_ID;
   }
 
   function getCountryIdFromPayload(record = {}, fallback = DEFAULT_COUNTRY_ID) {
@@ -414,12 +418,8 @@
           ].filter(Boolean).join(' '),
         };
       })
-      .filter((entry) => entry && SUPPORTED_COUNTRY_ID_SET.has(String(entry.id)))
-      .sort((left, right) => {
-        const leftIndex = SUPPORTED_COUNTRY_ITEMS.findIndex((item) => item.id === String(left.id));
-        const rightIndex = SUPPORTED_COUNTRY_ITEMS.findIndex((item) => item.id === String(right.id));
-        return leftIndex - rightIndex;
-      });
+      .filter(Boolean)
+      .sort((left, right) => String(left.label || '').localeCompare(String(right.label || '')));
   }
 
   function collectPriceEntries(payload, entries = []) {

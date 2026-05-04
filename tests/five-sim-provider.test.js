@@ -55,12 +55,17 @@ test('5sim provider maps countries and prices', async () => {
   const prices = await provider.fetchPrices({}, { id: 'vietnam', label: 'Vietnam' });
   const entries = provider.collectPriceEntries(prices, []);
 
-  assert.deepStrictEqual(countries.map((country) => country.id), ['indonesia', 'thailand', 'vietnam']);
-  assert.deepStrictEqual(countries[2], {
-    id: 'vietnam',
-    label: '越南 (Vietnam)',
-    searchText: 'vietnam 越南 (Vietnam) Vietnam VN +84',
-  });
+  assert.equal(countries.length, 4);
+  assert.equal(countries.some((country) => country.id === 'england'), true);
+  assert.equal(countries.some((country) => country.id === 'indonesia'), true);
+  assert.deepStrictEqual(
+    countries.find((country) => country.id === 'vietnam'),
+    {
+      id: 'vietnam',
+      label: '越南 (Vietnam)',
+      searchText: 'vietnam 越南 (Vietnam) Vietnam VN +84',
+    }
+  );
   assert.equal(requests[1].url.searchParams.get('country'), 'vietnam');
   assert.equal(requests[1].url.searchParams.get('product'), 'openai');
   assert.deepStrictEqual(entries, [{ cost: 10, count: 2, inStock: true }]);
@@ -283,4 +288,3 @@ test('5sim provider reports purchase rate limit separately from no-number countr
     ]
   );
 });
-

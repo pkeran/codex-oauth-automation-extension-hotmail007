@@ -993,7 +993,7 @@ function normalizeHeroSmsCountryFallback(value = []) {
       }
     }
 
-    if (!Number.isFinite(countryId) || countryId <= 0 || !HERO_SMS_SUPPORTED_COUNTRY_ID_SET.has(String(countryId)) || seenIds.has(countryId)) {
+    if (!Number.isFinite(countryId) || countryId <= 0 || seenIds.has(countryId)) {
       continue;
     }
     seenIds.add(countryId);
@@ -1128,7 +1128,7 @@ function normalizeFiveSimCountryId(value, fallback = FIVE_SIM_COUNTRY_ID) {
     ? rootScope.PhoneSmsFiveSimProvider.normalizeFiveSimCountryId(value, '')
     : String(value || '').trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '');
   const normalized = String(rawNormalized || '').trim().toLowerCase();
-  if (FIVE_SIM_SUPPORTED_COUNTRY_ID_SET.has(normalized)) {
+  if (normalized) {
     return normalized;
   }
   const fallbackSource = fallback === undefined || fallback === null ? FIVE_SIM_COUNTRY_ID : fallback;
@@ -1136,7 +1136,7 @@ function normalizeFiveSimCountryId(value, fallback = FIVE_SIM_COUNTRY_ID) {
   if (!normalizedFallback) {
     return '';
   }
-  return FIVE_SIM_SUPPORTED_COUNTRY_ID_SET.has(normalizedFallback) ? normalizedFallback : FIVE_SIM_COUNTRY_ID;
+  return normalizedFallback || FIVE_SIM_COUNTRY_ID;
 }
 
 function normalizeFiveSimCountryCode(value = '', fallback = 'thailand') {
@@ -2225,7 +2225,7 @@ function normalizePersistentSettingValue(key, value) {
       return normalizeHeroSmsMaxPrice(value);
     case 'heroSmsCountryId': {
       const parsed = Math.floor(Number(value));
-      if (Number.isFinite(parsed) && HERO_SMS_SUPPORTED_COUNTRY_ID_SET.has(String(parsed))) {
+      if (Number.isFinite(parsed) && parsed > 0) {
         return parsed;
       }
       return HERO_SMS_COUNTRY_ID;

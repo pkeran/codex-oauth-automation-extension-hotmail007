@@ -144,6 +144,21 @@ return { btnHeroSmsCountryMenu, updateHeroSmsCountryMenuSummary };
   assert.equal(api.btnHeroSmsCountryMenu.textContent, '\u672a\u9009\u62e9 (0/3)');
 });
 
+test('live phone country sources are not hard-filtered down to the reduced country whitelist', () => {
+  assert.doesNotMatch(
+    sidepanelSource,
+    /\.filter\(\(entry\) => entry\.id && FIVE_SIM_SUPPORTED_COUNTRY_ID_SET\.has\(String\(entry\.id\)\)\)/
+  );
+  assert.doesNotMatch(
+    sidepanelSource,
+    /\.filter\(\(item\) => HERO_SMS_SUPPORTED_COUNTRY_ID_SET\.has\(String\(Math\.floor\(Number\(item\?\.id\)\)\)\)/
+  );
+  assert.doesNotMatch(
+    sidepanelSource,
+    /\.filter\(\(entry\) => FIVE_SIM_SUPPORTED_COUNTRY_ID_SET\.has\(entry\.code \|\| entry\.id\)\)/
+  );
+});
+
 test('removeHeroSmsCountryFromOrder clears the selected country and triggers a silent save', async () => {
   const api = new Function(`
 let heroSmsCountrySelectionOrder = [52, 6];

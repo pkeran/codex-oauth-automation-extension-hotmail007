@@ -176,7 +176,7 @@ return {
   assert.deepStrictEqual(api.normalizePersistentSettingValue('phoneSmsProviderOrder', ['nexsms', '5sim', 'nexsms']), ['nexsms', '5sim']);
   assert.equal(api.normalizePersistentSettingValue('fiveSimApiKey', ' demo-five '), ' demo-five ');
   assert.equal(api.normalizePersistentSettingValue('fiveSimProduct', ' OpenAI! '), 'openai');
-  assert.equal(api.normalizePersistentSettingValue('fiveSimCountryId', ' England! '), 'vietnam');
+  assert.equal(api.normalizePersistentSettingValue('fiveSimCountryId', ' England! '), 'england');
   assert.equal(api.normalizePersistentSettingValue('fiveSimCountryId', ''), 'vietnam');
   assert.equal(api.normalizePersistentSettingValue('fiveSimCountryLabel', ''), '越南 (Vietnam)');
   assert.equal(api.normalizePersistentSettingValue('fiveSimMaxPrice', '9.87654'), '9.8765');
@@ -184,11 +184,11 @@ return {
   assert.equal(api.normalizePersistentSettingValue('fiveSimOperator', ''), 'any');
   assert.deepStrictEqual(
     api.normalizePersistentSettingValue('fiveSimCountryFallback', [{ id: 'usa', label: 'USA' }, 'thailand:Thailand']),
-    [{ id: 'thailand', label: 'Thailand' }]
+    [{ id: 'usa', label: 'USA' }, { id: 'thailand', label: 'Thailand' }]
   );
   assert.deepStrictEqual(
     api.normalizePersistentSettingValue('heroSmsCountryFallback', [{ id: 16, label: 'United Kingdom' }, { id: 52 }]),
-    [{ id: 52, label: 'Country #52' }]
+    [{ id: 16, label: 'United Kingdom' }, { id: 52, label: 'Country #52' }]
   );
   assert.equal(
     api.normalizePersistentSettingValue('accountRunHistoryHelperBaseUrl', 'http://127.0.0.1:17373/append-account-log'),

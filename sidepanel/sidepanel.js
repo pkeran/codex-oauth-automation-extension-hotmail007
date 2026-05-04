@@ -516,6 +516,11 @@ const DEFAULT_HERO_SMS_ACQUIRE_PRIORITY = HERO_SMS_ACQUIRE_PRIORITY_COUNTRY;
 const HERO_SMS_SUPPORTED_COUNTRY_ITEMS = Object.freeze([
   { id: 6, chn: '印度尼西亚', eng: 'Indonesia' },
   { id: 52, chn: '泰国', eng: 'Thailand' },
+  { id: 187, chn: '美国（物理)', eng: 'USA' },
+  { id: 16, chn: '英国', eng: 'United Kingdom' },
+  { id: 151, chn: '日本', eng: 'Japan' },
+  { id: 43, chn: '德国', eng: 'Germany' },
+  { id: 73, chn: '法国', eng: 'France' },
   { id: 10, chn: '越南', eng: 'Vietnam' },
 ]);
 const HERO_SMS_SUPPORTED_COUNTRY_ID_SET = new Set(HERO_SMS_SUPPORTED_COUNTRY_ITEMS.map((item) => String(item.id)));
@@ -759,11 +764,17 @@ const DEFAULT_FIVE_SIM_COUNTRY_LABEL = '越南 (Vietnam)';
 const FIVE_SIM_SUPPORTED_COUNTRY_ITEMS = Object.freeze([
   { id: 'indonesia', chn: '印度尼西亚', eng: 'Indonesia', searchText: 'indonesia 印度尼西亚 印尼 Indonesia ID +62' },
   { id: 'thailand', chn: '泰国', eng: 'Thailand', searchText: 'thailand 泰国 Thailand TH +66' },
+  { id: 'england', chn: '英国', eng: 'England', searchText: 'england 英国 England UK GB United Kingdom +44' },
+  { id: 'usa', chn: '美国', eng: 'United States', searchText: 'usa 美国 United States US +1' },
+  { id: 'japan', chn: '日本', eng: 'Japan', searchText: 'japan 日本 Japan JP +81' },
+  { id: 'germany', chn: '德国', eng: 'Germany', searchText: 'germany 德国 Germany DE +49' },
   { id: 'vietnam', chn: '越南', eng: 'Vietnam', searchText: 'vietnam 越南 Vietnam VN +84' },
 ]);
 const FIVE_SIM_SUPPORTED_COUNTRY_ID_SET = new Set(FIVE_SIM_SUPPORTED_COUNTRY_ITEMS.map((item) => item.id));
 const NEX_SMS_FALLBACK_COUNTRY_ITEMS = Object.freeze([
-  { id: 1, label: 'Country #1', searchText: 'Country #1 1' },
+  { id: 1, label: 'Ukraine (#1)', searchText: 'Ukraine 1 UA' },
+  { id: 6, label: 'Indonesia (#6)', searchText: 'Indonesia 6 ID' },
+  { id: 7, label: 'Malaysia (#7)', searchText: 'Malaysia 7 MY' },
 ]);
 const DEFAULT_IP_PROXY_SERVICE = '711proxy';
 const SUPPORTED_IP_PROXY_SERVICES = ['711proxy', 'lumiproxy', 'iproyal', 'omegaproxy'];
@@ -3280,22 +3291,19 @@ function normalizePhoneSmsMaxPriceValue(value = '', provider = getSelectedPhoneS
 }
 
 function normalizeFiveSimCountryId(value, fallback = DEFAULT_FIVE_SIM_COUNTRY_ID) {
-  const supportedCountryIds = typeof FIVE_SIM_SUPPORTED_COUNTRY_ID_SET !== 'undefined'
-    ? FIVE_SIM_SUPPORTED_COUNTRY_ID_SET
-    : new Set(['indonesia', 'thailand', 'vietnam']);
   const fallbackSource = fallback === undefined || fallback === null ? DEFAULT_FIVE_SIM_COUNTRY_ID : fallback;
   const normalizedFallback = String(fallbackSource).trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '');
   const rawNormalized = typeof window !== 'undefined' && window.PhoneSmsFiveSimProvider?.normalizeFiveSimCountryId
     ? window.PhoneSmsFiveSimProvider.normalizeFiveSimCountryId(value, '')
     : String(value || '').trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '');
   const normalized = String(rawNormalized || '').trim().toLowerCase();
-  if (supportedCountryIds.has(normalized)) {
+  if (normalized) {
     return normalized;
   }
   if (!normalizedFallback) {
     return '';
   }
-  return supportedCountryIds.has(normalizedFallback) ? normalizedFallback : DEFAULT_FIVE_SIM_COUNTRY_ID;
+  return normalizedFallback || DEFAULT_FIVE_SIM_COUNTRY_ID;
 }
 
 function normalizeFiveSimCountryLabel(value = '', fallback = DEFAULT_FIVE_SIM_COUNTRY_LABEL) {
@@ -3384,15 +3392,12 @@ function normalizeFiveSimCountryFallbackList(value = []) {
 }
 
 function normalizeHeroSmsCountryId(value, fallback = DEFAULT_HERO_SMS_COUNTRY_ID) {
-  const supportedCountryIds = typeof HERO_SMS_SUPPORTED_COUNTRY_ID_SET !== 'undefined'
-    ? HERO_SMS_SUPPORTED_COUNTRY_ID_SET
-    : new Set(['6', '52', '10']);
   const parsed = Math.floor(Number(value));
-  if (Number.isFinite(parsed) && supportedCountryIds.has(String(parsed))) {
+  if (Number.isFinite(parsed) && parsed > 0) {
     return parsed;
   }
   const fallbackParsed = Math.floor(Number(fallback));
-  return supportedCountryIds.has(String(fallbackParsed)) ? fallbackParsed : DEFAULT_HERO_SMS_COUNTRY_ID;
+  return Number.isFinite(fallbackParsed) && fallbackParsed > 0 ? fallbackParsed : DEFAULT_HERO_SMS_COUNTRY_ID;
 }
 
 function normalizeHeroSmsCountryLabel(value = '') {
@@ -4011,10 +4016,7 @@ function normalizeHeroSmsCountryFallbackList(value = []) {
       }
     }
 
-    const supportedCountryIds = typeof HERO_SMS_SUPPORTED_COUNTRY_ID_SET !== 'undefined'
-      ? HERO_SMS_SUPPORTED_COUNTRY_ID_SET
-      : new Set(['6', '52', '10']);
-    if (!id || !supportedCountryIds.has(String(id)) || seen.has(id)) {
+    if (!id || seen.has(id)) {
       return;
     }
     seen.add(id);
@@ -5221,12 +5223,8 @@ async function loadHeroSmsCountries() {
             ].filter(Boolean).join(' '),
           };
         })
-        .filter((entry) => entry.id && FIVE_SIM_SUPPORTED_COUNTRY_ID_SET.has(String(entry.id)))
-        .sort((left, right) => {
-          const leftIndex = FIVE_SIM_SUPPORTED_COUNTRY_ITEMS.findIndex((item) => item.id === String(left.id));
-          const rightIndex = FIVE_SIM_SUPPORTED_COUNTRY_ITEMS.findIndex((item) => item.id === String(right.id));
-          return leftIndex - rightIndex;
-        });
+        .filter((entry) => entry.id)
+        .sort((left, right) => String(left.label || '').localeCompare(String(right.label || '')));
       if (!optionItems.length) {
         throw new Error('empty country list');
       }
@@ -5263,12 +5261,8 @@ async function loadHeroSmsCountries() {
       throw new Error('empty country list');
     }
     const optionItems = countries
-      .filter((item) => HERO_SMS_SUPPORTED_COUNTRY_ID_SET.has(String(Math.floor(Number(item?.id)))) && (String(item?.eng || '').trim() || String(item?.chn || '').trim()))
-      .sort((left, right) => {
-        const leftIndex = HERO_SMS_SUPPORTED_COUNTRY_ITEMS.findIndex((item) => String(item.id) === String(Math.floor(Number(left?.id))));
-        const rightIndex = HERO_SMS_SUPPORTED_COUNTRY_ITEMS.findIndex((item) => String(item.id) === String(Math.floor(Number(right?.id))));
-        return leftIndex - rightIndex;
-      })
+      .filter((item) => Number(item?.id) > 0 && (String(item?.eng || '').trim() || String(item?.chn || '').trim()))
+      .sort((left, right) => String(left.eng || '').localeCompare(String(right.eng || '')))
       .map((item) => {
         const id = normalizeHeroSmsCountryId(item.id);
         const label = buildHeroSmsCountryDisplayLabel(item);
@@ -5657,8 +5651,7 @@ async function loadFiveSimCountries() {
       throw new Error(`HTTP ${response.status}`);
     }
     const payload = await response.json();
-    const items = parseFiveSimCountriesPayload(payload)
-      .filter((entry) => FIVE_SIM_SUPPORTED_COUNTRY_ID_SET.has(entry.code || entry.id));
+    const items = parseFiveSimCountriesPayload(payload);
     applyOptions(items.length ? items : fallbackItems);
   } catch (error) {
     console.warn('Failed to load 5sim countries:', error);
