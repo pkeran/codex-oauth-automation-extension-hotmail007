@@ -719,6 +719,25 @@
           <option value="outlook Trusted">Outlook Trusted</option>
         </select>
       </div>
+      <div class="data-row" id="row-hotmail007-purchase-quantity">
+        <span class="data-label">采购数量</span>
+        <input type="number" id="input-hotmail007-purchase-quantity" class="data-input mono" min="1" step="1" value="1"
+          placeholder="1" />
+      </div>
+      <div class="data-row" id="row-hotmail007-balance">
+        <span class="data-label">账户余额</span>
+        <div class="data-inline hotmail007-inline">
+          <button id="btn-hotmail007-balance" class="btn btn-ghost btn-xs data-inline-btn" type="button">查余额</button>
+          <span id="display-hotmail007-balance" class="data-value mono hotmail007-status">余额未获取</span>
+        </div>
+      </div>
+      <div class="data-row" id="row-hotmail007-stock">
+        <span class="data-label">库存/类型</span>
+        <div class="data-inline hotmail007-inline">
+          <button id="btn-hotmail007-refresh-catalog" class="btn btn-ghost btn-xs data-inline-btn" type="button">刷新类型与库存</button>
+          <span id="display-hotmail007-stock" class="data-value mono hotmail007-status">库存未获取</span>
+        </div>
+      </div>
       <div class="data-row" id="row-hotmail007-prefetch">
         <span class="data-label">Hotmail007</span>
         <div class="data-inline hotmail007-inline">

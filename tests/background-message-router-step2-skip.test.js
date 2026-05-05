@@ -13,6 +13,9 @@ function createRouter(overrides = {}) {
     stateUpdates: [],
     broadcasts: [],
     balanceRefreshes: [],
+    hotmail007BalanceRequests: [],
+    hotmail007CatalogRequests: [],
+    hotmail007BulkPurchases: [],
     emailStates: [],
     signupPhoneStates: [],
     signupPhoneSilentStates: [],
@@ -144,6 +147,23 @@ function createRouter(overrides = {}) {
     refreshGpcCardBalance: overrides.refreshGpcCardBalance || (async (state, options) => {
       events.balanceRefreshes.push({ state, options });
       return { balance: '余额 3' };
+    }),
+    fetchHotmail007Balance: overrides.fetchHotmail007Balance || (async (options) => {
+      events.hotmail007BalanceRequests.push(options);
+      return { balance: 1.25, balanceText: 'Hotmail007 余额：1.25' };
+    }),
+    fetchHotmail007MailPriceList: overrides.fetchHotmail007MailPriceList || (async (options) => {
+      events.hotmail007CatalogRequests.push(options);
+      return {
+        entries: [{ type: 'hotmail-premium', price: 0.003, live: '1-3 Hours', stock: 958, access: '0', id: '9' }],
+      };
+    }),
+    purchaseHotmailAccountsFromHotmail007: overrides.purchaseHotmailAccountsFromHotmail007 || (async (options) => {
+      events.hotmail007BulkPurchases.push(options);
+      return {
+        accounts: [{ id: 'acc-1', email: 'demo@hotmail.com' }],
+        account: { id: 'acc-1', email: 'demo@hotmail.com' },
+      };
     }),
   });
 
@@ -528,4 +548,62 @@ test('message router refreshes GPC balance through explicit sidepanel message', 
   assert.equal(events.balanceRefreshes[0].state.gopayHelperApiUrl, 'http://localhost:18473/');
   assert.equal(events.balanceRefreshes[0].state.gopayHelperCardKey, 'payload_card');
   assert.deepStrictEqual(events.balanceRefreshes[0].options, { reason: 'manual' });
+});
+
+test('message router fetches hotmail007 balance through explicit sidepanel message', async () => {
+  const { router, events } = createRouter();
+
+  const response = await router.handleMessage({
+    type: 'FETCH_HOTMAIL007_BALANCE',
+    source: 'sidepanel',
+    payload: {
+      clientKey: 'client-key-1',
+    },
+  }, {});
+
+  assert.deepStrictEqual(response, { ok: true, balance: 1.25, balanceText: 'Hotmail007 余额：1.25' });
+  assert.deepStrictEqual(events.hotmail007BalanceRequests, [{ clientKey: 'client-key-1' }]);
+});
+
+test('message router fetches hotmail007 dynamic catalog through explicit sidepanel message', async () => {
+  const { router, events } = createRouter();
+
+  const response = await router.handleMessage({
+    type: 'FETCH_HOTMAIL007_MAIL_PRICE_LIST',
+    source: 'sidepanel',
+    payload: {
+      reason: 'manual',
+    },
+  }, {});
+
+  assert.deepStrictEqual(response, {
+    ok: true,
+    entries: [{ type: 'hotmail-premium', price: 0.003, live: '1-3 Hours', stock: 958, access: '0', id: '9' }],
+  });
+  assert.deepStrictEqual(events.hotmail007CatalogRequests, [{ reason: 'manual' }]);
+});
+
+test('message router forwards manual hotmail007 purchase quantity to bulk purchase helper', async () => {
+  const { router, events } = createRouter();
+
+  const response = await router.handleMessage({
+    type: 'PREFETCH_HOTMAIL007_ACCOUNT',
+    source: 'sidepanel',
+    payload: {
+      clientKey: 'client-key-1',
+      mailType: 'hotmail-premium',
+      quantity: 5,
+    },
+  }, {});
+
+  assert.deepStrictEqual(response, {
+    ok: true,
+    accounts: [{ id: 'acc-1', email: 'demo@hotmail.com' }],
+    account: { id: 'acc-1', email: 'demo@hotmail.com' },
+  });
+  assert.deepStrictEqual(events.hotmail007BulkPurchases, [{
+    clientKey: 'client-key-1',
+    mailType: 'hotmail-premium',
+    quantity: 5,
+  }]);
 });

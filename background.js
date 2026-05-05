@@ -103,8 +103,10 @@ const LAST_STEP_ID = Math.max(
 const FINAL_OAUTH_CHAIN_START_STEP = 7;
 
 const {
+  buildHotmail007BalanceUrl,
   buildHotmail007GetMailUrl,
   buildHotmail007GetStockUrl,
+  buildHotmail007MailPriceListUrl,
   buildHotmail007StockUnavailableMessage,
   extractVerificationCodeFromMessage,
   filterHotmailAccountsByUsage,
@@ -112,6 +114,8 @@ const {
   getHotmailMailApiRequestConfig,
   getHotmailVerificationPollConfig,
   getHotmailVerificationRequestTimestamp,
+  normalizeHotmail007BalanceAmount,
+  normalizeHotmail007MailPriceList,
   normalizeHotmail007MailType,
   normalizeHotmail007StockCount,
   normalizeHotmailServiceMode,
@@ -671,6 +675,7 @@ const PERSISTED_SETTING_DEFAULTS = {
   hotmailAccountSource: HOTMAIL_ACCOUNT_SOURCE_MANUAL,
   hotmail007ClientKey: '',
   hotmail007MailType: 'hotmail',
+  hotmail007PurchaseQuantity: 1,
   luckmailApiKey: '',
   luckmailBaseUrl: DEFAULT_LUCKMAIL_BASE_URL,
   luckmailEmailType: DEFAULT_LUCKMAIL_EMAIL_TYPE,
@@ -2044,6 +2049,7 @@ function getHotmail007Settings(state = {}) {
     source: normalizeHotmailAccountSource(state?.hotmailAccountSource),
     clientKey: String(state?.hotmail007ClientKey || '').trim(),
     mailType: normalizeHotmail007MailType(state?.hotmail007MailType),
+    purchaseQuantity: Math.max(1, Math.floor(Number(state?.hotmail007PurchaseQuantity) || 1)),
   };
 }
 
@@ -2338,6 +2344,8 @@ function normalizePersistentSettingValue(key, value) {
       return String(value || '').trim();
     case 'hotmail007MailType':
       return normalizeHotmail007MailType(value);
+    case 'hotmail007PurchaseQuantity':
+      return Math.max(1, Math.floor(Number(value) || 1));
     case 'luckmailApiKey':
       return String(value || '');
     case 'luckmailBaseUrl':
@@ -3340,6 +3348,107 @@ async function fetchHotmail007StockCount(options = {}) {
   return normalizeHotmail007StockCount(payload);
 }
 
+async function fetchHotmail007MailPriceList(options = {}) {
+  const timeoutMs = Math.max(3000, Number(options.timeoutMs) || 10000);
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(new Error('timeout')), timeoutMs);
+
+  let response;
+  try {
+    response = await fetch(buildHotmail007MailPriceListUrl(), {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json',
+      },
+      signal: controller.signal,
+    });
+  } catch (err) {
+    if (err?.name === 'AbortError') {
+      throw new Error(`Hotmail007 类型目录请求超时（>${Math.round(timeoutMs / 1000)} 秒）`);
+    }
+    throw new Error(`Hotmail007 类型目录请求失败：${err?.message || '未知错误'}`);
+  } finally {
+    clearTimeout(timeoutId);
+  }
+
+  const text = await response.text();
+  let payload = {};
+  try {
+    payload = text ? JSON.parse(text) : {};
+  } catch {
+    payload = { raw: text };
+  }
+
+  if (!response.ok) {
+    const detail = payload?.msg || payload?.message || payload?.error || text || `HTTP ${response.status}`;
+    throw new Error(`Hotmail007 类型目录获取失败：${detail}`);
+  }
+  if (payload?.success === false || (payload?.code !== undefined && Number(payload.code) !== 0)) {
+    const detail = payload?.msg || payload?.message || payload?.error || '未返回成功状态';
+    throw new Error(`Hotmail007 类型目录获取失败：${detail}`);
+  }
+
+  return {
+    entries: normalizeHotmail007MailPriceList(payload),
+    fetchedAt: Date.now(),
+  };
+}
+
+async function fetchHotmail007Balance(options = {}) {
+  const clientKey = String(options.clientKey || '').trim();
+  if (!clientKey) {
+    throw new Error('Hotmail007 ClientKey 未填写。');
+  }
+
+  const timeoutMs = Math.max(3000, Number(options.timeoutMs) || 10000);
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(new Error('timeout')), timeoutMs);
+
+  let response;
+  try {
+    response = await fetch(buildHotmail007BalanceUrl({
+      clientKey,
+    }), {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json',
+      },
+      signal: controller.signal,
+    });
+  } catch (err) {
+    if (err?.name === 'AbortError') {
+      throw new Error(`Hotmail007 余额请求超时（>${Math.round(timeoutMs / 1000)} 秒）`);
+    }
+    throw new Error(`Hotmail007 余额请求失败：${err?.message || '未知错误'}`);
+  } finally {
+    clearTimeout(timeoutId);
+  }
+
+  const text = await response.text();
+  let payload = {};
+  try {
+    payload = text ? JSON.parse(text) : {};
+  } catch {
+    payload = { raw: text };
+  }
+
+  if (!response.ok) {
+    const detail = payload?.msg || payload?.message || payload?.error || text || `HTTP ${response.status}`;
+    throw new Error(`Hotmail007 余额获取失败：${detail}`);
+  }
+  if (payload?.success === false || (payload?.code !== undefined && Number(payload.code) !== 0)) {
+    const detail = payload?.msg || payload?.message || payload?.error || '未返回成功状态';
+    throw new Error(`Hotmail007 余额获取失败：${detail}`);
+  }
+
+  const balance = normalizeHotmail007BalanceAmount(payload);
+  return {
+    balance,
+    balanceText: `Hotmail007 余额：${balance}`,
+    fetchedAt: Date.now(),
+  };
+}
+
 async function resolveHotmail007PurchaseFailureMessage(detail, options = {}) {
   if (!/buy error/i.test(String(detail || '').trim())) {
     return null;
@@ -3356,7 +3465,7 @@ async function resolveHotmail007PurchaseFailureMessage(detail, options = {}) {
   return null;
 }
 
-async function purchaseHotmailAccountFromHotmail007(options = {}) {
+async function requestHotmail007PurchasePayload(options = {}) {
   const clientKey = String(options.clientKey || '').trim();
   if (!clientKey) {
     throw new Error('Hotmail007 ClientKey 未填写。');
@@ -3425,20 +3534,48 @@ async function purchaseHotmailAccountFromHotmail007(options = {}) {
     throw new Error(stockFailureMessage || `Hotmail007 采购失败：${detail}`);
   }
 
-  const rawAccount = Array.isArray(payload?.data) ? payload.data.find(Boolean) : '';
-  const parsedAccount = parseHotmail007AccountString(rawAccount);
-  if (!parsedAccount) {
+  return {
+    clientKey,
+    mailType,
+    quantity,
+    payload,
+  };
+}
+
+async function purchaseHotmailAccountsFromHotmail007(options = {}) {
+  const result = await requestHotmail007PurchasePayload(options);
+  const rawAccounts = Array.isArray(result?.payload?.data) ? result.payload.data.filter(Boolean) : [];
+  const parsedAccounts = rawAccounts
+    .map((rawAccount) => parseHotmail007AccountString(rawAccount))
+    .filter(Boolean);
+
+  if (!parsedAccounts.length) {
     throw new Error('Hotmail007 返回账号格式异常。');
   }
 
-  return upsertHotmailAccount({
+  const savedAccounts = await upsertHotmailAccounts(parsedAccounts.map((parsedAccount) => ({
     ...parsedAccount,
     source: HOTMAIL_ACCOUNT_SOURCE_HOTMAIL007,
-    purchaseType: mailType,
+    purchaseType: result.mailType,
     status: 'pending',
     used: false,
     lastError: '',
+  })));
+
+  return {
+    account: savedAccounts[0] || null,
+    accounts: savedAccounts,
+    mailType: result.mailType,
+    quantity: savedAccounts.length,
+  };
+}
+
+async function purchaseHotmailAccountFromHotmail007(options = {}) {
+  const result = await purchaseHotmailAccountsFromHotmail007({
+    ...options,
+    quantity: 1,
   });
+  return result.account;
 }
 
 async function maybePurchaseHotmailAccountFromHotmail007(state = {}, options = {}) {
@@ -3464,34 +3601,44 @@ async function syncHotmailAccounts(accounts) {
   return normalized;
 }
 
-async function upsertHotmailAccount(input) {
+async function upsertHotmailAccounts(inputs = []) {
   const state = await getState();
-  const accounts = normalizeHotmailAccounts(state.hotmailAccounts);
-  const normalizedEmail = String(input?.email || '').trim().toLowerCase();
-  const existing = input?.id
-    ? findHotmailAccount(accounts, input.id)
-    : accounts.find((account) => account.email.toLowerCase() === normalizedEmail) || null;
-  const credentialsChanged = !existing
-    || (input?.clientId !== undefined && String(input.clientId).trim() !== existing.clientId)
-    || (input?.refreshToken !== undefined && String(input.refreshToken).trim() !== existing.refreshToken)
-    || (input?.email !== undefined && String(input.email).trim().toLowerCase() !== existing.email.toLowerCase());
-  const normalized = normalizeHotmailAccount({
-    ...(existing || {}),
-    ...(credentialsChanged ? {
-      status: 'pending',
-      lastAuthAt: 0,
-      lastError: '',
-    } : {}),
-    ...input,
-    id: input?.id || existing?.id || crypto.randomUUID(),
-  });
+  let accounts = normalizeHotmailAccounts(state.hotmailAccounts);
+  const savedAccounts = [];
 
-  const nextAccounts = existing
-    ? accounts.map((account) => (account.id === normalized.id ? normalized : account))
-    : [...accounts, normalized];
+  for (const input of inputs) {
+    const normalizedEmail = String(input?.email || '').trim().toLowerCase();
+    const existing = input?.id
+      ? findHotmailAccount(accounts, input.id)
+      : accounts.find((account) => account.email.toLowerCase() === normalizedEmail) || null;
+    const credentialsChanged = !existing
+      || (input?.clientId !== undefined && String(input.clientId).trim() !== existing.clientId)
+      || (input?.refreshToken !== undefined && String(input.refreshToken).trim() !== existing.refreshToken)
+      || (input?.email !== undefined && String(input.email).trim().toLowerCase() !== existing.email.toLowerCase());
+    const normalized = normalizeHotmailAccount({
+      ...(existing || {}),
+      ...(credentialsChanged ? {
+        status: 'pending',
+        lastAuthAt: 0,
+        lastError: '',
+      } : {}),
+      ...input,
+      id: input?.id || existing?.id || crypto.randomUUID(),
+    });
 
-  await syncHotmailAccounts(nextAccounts);
-  return normalized;
+    accounts = existing
+      ? accounts.map((account) => (account.id === normalized.id ? normalized : account))
+      : [...accounts, normalized];
+    savedAccounts.push(normalized);
+  }
+
+  await syncHotmailAccounts(accounts);
+  return savedAccounts;
+}
+
+async function upsertHotmailAccount(input) {
+  const savedAccounts = await upsertHotmailAccounts([input]);
+  return savedAccounts[0] || null;
 }
 
 async function deleteHotmailAccount(accountId) {
@@ -10800,6 +10947,8 @@ const messageRouter = self.MultiPageBackgroundMessageRouter?.createMessageRouter
     );
   },
   finalizeIcloudAliasAfterSuccessfulFlow,
+  fetchHotmail007Balance,
+  fetchHotmail007MailPriceList,
   findHotmailAccount,
   flushCommand,
   getCurrentLuckmailPurchase,
@@ -10844,6 +10993,7 @@ const messageRouter = self.MultiPageBackgroundMessageRouter?.createMessageRouter
   patchHotmailAccount,
   patchMail2925Account,
   purchaseHotmailAccountFromHotmail007,
+  purchaseHotmailAccountsFromHotmail007,
   registerTab,
   requestStop,
   probeIpProxyExit,

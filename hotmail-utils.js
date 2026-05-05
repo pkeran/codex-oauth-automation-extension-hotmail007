@@ -13,8 +13,14 @@
   const HOTMAIL007_MAIL_TYPES = [
     'hotmail',
     'outlook',
+    'hotmail-premium',
+    'outlook-premium',
     'hotmail Trusted',
     'outlook Trusted',
+    'hotmail Trusted Graph',
+    'outlook Trusted Graph',
+    'Outlook-Argentina',
+    'gmail',
   ];
 
   function normalizeText(value) {
@@ -41,15 +47,28 @@
   }
 
   function normalizeHotmail007MailType(rawValue = '') {
-    const normalized = String(rawValue || '').trim().toLowerCase();
-    if (normalized === 'outlook') return 'outlook';
-    if (normalized === 'hotmail trusted') return 'hotmail Trusted';
-    if (normalized === 'outlook trusted') return 'outlook Trusted';
-    return 'hotmail';
+    const normalizedValue = String(rawValue || '').replace(/\s+/g, ' ').trim();
+    if (!normalizedValue) return 'hotmail';
+
+    const normalized = normalizedValue.toLowerCase();
+    const knownTypes = new Map(
+      HOTMAIL007_MAIL_TYPES.map((value) => [String(value).toLowerCase(), value])
+    );
+    return knownTypes.get(normalized) || normalizedValue;
   }
 
   function joinHotmail007Url(path) {
     return new URL(path, `${HOTMAIL007_API_BASE_URL}/`).toString();
+  }
+
+  function buildHotmail007BalanceUrl(options = {}) {
+    const url = new URL(joinHotmail007Url('/api/user/balance'));
+    url.searchParams.set('clientKey', String(options.clientKey || '').trim());
+    return url.toString();
+  }
+
+  function buildHotmail007MailPriceListUrl() {
+    return joinHotmail007Url('/v1/mail/getMailPrice');
   }
 
   function buildHotmail007GetMailUrl(options = {}) {
@@ -117,6 +136,54 @@
     }
 
     return 0;
+  }
+
+  function normalizeHotmail007BalanceAmount(payload) {
+    const directValue = Number(payload);
+    if (Number.isFinite(directValue)) {
+      return directValue;
+    }
+
+    const objectPayload = payload && typeof payload === 'object' ? payload : {};
+    const candidates = [
+      objectPayload.data,
+      objectPayload.balance,
+      objectPayload.amount,
+      objectPayload.value,
+    ];
+    for (const candidate of candidates) {
+      const parsed = Number(candidate);
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+    return 0;
+  }
+
+  function normalizeHotmail007MailPriceList(payload) {
+    const rawEntries = Array.isArray(payload)
+      ? payload
+      : (Array.isArray(payload?.data) ? payload.data : []);
+
+    return rawEntries
+      .map((entry) => {
+        const type = normalizeHotmail007MailType(entry?.type);
+        if (!type) {
+          return null;
+        }
+
+        const price = Number(entry?.price);
+        const stock = normalizeHotmail007StockCount(entry?.stock);
+        return {
+          id: String(entry?.id || '').trim(),
+          type,
+          price: Number.isFinite(price) ? price : 0,
+          live: String(entry?.live || '').trim(),
+          access: String(entry?.access ?? '').trim(),
+          stock,
+        };
+      })
+      .filter(Boolean);
   }
 
   function buildHotmail007StockUnavailableMessage(mailType, count = 0) {
@@ -489,9 +556,11 @@
   }
 
   return {
+    buildHotmail007BalanceUrl,
     buildHotmailMailApiLatestUrl,
     buildHotmail007GetMailUrl,
     buildHotmail007GetStockUrl,
+    buildHotmail007MailPriceListUrl,
     buildHotmail007StockUnavailableMessage,
     extractVerificationCodeFromMessage,
     filterHotmailAccountsByUsage,
@@ -502,6 +571,8 @@
     getHotmailMailApiRequestConfig,
     getHotmailVerificationPollConfig,
     getHotmailVerificationRequestTimestamp,
+    normalizeHotmail007BalanceAmount,
+    normalizeHotmail007MailPriceList,
     isAuthorizedHotmailAccount,
     normalizeHotmail007MailType,
     normalizeHotmail007StockCount,

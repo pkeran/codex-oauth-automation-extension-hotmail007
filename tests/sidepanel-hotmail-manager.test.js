@@ -70,6 +70,11 @@ test('sidepanel html contains hotmail007 automation controls and account view to
   assert.match(html, /id="select-hotmail-account-source"/);
   assert.match(html, /id="input-hotmail007-client-key"/);
   assert.match(html, /id="select-hotmail007-mail-type"/);
+  assert.match(html, /id="input-hotmail007-purchase-quantity"/);
+  assert.match(html, /id="btn-hotmail007-refresh-catalog"/);
+  assert.match(html, /id="btn-hotmail007-balance"/);
+  assert.match(html, /id="display-hotmail007-balance"/);
+  assert.match(html, /id="display-hotmail007-stock"/);
   assert.match(html, /id="btn-hotmail007-prefetch-account"/);
   assert.match(html, /id="btn-toggle-hotmail-view"/);
 });
@@ -343,4 +348,105 @@ test('hotmail manager hides form after save succeeds', async () => {
   assert.equal(inputHotmailPassword.value, '');
   assert.equal(inputHotmailRefreshToken.value, '');
   assert.match(toastMessages.at(-1) || '', /已保存 Hotmail 账号/);
+});
+
+test('hotmail manager forwards manual hotmail007 purchase quantity to background prefetch message', async () => {
+  const source = fs.readFileSync('sidepanel/hotmail-manager.js', 'utf8');
+  const windowObject = {
+    SidepanelAccountPoolUi: createAccountPoolUiStub(),
+  };
+  const localStorageMock = {
+    getItem() {
+      return null;
+    },
+    setItem() {},
+  };
+
+  const api = new Function('window', 'localStorage', `${source}; return window.SidepanelHotmailManager;`)(
+    windowObject,
+    localStorageMock
+  );
+
+  const handlers = {};
+  const sentMessages = [];
+
+  const manager = api.createHotmailManager({
+    state: {
+      getLatestState: () => ({ currentHotmailAccountId: null }),
+      syncLatestState() {},
+    },
+    dom: {
+      btnAddHotmailAccount: { addEventListener() {} },
+      btnClearUsedHotmailAccounts: { textContent: '', disabled: false, addEventListener() {} },
+      btnDeleteAllHotmailAccounts: { textContent: '', disabled: false, addEventListener() {} },
+      btnHotmail007Balance: { addEventListener() {} },
+      btnHotmail007PrefetchAccount: {
+        disabled: false,
+        addEventListener(type, handler) {
+          if (type === 'click') handlers.prefetch = handler;
+        },
+      },
+      btnHotmail007RefreshCatalog: { addEventListener() {} },
+      btnHotmailUsageGuide: { addEventListener() {} },
+      btnImportHotmailAccounts: { disabled: false, addEventListener() {} },
+      btnToggleHotmailForm: { setAttribute() {}, addEventListener() {} },
+      btnToggleHotmailList: { textContent: '', disabled: false, setAttribute() {}, addEventListener() {} },
+      btnToggleHotmailView: { textContent: '', disabled: false, setAttribute() {}, addEventListener() {} },
+      displayHotmail007Balance: { textContent: '' },
+      displayHotmail007Status: { textContent: '' },
+      displayHotmail007Stock: { textContent: '' },
+      hotmailAccountsList: { innerHTML: '', addEventListener() {}, classList: { toggle() {} } },
+      hotmailFormShell: { hidden: true },
+      hotmailListShell: { classList: { toggle() {} } },
+      inputEmail: { value: '' },
+      inputHotmail007ClientKey: { value: 'client-key-1' },
+      inputHotmail007PurchaseQuantity: { value: '5' },
+      inputHotmailClientId: { value: '' },
+      inputHotmailEmail: { value: '', focus() {} },
+      inputHotmailImport: { value: '' },
+      inputHotmailPassword: { value: '' },
+      inputHotmailRefreshToken: { value: '' },
+      inputHotmailSearch: { value: '', addEventListener() {} },
+      selectHotmail007MailType: { value: 'hotmail-premium', innerHTML: '', addEventListener() {} },
+      selectHotmailAccountSource: { value: 'hotmail007' },
+      selectHotmailFilter: { value: 'all', addEventListener() {} },
+      selectMailProvider: { value: 'hotmail-api' },
+    },
+    helpers: {
+      getHotmailAccounts: () => [],
+      getCurrentHotmailEmail: () => '',
+      escapeHtml: (value) => String(value || ''),
+      showToast() {},
+      openConfirmModal: async () => true,
+      copyTextToClipboard: async () => {},
+    },
+    runtime: {
+      sendMessage: async (message) => {
+        sentMessages.push(message);
+        return {
+          accounts: [{ id: 'acc-1', email: 'demo@hotmail.com' }],
+          account: { id: 'acc-1', email: 'demo@hotmail.com' },
+        };
+      },
+    },
+    constants: {
+      copyIcon: '',
+      displayTimeZone: 'Asia/Shanghai',
+      expandedStorageKey: 'multipage-hotmail-list-expanded',
+    },
+    hotmailUtils: {},
+  });
+
+  manager.bindHotmailEvents();
+  await handlers.prefetch();
+
+  assert.deepEqual(sentMessages[0], {
+    type: 'PREFETCH_HOTMAIL007_ACCOUNT',
+    source: 'sidepanel',
+    payload: {
+      clientKey: 'client-key-1',
+      mailType: 'hotmail-premium',
+      quantity: 5,
+    },
+  });
 });

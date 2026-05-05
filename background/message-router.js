@@ -33,6 +33,8 @@
       executeStepViaCompletionSignal,
       exportSettingsBundle,
       fetchGeneratedEmail,
+      fetchHotmail007Balance,
+      fetchHotmail007MailPriceList,
       refreshGpcCardBalance,
       finalizePhoneActivationAfterSuccessfulFlow,
       finalizeStep3Completion,
@@ -87,6 +89,7 @@
       patchMail2925Account,
       patchHotmailAccount,
       purchaseHotmailAccountFromHotmail007,
+      purchaseHotmailAccountsFromHotmail007,
       pollContributionStatus,
       registerTab,
       requestStop,
@@ -1020,6 +1023,22 @@
           return { ok: true, ...result };
         }
 
+        case 'FETCH_HOTMAIL007_BALANCE': {
+          if (typeof fetchHotmail007Balance !== 'function') {
+            throw new Error('Hotmail007 余额查询能力尚未接入。');
+          }
+          const result = await fetchHotmail007Balance(message.payload || {});
+          return { ok: true, ...result };
+        }
+
+        case 'FETCH_HOTMAIL007_MAIL_PRICE_LIST': {
+          if (typeof fetchHotmail007MailPriceList !== 'function') {
+            throw new Error('Hotmail007 类型目录能力尚未接入。');
+          }
+          const result = await fetchHotmail007MailPriceList(message.payload || {});
+          return { ok: true, ...result };
+        }
+
         case 'RUN_IP_PROXY_AUTO_SYNC_NOW': {
           if (typeof runIpProxyAutoSync !== 'function') {
             throw new Error('IP 代理自动同步能力尚未接入。');
@@ -1121,11 +1140,18 @@
 
         case 'PREFETCH_HOTMAIL007_ACCOUNT': {
           const payload = message.payload || {};
-          const account = await purchaseHotmailAccountFromHotmail007({
-            clientKey: payload.clientKey,
-            mailType: payload.mailType,
-          });
-          return { ok: true, account };
+          const result = typeof purchaseHotmailAccountsFromHotmail007 === 'function'
+            ? await purchaseHotmailAccountsFromHotmail007({
+              clientKey: payload.clientKey,
+              mailType: payload.mailType,
+              quantity: payload.quantity,
+            })
+            : { account: await purchaseHotmailAccountFromHotmail007({
+              clientKey: payload.clientKey,
+              mailType: payload.mailType,
+              quantity: payload.quantity,
+            }) };
+          return { ok: true, ...result };
         }
 
         case 'UPSERT_PAYPAL_ACCOUNT': {

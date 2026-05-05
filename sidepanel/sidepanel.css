@@ -1223,6 +1223,9 @@ header {
 #row-hotmail-account-source > .data-label,
 #row-hotmail007-client-key > .data-label,
 #row-hotmail007-mail-type > .data-label,
+#row-hotmail007-purchase-quantity > .data-label,
+#row-hotmail007-balance > .data-label,
+#row-hotmail007-stock > .data-label,
 #row-hotmail007-prefetch > .data-label {
   width: 88px;
 }

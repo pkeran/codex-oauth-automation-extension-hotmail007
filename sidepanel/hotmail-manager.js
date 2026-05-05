@@ -21,6 +21,9 @@
     let viewMode = 'list';
     let searchTerm = '';
     let filterMode = 'all';
+    let hotmail007Catalog = [];
+    let hotmail007CatalogInFlight = false;
+    let hotmail007BalanceInFlight = false;
 
     function getHotmailAccountsByUsage(mode = 'all', currentState = state.getLatestState()) {
       const accounts = helpers.getHotmailAccounts(currentState);
@@ -216,6 +219,180 @@
 
     function getHotmailAccountTypeLabel(account = {}) {
       return String(account?.purchaseType || '').trim();
+    }
+
+    function normalizeHotmail007Quantity(value) {
+      const numeric = Math.floor(Number(value) || 1);
+      return Number.isFinite(numeric) && numeric > 0 ? numeric : 1;
+    }
+
+    function formatHotmail007Price(value) {
+      const numeric = Number(value);
+      if (!Number.isFinite(numeric) || numeric < 0) {
+        return '';
+      }
+      return `$${numeric.toFixed(3).replace(/0+$/g, '').replace(/\.$/, '')}`;
+    }
+
+    function setHotmail007Status(target, message, fallback = '') {
+      if (!target) return;
+      target.textContent = String(message || fallback || '').trim() || fallback;
+    }
+
+    function buildHotmail007MailTypeOptionLabel(entry = {}) {
+      const type = String(entry?.type || '').trim();
+      const priceText = formatHotmail007Price(entry?.price);
+      const liveText = String(entry?.live || '').trim();
+      const stockValue = Number.isFinite(Number(entry?.stock)) ? Math.max(0, Number(entry.stock)) : 0;
+      return [type, priceText, liveText, `库存 ${stockValue}`].filter(Boolean).join(' · ');
+    }
+
+    function updateHotmail007StockDisplay() {
+      if (!dom.displayHotmail007Stock) {
+        return;
+      }
+
+      const selectedType = String(dom.selectHotmail007MailType?.value || '').trim();
+      const selectedEntry = hotmail007Catalog.find((entry) => String(entry?.type || '').trim() === selectedType) || null;
+      if (!selectedEntry) {
+        dom.displayHotmail007Stock.textContent = hotmail007Catalog.length ? '当前类型库存未知' : '库存未获取';
+        return;
+      }
+
+      const parts = [
+        selectedEntry.type,
+        `库存 ${Number.isFinite(Number(selectedEntry.stock)) ? Math.max(0, Number(selectedEntry.stock)) : 0}`,
+        formatHotmail007Price(selectedEntry.price),
+        String(selectedEntry.live || '').trim(),
+      ].filter(Boolean);
+      dom.displayHotmail007Stock.textContent = parts.join(' · ');
+    }
+
+    function renderHotmail007CatalogOptions(entries, options = {}) {
+      hotmail007Catalog = Array.isArray(entries) ? entries.slice() : [];
+      const select = dom.selectHotmail007MailType;
+      if (!select || hotmail007Catalog.length === 0) {
+        updateHotmail007StockDisplay();
+        return hotmail007Catalog;
+      }
+
+      const preferredType = String(options.preferredType || select.value || '').trim();
+      const selectedEntry = hotmail007Catalog.find((entry) => String(entry?.type || '').trim() === preferredType)
+        || hotmail007Catalog[0];
+      select.innerHTML = hotmail007Catalog
+        .map((entry) => {
+          const type = String(entry?.type || '').trim();
+          return `<option value="${helpers.escapeHtml(type)}">${helpers.escapeHtml(buildHotmail007MailTypeOptionLabel(entry))}</option>`;
+        })
+        .join('');
+      if (selectedEntry?.type) {
+        select.value = selectedEntry.type;
+      }
+      updateHotmail007StockDisplay();
+      return hotmail007Catalog;
+    }
+
+    async function refreshHotmail007Catalog(options = {}) {
+      if (hotmail007CatalogInFlight) {
+        return hotmail007Catalog;
+      }
+
+      hotmail007CatalogInFlight = true;
+      if (dom.btnHotmail007RefreshCatalog) {
+        dom.btnHotmail007RefreshCatalog.disabled = true;
+      }
+      if (!options.silent) {
+        setHotmail007Status(dom.displayHotmail007Status, '同步类型中...', '同步类型中...');
+      }
+
+      try {
+        const response = await runtime.sendMessage({
+          type: 'FETCH_HOTMAIL007_MAIL_PRICE_LIST',
+          source: 'sidepanel',
+          payload: {
+            reason: options.reason || 'manual',
+          },
+        });
+        if (response?.error) {
+          throw new Error(response.error);
+        }
+
+        const entries = renderHotmail007CatalogOptions(response?.entries || [], {
+          preferredType: options.preferredType,
+        });
+        if (!options.silent) {
+          setHotmail007Status(dom.displayHotmail007Status, `已同步 ${entries.length} 种类型`, '已同步 0 种类型');
+          helpers.showToast(`Hotmail007 已同步 ${entries.length} 种类型`, 'success', 1800);
+        }
+        return entries;
+      } catch (err) {
+        if (!options.silent) {
+          setHotmail007Status(dom.displayHotmail007Status, err?.message || '类型同步失败', '类型同步失败');
+          helpers.showToast(err?.message || '类型同步失败', 'error');
+        }
+        throw err;
+      } finally {
+        hotmail007CatalogInFlight = false;
+        if (dom.btnHotmail007RefreshCatalog) {
+          dom.btnHotmail007RefreshCatalog.disabled = false;
+        }
+      }
+    }
+
+    async function refreshHotmail007Balance(options = {}) {
+      const clientKey = String(dom.inputHotmail007ClientKey?.value || '').trim();
+      if (!clientKey) {
+        const message = '请先填写 Hotmail007 ClientKey。';
+        setHotmail007Status(dom.displayHotmail007Balance, message, message);
+        if (!options.silent) {
+          helpers.showToast(message, 'warn');
+        }
+        return null;
+      }
+      if (hotmail007BalanceInFlight) {
+        return null;
+      }
+
+      hotmail007BalanceInFlight = true;
+      if (dom.btnHotmail007Balance) {
+        dom.btnHotmail007Balance.disabled = true;
+      }
+      if (!options.silent) {
+        setHotmail007Status(dom.displayHotmail007Balance, '余额查询中...', '余额查询中...');
+      }
+
+      try {
+        const response = await runtime.sendMessage({
+          type: 'FETCH_HOTMAIL007_BALANCE',
+          source: 'sidepanel',
+          payload: {
+            clientKey,
+          },
+        });
+        if (response?.error) {
+          throw new Error(response.error);
+        }
+        setHotmail007Status(
+          dom.displayHotmail007Balance,
+          response?.balanceText || `Hotmail007 余额：${response?.balance ?? 0}`,
+          '余额未获取'
+        );
+        if (!options.silent) {
+          helpers.showToast('Hotmail007 余额已更新', 'success', 1800);
+        }
+        return response;
+      } catch (err) {
+        setHotmail007Status(dom.displayHotmail007Balance, err?.message || '余额查询失败', '余额查询失败');
+        if (!options.silent) {
+          helpers.showToast(err?.message || '余额查询失败', 'error');
+        }
+        throw err;
+      } finally {
+        hotmail007BalanceInFlight = false;
+        if (dom.btnHotmail007Balance) {
+          dom.btnHotmail007Balance.disabled = false;
+        }
+      }
     }
 
     function normalizeSearchText(value = '') {
@@ -499,6 +676,8 @@
         dom.displayHotmail007Status.textContent = '采购中...';
       }
 
+      const quantity = normalizeHotmail007Quantity(dom.inputHotmail007PurchaseQuantity?.value);
+
       try {
         const response = await runtime.sendMessage({
           type: 'PREFETCH_HOTMAIL007_ACCOUNT',
@@ -506,16 +685,29 @@
           payload: {
             clientKey,
             mailType: String(dom.selectHotmail007MailType?.value || 'hotmail'),
+            quantity,
           },
         });
         if (response?.error) {
           throw new Error(response.error);
         }
 
+        const purchasedAccounts = Array.isArray(response?.accounts)
+          ? response.accounts.filter(Boolean)
+          : (response?.account ? [response.account] : []);
+        const purchasedCount = purchasedAccounts.length;
         if (dom.displayHotmail007Status) {
-          dom.displayHotmail007Status.textContent = response?.account?.email || '采购完成';
+          dom.displayHotmail007Status.textContent = purchasedCount > 1
+            ? `已入池 ${purchasedCount} 个账号`
+            : (response?.account?.email || '采购完成');
         }
-        helpers.showToast(`已从 Hotmail007 拉取账号：${response?.account?.email || '未知邮箱'}`, 'success', 2200);
+        helpers.showToast(
+          purchasedCount > 1
+            ? `已从 Hotmail007 入池 ${purchasedCount} 个账号`
+            : `已从 Hotmail007 拉取账号：${response?.account?.email || '未知邮箱'}`,
+          'success',
+          2200
+        );
       } catch (err) {
         if (dom.displayHotmail007Status) {
           dom.displayHotmail007Status.textContent = err?.message || '采购失败';
@@ -642,7 +834,16 @@
       });
       dom.hotmailListShell?.addEventListener?.('mouseup', persistHotmailListHeight);
       dom.hotmailListShell?.addEventListener?.('mouseleave', persistHotmailListHeight);
+      dom.btnHotmail007Balance?.addEventListener('click', () => {
+        refreshHotmail007Balance().catch(() => { });
+      });
       dom.btnHotmail007PrefetchAccount?.addEventListener('click', handleHotmail007Prefetch);
+      dom.btnHotmail007RefreshCatalog?.addEventListener('click', () => {
+        refreshHotmail007Catalog().catch(() => { });
+      });
+      dom.selectHotmail007MailType?.addEventListener('change', () => {
+        updateHotmail007StockDisplay();
+      });
 
       dom.btnHotmailUsageGuide?.addEventListener('click', async () => {
         await helpers.openConfirmModal({
@@ -698,6 +899,8 @@
     return {
       bindHotmailEvents,
       initHotmailListExpandedState,
+      refreshHotmail007Balance,
+      refreshHotmail007Catalog,
       renderHotmailAccounts,
     };
   }

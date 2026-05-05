@@ -290,6 +290,7 @@ const inputHotmailLocalBaseUrl = document.getElementById('input-hotmail-local-ba
 const selectHotmailAccountSource = document.getElementById('select-hotmail-account-source');
 const inputHotmail007ClientKey = document.getElementById('input-hotmail007-client-key');
 const selectHotmail007MailType = document.getElementById('select-hotmail007-mail-type');
+const inputHotmail007PurchaseQuantity = document.getElementById('input-hotmail007-purchase-quantity');
 const inputHotmailEmail = document.getElementById('input-hotmail-email');
 const inputHotmailClientId = document.getElementById('input-hotmail-client-id');
 const inputHotmailPassword = document.getElementById('input-hotmail-password');
@@ -305,11 +306,15 @@ const btnClearUsedHotmailAccounts = document.getElementById('btn-clear-used-hotm
 const btnDeleteAllHotmailAccounts = document.getElementById('btn-delete-all-hotmail-accounts');
 const btnToggleHotmailList = document.getElementById('btn-toggle-hotmail-list');
 const btnToggleHotmailView = document.getElementById('btn-toggle-hotmail-view');
+const btnHotmail007Balance = document.getElementById('btn-hotmail007-balance');
 const btnHotmail007PrefetchAccount = document.getElementById('btn-hotmail007-prefetch-account');
+const btnHotmail007RefreshCatalog = document.getElementById('btn-hotmail007-refresh-catalog');
 const hotmailFormShell = document.getElementById('hotmail-form-shell');
 const hotmailListShell = document.getElementById('hotmail-list-shell');
 const hotmailAccountsList = document.getElementById('hotmail-accounts-list');
+const displayHotmail007Balance = document.getElementById('display-hotmail007-balance');
 const displayHotmail007Status = document.getElementById('display-hotmail007-status');
+const displayHotmail007Stock = document.getElementById('display-hotmail007-stock');
 const inputMail2925Email = document.getElementById('input-mail2925-email');
 const inputMail2925Password = document.getElementById('input-mail2925-password');
 const inputMail2925Import = document.getElementById('input-mail2925-import');
@@ -3374,6 +3379,16 @@ function collectSettingsPayload() {
     hotmail007MailType: String((typeof selectHotmail007MailType !== 'undefined' && selectHotmail007MailType)
       ? (selectHotmail007MailType.value || 'hotmail')
       : 'hotmail'),
+    hotmail007PurchaseQuantity: Math.max(
+      1,
+      Math.floor(
+        Number(
+          (typeof inputHotmail007PurchaseQuantity !== 'undefined' && inputHotmail007PurchaseQuantity)
+            ? (inputHotmail007PurchaseQuantity.value || '1')
+            : '1'
+        ) || 1
+      )
+    ),
     luckmailApiKey: inputLuckmailApiKey.value,
     luckmailBaseUrl: normalizeLuckmailBaseUrl(inputLuckmailBaseUrl.value),
     luckmailEmailType: normalizeLuckmailEmailType(selectLuckmailEmailType.value),
@@ -8083,8 +8098,17 @@ function applySettingsState(state) {
   if (typeof selectHotmail007MailType !== 'undefined' && selectHotmail007MailType) {
     selectHotmail007MailType.value = state?.hotmail007MailType || 'hotmail';
   }
+  if (typeof inputHotmail007PurchaseQuantity !== 'undefined' && inputHotmail007PurchaseQuantity) {
+    inputHotmail007PurchaseQuantity.value = String(Math.max(1, Math.floor(Number(state?.hotmail007PurchaseQuantity) || 1)));
+  }
+  if (typeof displayHotmail007Balance !== 'undefined' && displayHotmail007Balance) {
+    displayHotmail007Balance.textContent = String(displayHotmail007Balance.textContent || '').trim() || '余额未获取';
+  }
+  if (typeof displayHotmail007Stock !== 'undefined' && displayHotmail007Stock) {
+    displayHotmail007Stock.textContent = String(displayHotmail007Stock.textContent || '').trim() || '库存未获取';
+  }
   if (typeof displayHotmail007Status !== 'undefined' && displayHotmail007Status) {
-    displayHotmail007Status.textContent = '未采购';
+    displayHotmail007Status.textContent = String(displayHotmail007Status.textContent || '').trim() || '未采购';
   }
   inputLuckmailApiKey.value = state?.luckmailApiKey || '';
   inputLuckmailBaseUrl.value = normalizeLuckmailBaseUrl(state?.luckmailBaseUrl);
@@ -8294,6 +8318,13 @@ async function restoreState() {
   try {
     const state = await chrome.runtime.sendMessage({ type: 'GET_STATE', source: 'sidepanel' });
     applySettingsState(state);
+    refreshHotmail007Catalog({
+      silent: true,
+      preferredType: state?.hotmail007MailType,
+    }).catch(() => { });
+    if (String(state?.hotmail007ClientKey || '').trim()) {
+      refreshHotmail007Balance({ silent: true }).catch(() => { });
+    }
     if (getSelectedEmailGenerator() === 'icloud' && icloudSection?.style.display !== 'none') {
       refreshIcloudAliases({ silent: true }).catch(() => { });
     }
@@ -10067,18 +10098,23 @@ const hotmailManager = window.SidepanelHotmailManager?.createHotmailManager({
     btnAddHotmailAccount,
     btnClearUsedHotmailAccounts,
     btnDeleteAllHotmailAccounts,
+    btnHotmail007Balance,
     btnHotmail007PrefetchAccount,
+    btnHotmail007RefreshCatalog,
     btnHotmailUsageGuide,
     btnImportHotmailAccounts,
     btnToggleHotmailForm,
     btnToggleHotmailList,
     btnToggleHotmailView,
+    displayHotmail007Balance,
     displayHotmail007Status,
+    displayHotmail007Stock,
     hotmailFormShell,
     hotmailAccountsList,
     hotmailListShell,
     inputEmail,
     inputHotmail007ClientKey,
+    inputHotmail007PurchaseQuantity,
     inputHotmailClientId,
     inputHotmailEmail,
     inputHotmailImport,
@@ -10123,6 +10159,10 @@ const renderHotmailAccounts = hotmailManager?.renderHotmailAccounts
   || (() => { });
 const bindHotmailEvents = hotmailManager?.bindHotmailEvents
   || (() => { });
+const refreshHotmail007Catalog = hotmailManager?.refreshHotmail007Catalog
+  || (async () => []);
+const refreshHotmail007Balance = hotmailManager?.refreshHotmail007Balance
+  || (async () => null);
 bindHotmailEvents();
 
 const payPalManager = window.SidepanelPayPalManager?.createPayPalManager({
@@ -11240,6 +11280,26 @@ inputVpsPassword.addEventListener('blur', () => {
   input?.addEventListener('blur', () => {
     saveSettings({ silent: true }).catch(() => { });
   });
+});
+
+[inputHotmail007ClientKey, inputHotmail007PurchaseQuantity].forEach((input) => {
+  input?.addEventListener('input', () => {
+    markSettingsDirty(true);
+    scheduleSettingsAutoSave();
+  });
+  input?.addEventListener('blur', () => {
+    saveSettings({ silent: true }).catch(() => { });
+  });
+});
+
+selectHotmailAccountSource?.addEventListener('change', () => {
+  markSettingsDirty(true);
+  saveSettings({ silent: true }).catch(() => { });
+});
+
+selectHotmail007MailType?.addEventListener('change', () => {
+  markSettingsDirty(true);
+  saveSettings({ silent: true }).catch(() => { });
 });
 
 [inputLuckmailApiKey, inputLuckmailBaseUrl, inputLuckmailDomain].forEach((input) => {

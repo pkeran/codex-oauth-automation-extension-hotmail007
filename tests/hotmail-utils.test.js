@@ -2,9 +2,11 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
+  buildHotmail007BalanceUrl,
   buildHotmailMailApiLatestUrl,
   buildHotmail007GetMailUrl,
   buildHotmail007GetStockUrl,
+  buildHotmail007MailPriceListUrl,
   buildHotmail007StockUnavailableMessage,
   extractVerificationCodeFromMessage,
   filterHotmailAccountsByUsage,
@@ -15,6 +17,8 @@ const {
   getHotmailMailApiRequestConfig,
   getHotmailVerificationPollConfig,
   getHotmailVerificationRequestTimestamp,
+  normalizeHotmail007BalanceAmount,
+  normalizeHotmail007MailPriceList,
   normalizeHotmail007MailType,
   normalizeHotmail007StockCount,
   normalizeHotmailServiceMode,
@@ -400,8 +404,25 @@ test('normalizeHotmail007MailType falls back to hotmail when the incoming type i
   assert.equal(normalizeHotmail007MailType('hotmail'), 'hotmail');
   assert.equal(normalizeHotmail007MailType('HOTMAIL TRUSTED'), 'hotmail Trusted');
   assert.equal(normalizeHotmail007MailType('outlook trusted'), 'outlook Trusted');
-  assert.equal(normalizeHotmail007MailType('unknown'), 'hotmail');
+  assert.equal(normalizeHotmail007MailType('HOTMAIL TRUSTED GRAPH'), 'hotmail Trusted Graph');
+  assert.equal(normalizeHotmail007MailType('outlook-premium'), 'outlook-premium');
+  assert.equal(normalizeHotmail007MailType('Outlook-Argentina'), 'Outlook-Argentina');
   assert.equal(normalizeHotmail007MailType(''), 'hotmail');
+});
+
+test('buildHotmail007BalanceUrl targets the documented balance endpoint', () => {
+  const url = new URL(buildHotmail007BalanceUrl({
+    clientKey: 'client key/1',
+  }));
+
+  assert.equal(url.origin + url.pathname, 'https://gapi.hotmail007.com/api/user/balance');
+  assert.equal(url.searchParams.get('clientKey'), 'client key/1');
+});
+
+test('buildHotmail007MailPriceListUrl targets the public catalog endpoint', () => {
+  const url = new URL(buildHotmail007MailPriceListUrl());
+
+  assert.equal(url.origin + url.pathname, 'https://gapi.hotmail007.com/v1/mail/getMailPrice');
 });
 
 test('buildHotmail007GetMailUrl encodes clientKey and selected mail type for automatic purchases', () => {
@@ -444,6 +465,57 @@ test('normalizeHotmail007StockCount extracts a usable numeric stock count from d
   assert.equal(normalizeHotmail007StockCount({ data: '3' }), 3);
   assert.equal(normalizeHotmail007StockCount(0), 0);
   assert.equal(normalizeHotmail007StockCount({ data: null }), 0);
+});
+
+test('normalizeHotmail007BalanceAmount extracts numeric balance from documented payload shapes', () => {
+  assert.equal(normalizeHotmail007BalanceAmount({ code: 0, data: 0.02, success: true }), 0.02);
+  assert.equal(normalizeHotmail007BalanceAmount({ data: '3.5' }), 3.5);
+  assert.equal(normalizeHotmail007BalanceAmount(0), 0);
+  assert.equal(normalizeHotmail007BalanceAmount({ data: null }), 0);
+});
+
+test('normalizeHotmail007MailPriceList keeps dynamic types and their stock/price metadata', () => {
+  const entries = normalizeHotmail007MailPriceList({
+    code: 0,
+    success: true,
+    data: [
+      {
+        id: '9',
+        type: 'hotmail-premium',
+        price: 0.003,
+        live: '1-3 Hours',
+        access: '0',
+        stock: 958,
+      },
+      {
+        id: '5',
+        type: 'hotmail Trusted Graph',
+        price: '0.02',
+        live: '3-6+ Months',
+        access: '1',
+        stock: '19921',
+      },
+    ],
+  });
+
+  assert.deepEqual(entries, [
+    {
+      id: '9',
+      type: 'hotmail-premium',
+      price: 0.003,
+      live: '1-3 Hours',
+      access: '0',
+      stock: 958,
+    },
+    {
+      id: '5',
+      type: 'hotmail Trusted Graph',
+      price: 0.02,
+      live: '3-6+ Months',
+      access: '1',
+      stock: 19921,
+    },
+  ]);
 });
 
 test('buildHotmail007StockUnavailableMessage explains zero-stock buy errors with the selected mail type', () => {
