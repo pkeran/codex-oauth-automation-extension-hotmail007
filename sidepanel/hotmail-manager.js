@@ -10,12 +10,15 @@
     } = context;
 
     const expandedStorageKey = constants.expandedStorageKey || 'multipage-hotmail-list-expanded';
+    const viewStorageKey = constants.viewStorageKey || 'multipage-hotmail-list-view';
+    const heightStorageKey = constants.heightStorageKey || 'multipage-hotmail-list-height';
     const displayTimeZone = constants.displayTimeZone || 'Asia/Shanghai';
     const copyIcon = constants.copyIcon || '';
     const createAccountPoolFormController = globalScope.SidepanelAccountPoolUi?.createAccountPoolFormController;
 
     let actionInFlight = false;
     let listExpanded = false;
+    let viewMode = 'list';
     let searchTerm = '';
     let filterMode = 'all';
 
@@ -65,9 +68,18 @@
         dom.btnToggleHotmailList.setAttribute('aria-expanded', String(listExpanded));
         dom.btnToggleHotmailList.disabled = count === 0;
       }
+      if (dom.btnToggleHotmailView) {
+        const isCardView = viewMode === 'card';
+        dom.btnToggleHotmailView.textContent = isCardView ? '列表视图' : '卡片视图';
+        dom.btnToggleHotmailView.setAttribute('aria-pressed', String(isCardView));
+      }
       if (dom.hotmailListShell) {
         dom.hotmailListShell.classList.toggle('is-expanded', listExpanded);
         dom.hotmailListShell.classList.toggle('is-collapsed', !listExpanded);
+      }
+      if (dom.hotmailAccountsList?.classList) {
+        dom.hotmailAccountsList.classList.toggle('is-card-view', viewMode === 'card');
+        dom.hotmailAccountsList.classList.toggle('is-list-view', viewMode !== 'card');
       }
     }
 
@@ -83,6 +95,29 @@
     function initHotmailListExpandedState() {
       const saved = localStorage.getItem(expandedStorageKey);
       setHotmailListExpanded(saved === '1', { persist: false });
+      const savedViewMode = localStorage.getItem(viewStorageKey);
+      setHotmailViewMode(savedViewMode === 'card' ? 'card' : 'list', { persist: false });
+      const savedHeight = Number(localStorage.getItem(heightStorageKey) || 0);
+      if (dom.hotmailListShell?.style && Number.isFinite(savedHeight) && savedHeight >= 176) {
+        dom.hotmailListShell.style.height = `${savedHeight}px`;
+      }
+    }
+
+    function setHotmailViewMode(nextMode, options = {}) {
+      const { persist = true } = options;
+      viewMode = nextMode === 'card' ? 'card' : 'list';
+      updateHotmailListViewport();
+      if (persist) {
+        localStorage.setItem(viewStorageKey, viewMode);
+      }
+    }
+
+    function persistHotmailListHeight() {
+      const numericHeight = Number(dom.hotmailListShell?.offsetHeight || 0);
+      if (!Number.isFinite(numericHeight) || numericHeight < 176) {
+        return;
+      }
+      localStorage.setItem(heightStorageKey, String(Math.round(numericHeight)));
     }
 
     function shouldClearCurrentHotmailSelectionLocally(account) {
@@ -171,6 +206,16 @@
     function getHotmailStatusClass(account) {
       if (account.used) return 'status-used';
       return `status-${account.status || 'pending'}`;
+    }
+
+    function getHotmailAccountSourceLabel(account = {}) {
+      return String(account?.source || '').trim().toLowerCase() === 'hotmail007'
+        ? 'Hotmail007'
+        : '手动';
+    }
+
+    function getHotmailAccountTypeLabel(account = {}) {
+      return String(account?.purchaseType || '').trim();
     }
 
     function normalizeSearchText(value = '') {
@@ -266,6 +311,12 @@
               >${copyIcon}</button>
             </div>
             <span class="hotmail-status-chip ${helpers.escapeHtml(getHotmailStatusClass(account))}">${helpers.escapeHtml(getHotmailStatusLabel(account))}</span>
+          </div>
+          <div class="hotmail-account-source-row">
+            <span class="hotmail-account-source-chip">${helpers.escapeHtml(getHotmailAccountSourceLabel(account))}</span>
+            ${getHotmailAccountTypeLabel(account)
+              ? `<span class="hotmail-account-source-chip">${helpers.escapeHtml(getHotmailAccountTypeLabel(account))}</span>`
+              : ''}
           </div>
           <div class="hotmail-account-meta">
             <span>客户端 ID：${helpers.escapeHtml(account.clientId ? `${account.clientId.slice(0, 10)}...` : '未填写')}</span>
@@ -433,6 +484,49 @@
       }
     }
 
+    async function handleHotmail007Prefetch() {
+      if (actionInFlight) return;
+
+      const clientKey = String(dom.inputHotmail007ClientKey?.value || '').trim();
+      if (!clientKey) {
+        helpers.showToast('请先填写 Hotmail007 ClientKey。', 'warn');
+        return;
+      }
+
+      actionInFlight = true;
+      dom.btnHotmail007PrefetchAccount.disabled = true;
+      if (dom.displayHotmail007Status) {
+        dom.displayHotmail007Status.textContent = '采购中...';
+      }
+
+      try {
+        const response = await runtime.sendMessage({
+          type: 'PREFETCH_HOTMAIL007_ACCOUNT',
+          source: 'sidepanel',
+          payload: {
+            clientKey,
+            mailType: String(dom.selectHotmail007MailType?.value || 'hotmail'),
+          },
+        });
+        if (response?.error) {
+          throw new Error(response.error);
+        }
+
+        if (dom.displayHotmail007Status) {
+          dom.displayHotmail007Status.textContent = response?.account?.email || '采购完成';
+        }
+        helpers.showToast(`已从 Hotmail007 拉取账号：${response?.account?.email || '未知邮箱'}`, 'success', 2200);
+      } catch (err) {
+        if (dom.displayHotmail007Status) {
+          dom.displayHotmail007Status.textContent = err?.message || '采购失败';
+        }
+        helpers.showToast(err.message, 'error');
+      } finally {
+        actionInFlight = false;
+        dom.btnHotmail007PrefetchAccount.disabled = false;
+      }
+    }
+
     async function handleAccountListClick(event) {
       const actionButton = event.target.closest('[data-account-action]');
       if (!actionButton || actionInFlight) {
@@ -543,6 +637,12 @@
         }
         formController.setVisible(true, { focusField: true });
       });
+      dom.btnToggleHotmailView?.addEventListener('click', () => {
+        setHotmailViewMode(viewMode === 'card' ? 'list' : 'card');
+      });
+      dom.hotmailListShell?.addEventListener?.('mouseup', persistHotmailListHeight);
+      dom.hotmailListShell?.addEventListener?.('mouseleave', persistHotmailListHeight);
+      dom.btnHotmail007PrefetchAccount?.addEventListener('click', handleHotmail007Prefetch);
 
       dom.btnHotmailUsageGuide?.addEventListener('click', async () => {
         await helpers.openConfirmModal({

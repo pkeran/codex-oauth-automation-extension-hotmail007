@@ -1612,6 +1612,17 @@ header {
   gap: 8px;
 }
 
+.hotmail007-inline {
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+}
+
+.hotmail007-status {
+  flex: 1;
+  min-width: 0;
+}
+
 .hotmail-list-shell {
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
@@ -1619,6 +1630,8 @@ header {
   overflow-y: auto;
   overflow-x: hidden;
   padding: 2px;
+  resize: vertical;
+  min-height: 176px;
   transition: max-height var(--transition), border-color var(--transition), box-shadow var(--transition);
 }
 
@@ -1673,6 +1686,12 @@ header {
   flex-direction: column;
   gap: 8px;
   padding-right: 4px;
+}
+
+.hotmail-accounts-list.is-card-view {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  align-items: start;
 }
 
 .hotmail-account-item {
@@ -1774,6 +1793,24 @@ header {
   gap: 6px 10px;
   color: var(--text-secondary);
   font-size: 12px;
+}
+
+.hotmail-account-source-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.hotmail-account-source-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
 }
 
 .hotmail-account-error {

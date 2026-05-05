@@ -287,6 +287,9 @@ const rowHotmailRemoteBaseUrl = document.getElementById('row-hotmail-remote-base
 const inputHotmailRemoteBaseUrl = document.getElementById('input-hotmail-remote-base-url');
 const rowHotmailLocalBaseUrl = document.getElementById('row-hotmail-local-base-url');
 const inputHotmailLocalBaseUrl = document.getElementById('input-hotmail-local-base-url');
+const selectHotmailAccountSource = document.getElementById('select-hotmail-account-source');
+const inputHotmail007ClientKey = document.getElementById('input-hotmail007-client-key');
+const selectHotmail007MailType = document.getElementById('select-hotmail007-mail-type');
 const inputHotmailEmail = document.getElementById('input-hotmail-email');
 const inputHotmailClientId = document.getElementById('input-hotmail-client-id');
 const inputHotmailPassword = document.getElementById('input-hotmail-password');
@@ -301,9 +304,12 @@ const btnHotmailUsageGuide = document.getElementById('btn-hotmail-usage-guide');
 const btnClearUsedHotmailAccounts = document.getElementById('btn-clear-used-hotmail-accounts');
 const btnDeleteAllHotmailAccounts = document.getElementById('btn-delete-all-hotmail-accounts');
 const btnToggleHotmailList = document.getElementById('btn-toggle-hotmail-list');
+const btnToggleHotmailView = document.getElementById('btn-toggle-hotmail-view');
+const btnHotmail007PrefetchAccount = document.getElementById('btn-hotmail007-prefetch-account');
 const hotmailFormShell = document.getElementById('hotmail-form-shell');
 const hotmailListShell = document.getElementById('hotmail-list-shell');
 const hotmailAccountsList = document.getElementById('hotmail-accounts-list');
+const displayHotmail007Status = document.getElementById('display-hotmail007-status');
 const inputMail2925Email = document.getElementById('input-mail2925-email');
 const inputMail2925Password = document.getElementById('input-mail2925-password');
 const inputMail2925Import = document.getElementById('input-mail2925-import');
@@ -3359,6 +3365,15 @@ function collectSettingsPayload() {
     hotmailServiceMode: getSelectedHotmailServiceMode(),
     hotmailRemoteBaseUrl: inputHotmailRemoteBaseUrl.value.trim(),
     hotmailLocalBaseUrl: inputHotmailLocalBaseUrl.value.trim(),
+    hotmailAccountSource: String((typeof selectHotmailAccountSource !== 'undefined' && selectHotmailAccountSource)
+      ? (selectHotmailAccountSource.value || 'manual')
+      : 'manual'),
+    hotmail007ClientKey: String((typeof inputHotmail007ClientKey !== 'undefined' && inputHotmail007ClientKey)
+      ? (inputHotmail007ClientKey.value || '')
+      : '').trim(),
+    hotmail007MailType: String((typeof selectHotmail007MailType !== 'undefined' && selectHotmail007MailType)
+      ? (selectHotmail007MailType.value || 'hotmail')
+      : 'hotmail'),
     luckmailApiKey: inputLuckmailApiKey.value,
     luckmailBaseUrl: normalizeLuckmailBaseUrl(inputLuckmailBaseUrl.value),
     luckmailEmailType: normalizeLuckmailEmailType(selectLuckmailEmailType.value),
@@ -7540,6 +7555,46 @@ async function saveSettings(options = {}) {
   }
 }
 
+async function maybeAutoPrefetchHotmail007AccountAfterSave() {
+  if (selectMailProvider?.value !== 'hotmail-api') {
+    return;
+  }
+  if (String(selectHotmailAccountSource?.value || 'manual') !== 'hotmail007') {
+    return;
+  }
+
+  const clientKey = String(inputHotmail007ClientKey?.value || '').trim();
+  if (!clientKey) {
+    return;
+  }
+
+  const accounts = Array.isArray(latestState?.hotmailAccounts) ? latestState.hotmailAccounts : [];
+  const hasReusableAccount = accounts.some((account) => Boolean(account?.refreshToken) && !account?.used);
+  if (hasReusableAccount) {
+    if (displayHotmail007Status) {
+      displayHotmail007Status.textContent = '账号池已有可用账号';
+    }
+    return;
+  }
+
+  const response = await chrome.runtime.sendMessage({
+    type: 'PREFETCH_HOTMAIL007_ACCOUNT',
+    source: 'sidepanel',
+    payload: {
+      clientKey,
+      mailType: String(selectHotmail007MailType?.value || 'hotmail'),
+    },
+  });
+  if (response?.error) {
+    throw new Error(response.error);
+  }
+
+  if (displayHotmail007Status) {
+    displayHotmail007Status.textContent = response?.account?.email || '采购完成';
+  }
+  showToast(`Hotmail007 已自动拉取账号：${response?.account?.email || '未知邮箱'}`, 'success', 2200);
+}
+
 async function persistCurrentSettingsForAction() {
   clearTimeout(settingsAutoSaveTimer);
   await waitForSettingsSaveIdle();
@@ -8019,6 +8074,18 @@ function applySettingsState(state) {
   setHotmailServiceMode(state?.hotmailServiceMode);
   inputHotmailRemoteBaseUrl.value = state?.hotmailRemoteBaseUrl || '';
   inputHotmailLocalBaseUrl.value = state?.hotmailLocalBaseUrl || '';
+  if (typeof selectHotmailAccountSource !== 'undefined' && selectHotmailAccountSource) {
+    selectHotmailAccountSource.value = state?.hotmailAccountSource || 'manual';
+  }
+  if (typeof inputHotmail007ClientKey !== 'undefined' && inputHotmail007ClientKey) {
+    inputHotmail007ClientKey.value = state?.hotmail007ClientKey || '';
+  }
+  if (typeof selectHotmail007MailType !== 'undefined' && selectHotmail007MailType) {
+    selectHotmail007MailType.value = state?.hotmail007MailType || 'hotmail';
+  }
+  if (typeof displayHotmail007Status !== 'undefined' && displayHotmail007Status) {
+    displayHotmail007Status.textContent = '未采购';
+  }
   inputLuckmailApiKey.value = state?.luckmailApiKey || '';
   inputLuckmailBaseUrl.value = normalizeLuckmailBaseUrl(state?.luckmailBaseUrl);
   selectLuckmailEmailType.value = normalizeLuckmailEmailType(state?.luckmailEmailType);
@@ -10000,20 +10067,26 @@ const hotmailManager = window.SidepanelHotmailManager?.createHotmailManager({
     btnAddHotmailAccount,
     btnClearUsedHotmailAccounts,
     btnDeleteAllHotmailAccounts,
+    btnHotmail007PrefetchAccount,
     btnHotmailUsageGuide,
     btnImportHotmailAccounts,
     btnToggleHotmailForm,
     btnToggleHotmailList,
+    btnToggleHotmailView,
+    displayHotmail007Status,
     hotmailFormShell,
     hotmailAccountsList,
     hotmailListShell,
     inputEmail,
+    inputHotmail007ClientKey,
     inputHotmailClientId,
     inputHotmailEmail,
     inputHotmailImport,
     inputHotmailPassword,
     inputHotmailRefreshToken,
     inputHotmailSearch,
+    selectHotmail007MailType,
+    selectHotmailAccountSource,
     selectHotmailFilter,
     selectMailProvider,
   },
@@ -10032,6 +10105,8 @@ const hotmailManager = window.SidepanelHotmailManager?.createHotmailManager({
     copyIcon: COPY_ICON,
     displayTimeZone: DISPLAY_TIMEZONE,
     expandedStorageKey: 'multipage-hotmail-list-expanded',
+    heightStorageKey: 'multipage-hotmail-list-height',
+    viewStorageKey: 'multipage-hotmail-list-view',
   },
   hotmailUtils: {
     filterHotmailAccountsByUsage,
@@ -10776,7 +10851,14 @@ btnSaveSettings.addEventListener('click', async () => {
     showToast('配置已是最新', 'info', 1400);
     return;
   }
-  await saveSettings({ silent: false }).catch(() => { });
+  try {
+    await saveSettings({ silent: false });
+    await maybeAutoPrefetchHotmail007AccountAfterSave();
+  } catch (error) {
+    if (String(error?.message || '').includes('Hotmail007')) {
+      showToast(`Hotmail007 自动拉取失败：${error.message}`, 'warn', 2600);
+    }
+  }
 });
 
 btnStop.addEventListener('click', async () => {

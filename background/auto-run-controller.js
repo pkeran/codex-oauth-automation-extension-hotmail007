@@ -32,6 +32,7 @@
       launchAutoRunTimerPlan,
       normalizeAutoRunFallbackThreadIntervalMinutes,
       persistAutoRunTimerPlan,
+      releaseCurrentHotmailSelectionAfterFailure,
       resetState,
       runAutoSequenceFromStep,
       runtime,
@@ -516,6 +517,15 @@
             }
 
             const reason = getErrorMessage(err);
+            if (typeof releaseCurrentHotmailSelectionAfterFailure === 'function') {
+              await releaseCurrentHotmailSelectionAfterFailure({
+                reason,
+                targetRun,
+                totalRuns,
+                attemptRun,
+                sessionId,
+              });
+            }
             roundSummary.failureReasons.push(reason);
             const blockedByPhoneSmsRateLimit = typeof isPhoneSmsPlatformRateLimitFailure === 'function'
               && isPhoneSmsPlatformRateLimitFailure(err);

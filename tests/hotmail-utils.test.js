@@ -3,6 +3,8 @@ const assert = require('node:assert/strict');
 
 const {
   buildHotmailMailApiLatestUrl,
+  buildHotmail007GetMailUrl,
+  buildHotmail007GetStockUrl,
   extractVerificationCodeFromMessage,
   filterHotmailAccountsByUsage,
   extractVerificationCode,
@@ -12,8 +14,10 @@ const {
   getHotmailMailApiRequestConfig,
   getHotmailVerificationPollConfig,
   getHotmailVerificationRequestTimestamp,
+  normalizeHotmail007MailType,
   normalizeHotmailServiceMode,
   normalizeHotmailMailApiMessages,
+  parseHotmail007AccountString,
   parseHotmailImportText,
   pickHotmailAccountForRun,
   pickVerificationMessage,
@@ -388,6 +392,49 @@ test('buildHotmailMailApiLatestUrl supports custom api url and can omit response
   assert.equal(url.searchParams.get('refresh_token'), 'refresh-token-custom');
   assert.equal(url.searchParams.get('mailbox'), 'Spam');
   assert.equal(url.searchParams.has('response_type'), false);
+});
+
+test('normalizeHotmail007MailType falls back to hotmail when the incoming type is unknown', () => {
+  assert.equal(normalizeHotmail007MailType('hotmail'), 'hotmail');
+  assert.equal(normalizeHotmail007MailType('HOTMAIL TRUSTED'), 'hotmail Trusted');
+  assert.equal(normalizeHotmail007MailType('outlook trusted'), 'outlook Trusted');
+  assert.equal(normalizeHotmail007MailType('unknown'), 'hotmail');
+  assert.equal(normalizeHotmail007MailType(''), 'hotmail');
+});
+
+test('buildHotmail007GetMailUrl encodes clientKey and selected mail type for automatic purchases', () => {
+  const url = new URL(buildHotmail007GetMailUrl({
+    clientKey: 'client-key-123',
+    mailType: 'hotmail Trusted',
+    quantity: 2,
+  }));
+
+  assert.equal(url.origin + url.pathname, 'https://gapi.hotmail007.com/api/mail/getMail');
+  assert.equal(url.searchParams.get('clientKey'), 'client-key-123');
+  assert.equal(url.searchParams.get('mailType'), 'hotmail Trusted');
+  assert.equal(url.searchParams.get('quantity'), '2');
+});
+
+test('buildHotmail007GetStockUrl targets the documented stock endpoint', () => {
+  const url = new URL(buildHotmail007GetStockUrl({
+    mailType: 'outlook Trusted',
+  }));
+
+  assert.equal(url.origin + url.pathname, 'https://gapi.hotmail007.com/api/mail/getStock');
+  assert.equal(url.searchParams.get('mailType'), 'outlook Trusted');
+});
+
+test('parseHotmail007AccountString preserves refresh tokens that contain additional separators', () => {
+  const parsed = parseHotmail007AccountString(
+    'demo@hotmail.com:pass-123:M.C521_BAY.0.U.-token:segment:8b4ba9dd-3ea5-4e5f-86f1-ddba2230dcf2'
+  );
+
+  assert.deepEqual(parsed, {
+    email: 'demo@hotmail.com',
+    password: 'pass-123',
+    refreshToken: 'M.C521_BAY.0.U.-token:segment',
+    clientId: '8b4ba9dd-3ea5-4e5f-86f1-ddba2230dcf2',
+  });
 });
 
 test('normalizeHotmailMailApiMessages maps third-party payload fields into verification message shape', () => {

@@ -1,5 +1,5 @@
 {
-  "name": "codex-oauth-automation-extension",
+  "name": "codex-oauth-automation-extension-hotmail007",
   "private": true,
   "scripts": {
     "test": "node --test tests/*.test.js"

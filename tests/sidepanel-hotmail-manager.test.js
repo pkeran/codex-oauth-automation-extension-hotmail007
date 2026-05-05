@@ -65,6 +65,15 @@ test('sidepanel html contains collapsible hotmail form controls', () => {
   assert.match(html, /id="btn-import-hotmail-accounts"[^>]*>批量导入</);
 });
 
+test('sidepanel html contains hotmail007 automation controls and account view toggle', () => {
+  const html = fs.readFileSync('sidepanel/sidepanel.html', 'utf8');
+  assert.match(html, /id="select-hotmail-account-source"/);
+  assert.match(html, /id="input-hotmail007-client-key"/);
+  assert.match(html, /id="select-hotmail007-mail-type"/);
+  assert.match(html, /id="btn-hotmail007-prefetch-account"/);
+  assert.match(html, /id="btn-toggle-hotmail-view"/);
+});
+
 test('hotmail manager exposes a factory and renders empty state', () => {
   const source = fs.readFileSync('sidepanel/hotmail-manager.js', 'utf8');
   const windowObject = {

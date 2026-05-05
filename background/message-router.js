@@ -86,6 +86,7 @@
       notifyStepError,
       patchMail2925Account,
       patchHotmailAccount,
+      purchaseHotmailAccountFromHotmail007,
       pollContributionStatus,
       registerTab,
       requestStop,
@@ -1115,6 +1116,15 @@
 
         case 'UPSERT_HOTMAIL_ACCOUNT': {
           const account = await upsertHotmailAccount(message.payload || {});
+          return { ok: true, account };
+        }
+
+        case 'PREFETCH_HOTMAIL007_ACCOUNT': {
+          const payload = message.payload || {};
+          const account = await purchaseHotmailAccountFromHotmail007({
+            clientKey: payload.clientKey,
+            mailType: payload.mailType,
+          });
           return { ok: true, account };
         }
 

@@ -9,6 +9,13 @@
   const HOTMAIL_MAIL_API_URL = 'https://apple.882263.xyz/api/mail-new';
   const HOTMAIL_SERVICE_MODE_REMOTE = 'remote';
   const HOTMAIL_SERVICE_MODE_LOCAL = 'local';
+  const HOTMAIL007_API_BASE_URL = 'https://gapi.hotmail007.com';
+  const HOTMAIL007_MAIL_TYPES = [
+    'hotmail',
+    'outlook',
+    'hotmail Trusted',
+    'outlook Trusted',
+  ];
 
   function normalizeText(value) {
     return String(value || '')
@@ -31,6 +38,61 @@
     return String(rawValue || '').trim().toLowerCase() === HOTMAIL_SERVICE_MODE_REMOTE
       ? HOTMAIL_SERVICE_MODE_REMOTE
       : HOTMAIL_SERVICE_MODE_LOCAL;
+  }
+
+  function normalizeHotmail007MailType(rawValue = '') {
+    const normalized = String(rawValue || '').trim().toLowerCase();
+    if (normalized === 'outlook') return 'outlook';
+    if (normalized === 'hotmail trusted') return 'hotmail Trusted';
+    if (normalized === 'outlook trusted') return 'outlook Trusted';
+    return 'hotmail';
+  }
+
+  function joinHotmail007Url(path) {
+    return new URL(path, `${HOTMAIL007_API_BASE_URL}/`).toString();
+  }
+
+  function buildHotmail007GetMailUrl(options = {}) {
+    const url = new URL(joinHotmail007Url('/api/mail/getMail'));
+    url.searchParams.set('clientKey', String(options.clientKey || '').trim());
+    url.searchParams.set('mailType', normalizeHotmail007MailType(options.mailType));
+    url.searchParams.set('quantity', String(Math.max(1, Number(options.quantity) || 1)));
+    return url.toString();
+  }
+
+  function buildHotmail007GetStockUrl(options = {}) {
+    const url = new URL(joinHotmail007Url('/api/mail/getStock'));
+    url.searchParams.set('mailType', normalizeHotmail007MailType(options.mailType));
+    return url.toString();
+  }
+
+  function parseHotmail007AccountString(rawValue = '') {
+    const value = String(rawValue || '').trim();
+    if (!value) {
+      return null;
+    }
+
+    const firstSeparator = value.indexOf(':');
+    const secondSeparator = firstSeparator >= 0 ? value.indexOf(':', firstSeparator + 1) : -1;
+    const lastSeparator = value.lastIndexOf(':');
+    if (firstSeparator <= 0 || secondSeparator <= firstSeparator || lastSeparator <= secondSeparator) {
+      return null;
+    }
+
+    const email = value.slice(0, firstSeparator).trim();
+    const password = value.slice(firstSeparator + 1, secondSeparator).trim();
+    const refreshToken = value.slice(secondSeparator + 1, lastSeparator).trim();
+    const clientId = value.slice(lastSeparator + 1).trim();
+    if (!email || !refreshToken || !clientId) {
+      return null;
+    }
+
+    return {
+      email,
+      password,
+      refreshToken,
+      clientId,
+    };
   }
 
   function extractVerificationCode(text) {
@@ -369,6 +431,8 @@
 
   return {
     buildHotmailMailApiLatestUrl,
+    buildHotmail007GetMailUrl,
+    buildHotmail007GetStockUrl,
     extractVerificationCodeFromMessage,
     filterHotmailAccountsByUsage,
     extractVerificationCode,
@@ -379,9 +443,11 @@
     getHotmailVerificationPollConfig,
     getHotmailVerificationRequestTimestamp,
     isAuthorizedHotmailAccount,
+    normalizeHotmail007MailType,
     normalizeHotmailServiceMode,
     normalizeHotmailMailApiMessages,
     normalizeTimestamp,
+    parseHotmail007AccountString,
     parseHotmailImportText,
     pickHotmailAccountForRun,
     pickVerificationMessage,

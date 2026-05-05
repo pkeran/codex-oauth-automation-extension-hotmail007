@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>codex-oauth-automation-extension</title>
+  <title>codex-oauth-automation-extension-hotmail007</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link
@@ -666,6 +666,8 @@
         <div class="section-mini-actions">
           <button id="btn-toggle-hotmail-form" class="btn btn-outline btn-xs" type="button"
             aria-expanded="false">添加账号</button>
+          <button id="btn-toggle-hotmail-view" class="btn btn-ghost btn-xs" type="button"
+            aria-pressed="false">卡片视图</button>
           <button id="btn-hotmail-usage-guide" class="btn btn-ghost btn-xs" type="button">使用教程</button>
           <button id="btn-clear-used-hotmail-accounts" class="btn btn-ghost btn-xs" type="button">清空已用</button>
           <button id="btn-delete-all-hotmail-accounts" class="btn btn-ghost btn-xs" type="button">全部删除</button>
@@ -689,6 +691,40 @@
         <span class="data-label">本地助手</span>
         <input type="text" id="input-hotmail-local-base-url" class="data-input mono"
           placeholder="http://127.0.0.1:17373" />
+      </div>
+      <div class="data-row" id="row-hotmail-account-source">
+        <span class="data-label">账号来源</span>
+        <select id="select-hotmail-account-source" class="data-select">
+          <option value="manual">手动 / 导入</option>
+          <option value="hotmail007">Hotmail007 自动采购</option>
+        </select>
+      </div>
+      <div class="data-row" id="row-hotmail007-client-key">
+        <span class="data-label">ClientKey</span>
+        <div class="input-with-icon">
+          <input type="password" id="input-hotmail007-client-key" class="data-input data-input-with-icon mono"
+            placeholder="填写后可从 Hotmail007 自动采购并入池" />
+          <button id="btn-toggle-hotmail007-client-key" class="input-icon-btn" type="button"
+            data-password-toggle="input-hotmail007-client-key" data-show-label="显示 Hotmail007 ClientKey"
+            data-hide-label="隐藏 Hotmail007 ClientKey" aria-label="显示 Hotmail007 ClientKey"
+            title="显示 Hotmail007 ClientKey"></button>
+        </div>
+      </div>
+      <div class="data-row" id="row-hotmail007-mail-type">
+        <span class="data-label">采购类型</span>
+        <select id="select-hotmail007-mail-type" class="data-select">
+          <option value="hotmail">Hotmail（标准）</option>
+          <option value="outlook">Outlook（标准）</option>
+          <option value="hotmail Trusted">Hotmail Trusted</option>
+          <option value="outlook Trusted">Outlook Trusted</option>
+        </select>
+      </div>
+      <div class="data-row" id="row-hotmail007-prefetch">
+        <span class="data-label">Hotmail007</span>
+        <div class="data-inline hotmail007-inline">
+          <button id="btn-hotmail007-prefetch-account" class="btn btn-outline btn-sm" type="button">立即采购并入池</button>
+          <span id="display-hotmail007-status" class="data-value mono hotmail007-status">未采购</span>
+        </div>
       </div>
       <div id="hotmail-form-shell" class="account-pool-form-shell" hidden>
         <div class="data-row">
@@ -748,7 +784,7 @@
             <option value="error">异常</option>
           </select>
         </div>
-        <div id="hotmail-accounts-list" class="hotmail-accounts-list"></div>
+        <div id="hotmail-accounts-list" class="hotmail-accounts-list is-list-view"></div>
       </div>
     </div>
     <div id="mail2925-section" class="data-card hotmail-card" style="display:none;">

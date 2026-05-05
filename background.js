@@ -103,14 +103,18 @@ const LAST_STEP_ID = Math.max(
 const FINAL_OAUTH_CHAIN_START_STEP = 7;
 
 const {
+  buildHotmail007GetMailUrl,
+  buildHotmail007GetStockUrl,
   extractVerificationCodeFromMessage,
   filterHotmailAccountsByUsage,
   getLatestHotmailMessage,
   getHotmailMailApiRequestConfig,
   getHotmailVerificationPollConfig,
   getHotmailVerificationRequestTimestamp,
+  normalizeHotmail007MailType,
   normalizeHotmailServiceMode,
   normalizeHotmailMailApiMessages,
+  parseHotmail007AccountString,
   pickHotmailAccountForRun,
   pickVerificationMessage,
   pickVerificationMessageWithFallback,
@@ -221,11 +225,14 @@ const ICLOUD_PROVIDER = 'icloud';
 const GMAIL_PROVIDER = 'gmail';
 const GMAIL_ALIAS_GENERATOR = 'gmail-alias';
 const HOTMAIL_PROVIDER = 'hotmail-api';
+const HOTMAIL_ACCOUNT_SOURCE_MANUAL = 'manual';
+const HOTMAIL_ACCOUNT_SOURCE_HOTMAIL007 = 'hotmail007';
 const LUCKMAIL_PROVIDER = 'luckmail-api';
 const CLOUDFLARE_TEMP_EMAIL_PROVIDER = 'cloudflare-temp-email';
 const CLOUDFLARE_TEMP_EMAIL_GENERATOR = 'cloudflare-temp-email';
 const CUSTOM_EMAIL_POOL_GENERATOR = 'custom-pool';
 const HOTMAIL_MAILBOXES = ['INBOX', 'Junk'];
+const HOTMAIL007_AUTO_PURCHASE_QUANTITY = 1;
 const STOP_ERROR_MESSAGE = '流程已被用户停止。';
 const CLOUDFLARE_SECURITY_BLOCK_ERROR_PREFIX = 'CF_SECURITY_BLOCKED::';
 const CLOUDFLARE_SECURITY_BLOCK_USER_MESSAGE = '您已触发Cloudflare 安全防护系统，已完全停止流程，请不要短时间内多次进行重新发送验证码，连续刷新、反复点击重试会加重风控；请先关闭页面等待 15-30 分钟，让系统的临时限制自动解除。或者更换浏览器';
@@ -659,6 +666,9 @@ const PERSISTED_SETTING_DEFAULTS = {
   hotmailServiceMode: HOTMAIL_SERVICE_MODE_LOCAL,
   hotmailRemoteBaseUrl: DEFAULT_HOTMAIL_REMOTE_BASE_URL,
   hotmailLocalBaseUrl: DEFAULT_HOTMAIL_LOCAL_BASE_URL,
+  hotmailAccountSource: HOTMAIL_ACCOUNT_SOURCE_MANUAL,
+  hotmail007ClientKey: '',
+  hotmail007MailType: 'hotmail',
   luckmailApiKey: '',
   luckmailBaseUrl: DEFAULT_LUCKMAIL_BASE_URL,
   luckmailEmailType: DEFAULT_LUCKMAIL_EMAIL_TYPE,
@@ -2021,6 +2031,20 @@ function normalizeAccountRunHistoryHelperBaseUrl(rawValue = '') {
   }
 }
 
+function normalizeHotmailAccountSource(rawValue = '') {
+  return String(rawValue || '').trim().toLowerCase() === HOTMAIL_ACCOUNT_SOURCE_HOTMAIL007
+    ? HOTMAIL_ACCOUNT_SOURCE_HOTMAIL007
+    : HOTMAIL_ACCOUNT_SOURCE_MANUAL;
+}
+
+function getHotmail007Settings(state = {}) {
+  return {
+    source: normalizeHotmailAccountSource(state?.hotmailAccountSource),
+    clientKey: String(state?.hotmail007ClientKey || '').trim(),
+    mailType: normalizeHotmail007MailType(state?.hotmail007MailType),
+  };
+}
+
 function getHotmailServiceSettings(state = {}) {
   return {
     mode: normalizeHotmailServiceMode(state.hotmailServiceMode),
@@ -2306,6 +2330,12 @@ function normalizePersistentSettingValue(key, value) {
       return normalizeHotmailRemoteBaseUrl(value);
     case 'hotmailLocalBaseUrl':
       return normalizeHotmailLocalBaseUrl(value);
+    case 'hotmailAccountSource':
+      return normalizeHotmailAccountSource(value);
+    case 'hotmail007ClientKey':
+      return String(value || '').trim();
+    case 'hotmail007MailType':
+      return normalizeHotmail007MailType(value);
     case 'luckmailApiKey':
       return String(value || '');
     case 'luckmailBaseUrl':
@@ -3195,6 +3225,8 @@ function normalizeHotmailAccount(account = {}) {
     password: String(account.password || ''),
     clientId: String(account.clientId || '').trim(),
     refreshToken: String(account.refreshToken || ''),
+    source: normalizeHotmailAccountSource(account.source),
+    purchaseType: account.purchaseType ? normalizeHotmail007MailType(account.purchaseType) : '',
     status: normalizedStatus,
     enabled: account.enabled !== undefined ? Boolean(account.enabled) : true,
     used: Boolean(account.used),
@@ -3246,6 +3278,105 @@ function getMail2925Mode(stateOrMode) {
     return normalizeMail2925Mode(stateOrMode);
   }
   return normalizeMail2925Mode(stateOrMode?.mail2925Mode);
+}
+
+async function releaseCurrentHotmailSelectionAfterFailure(options = {}) {
+  const latestState = await getState();
+  if (!latestState.currentHotmailAccountId || !isHotmailProvider(latestState)) {
+    return { released: false };
+  }
+
+  await setState({ currentHotmailAccountId: null });
+  broadcastDataUpdate({ currentHotmailAccountId: null });
+  if (options.clearEmail !== false) {
+    await setEmailState(null);
+  }
+  if (options.logMessage) {
+    await addLog(options.logMessage, options.level || 'warn');
+  }
+  return { released: true };
+}
+
+async function purchaseHotmailAccountFromHotmail007(options = {}) {
+  const clientKey = String(options.clientKey || '').trim();
+  if (!clientKey) {
+    throw new Error('Hotmail007 ClientKey 未填写。');
+  }
+
+  const mailType = normalizeHotmail007MailType(options.mailType);
+  const quantity = Math.max(1, Math.floor(Number(options.quantity) || HOTMAIL007_AUTO_PURCHASE_QUANTITY));
+  const timeoutMs = Math.max(5000, Number(options.timeoutMs) || 15000);
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(new Error('timeout')), timeoutMs);
+
+  let response;
+  try {
+    response = await fetch(buildHotmail007GetMailUrl({
+      clientKey,
+      mailType,
+      quantity,
+    }), {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json',
+      },
+      signal: controller.signal,
+    });
+  } catch (err) {
+    if (err?.name === 'AbortError') {
+      throw new Error(`Hotmail007 采购请求超时（>${Math.round(timeoutMs / 1000)} 秒）`);
+    }
+    throw new Error(`Hotmail007 采购请求失败：${err.message}`);
+  } finally {
+    clearTimeout(timeoutId);
+  }
+
+  const text = await response.text();
+  let payload = {};
+  try {
+    payload = text ? JSON.parse(text) : {};
+  } catch {
+    payload = { raw: text };
+  }
+
+  if (!response.ok) {
+    const detail = payload?.msg || payload?.message || payload?.error || text || `HTTP ${response.status}`;
+    throw new Error(`Hotmail007 采购失败：${detail}`);
+  }
+  if (payload?.success === false || (payload?.code !== undefined && Number(payload.code) !== 0)) {
+    const detail = payload?.msg || payload?.message || payload?.error || '未返回成功状态';
+    throw new Error(`Hotmail007 采购失败：${detail}`);
+  }
+
+  const rawAccount = Array.isArray(payload?.data) ? payload.data.find(Boolean) : '';
+  const parsedAccount = parseHotmail007AccountString(rawAccount);
+  if (!parsedAccount) {
+    throw new Error('Hotmail007 返回账号格式异常。');
+  }
+
+  return upsertHotmailAccount({
+    ...parsedAccount,
+    source: HOTMAIL_ACCOUNT_SOURCE_HOTMAIL007,
+    purchaseType: mailType,
+    status: 'pending',
+    used: false,
+    lastError: '',
+  });
+}
+
+async function maybePurchaseHotmailAccountFromHotmail007(state = {}, options = {}) {
+  const settings = getHotmail007Settings(state);
+  if (settings.source !== HOTMAIL_ACCOUNT_SOURCE_HOTMAIL007 || !settings.clientKey) {
+    return null;
+  }
+
+  const account = await purchaseHotmailAccountFromHotmail007({
+    clientKey: settings.clientKey,
+    mailType: options.mailType || settings.mailType,
+    quantity: options.quantity || HOTMAIL007_AUTO_PURCHASE_QUANTITY,
+    timeoutMs: options.timeoutMs,
+  });
+  return account;
 }
 
 async function syncHotmailAccounts(accounts) {
@@ -3444,7 +3575,14 @@ async function ensureHotmailAccountForFlow(options = {}) {
   }
 
   if (!account) {
-    throw new Error('没有可用的 Hotmail 账号。请先在侧边栏添加至少一个带刷新令牌（refresh token）的账号。');
+    const purchasedAccount = allowAllocate
+      ? await maybePurchaseHotmailAccountFromHotmail007(state)
+      : null;
+    if (purchasedAccount) {
+      const verifiedPurchase = await verifyHotmailAccount(purchasedAccount.id);
+      return setCurrentHotmailAccount(verifiedPurchase.account.id, { markUsed, syncEmail: true });
+    }
+    throw new Error('没有可用的 Hotmail 账号。请先在侧边栏添加至少一个带刷新令牌（refresh token）的账号，或配置 Hotmail007 ClientKey。');
   }
   if (!isAuthorizedHotmailRunAccount(account)) {
     throw new Error(`Hotmail 账号 ${account.email || account.id} 尚未就绪，无法读取邮件。`);
@@ -3814,10 +3952,18 @@ async function ensureHotmailMailboxReadyForAutoRunRound(options = {}) {
     const remainingPendingAccounts = latestAccounts
       .filter((candidate) => isPendingHotmailVerificationCandidate(candidate) && !exhaustedAccountIds.has(candidate.id));
     if (!remainingAuthorizedAccounts.length && !remainingPendingAccounts.length) {
+      const purchasedAccount = await maybePurchaseHotmailAccountFromHotmail007(latestState);
+      if (purchasedAccount) {
+        await addLog(
+          `自动运行${buildRoundLabel()}开始前已从 Hotmail007 自动采购账号 ${purchasedAccount.email}，正在校验可用性。`,
+          'ok'
+        );
+        continue;
+      }
       if (lastError) {
         throw new Error(`自动运行${buildRoundLabel()}开始前未找到可通过校验的 Hotmail 账号：${lastError.message}`);
       }
-      throw new Error('没有可用的 Hotmail 账号。请先在侧边栏添加至少一个带刷新令牌（refresh token）的账号。');
+      throw new Error('没有可用的 Hotmail 账号。请先在侧边栏添加至少一个带刷新令牌（refresh token）的账号，或配置 Hotmail007 ClientKey。');
     }
 
     let account = null;
@@ -9516,6 +9662,10 @@ const autoRunController = self.MultiPageBackgroundAutoRunController?.createAutoR
   normalizeAutoRunFallbackThreadIntervalMinutes,
   onAutoRunRoundSuccess: (payload = {}) => maybeSwitchIpProxyAfterAutoRunRoundSuccess(payload),
   persistAutoRunTimerPlan,
+  releaseCurrentHotmailSelectionAfterFailure: (payload = {}) => releaseCurrentHotmailSelectionAfterFailure({
+    ...payload,
+    clearEmail: true,
+  }),
   resetState,
   runAutoSequenceFromStep: (...args) => runAutoSequenceFromStep(...args),
   runtime: {
@@ -10616,6 +10766,7 @@ const messageRouter = self.MultiPageBackgroundMessageRouter?.createMessageRouter
   notifyStepError,
   patchHotmailAccount,
   patchMail2925Account,
+  purchaseHotmailAccountFromHotmail007,
   registerTab,
   requestStop,
   probeIpProxyExit,
