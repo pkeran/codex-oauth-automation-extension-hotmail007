@@ -1220,6 +1220,18 @@ header {
   width: 76px;
 }
 
+#row-hotmail-account-source > .data-label,
+#row-hotmail007-client-key > .data-label,
+#row-hotmail007-mail-type > .data-label,
+#row-hotmail007-prefetch > .data-label {
+  width: 88px;
+}
+
+#row-hotmail007-prefetch > .data-label {
+  text-transform: none;
+  letter-spacing: 0.02em;
+}
+
 #row-codex2api-url .data-label {
   font-size: 10px;
   letter-spacing: 0.02em;
@@ -1614,13 +1626,17 @@ header {
 
 .hotmail007-inline {
   width: 100%;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
 .hotmail007-status {
-  flex: 1;
+  flex: 1 1 220px;
   min-width: 0;
+  white-space: normal;
+  word-break: break-word;
+  line-height: 1.5;
 }
 
 .hotmail-list-shell {

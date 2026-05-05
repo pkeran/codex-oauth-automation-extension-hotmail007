@@ -66,6 +66,65 @@
     return url.toString();
   }
 
+  function normalizeHotmail007StockCount(payload) {
+    function parseCount(value) {
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        return Math.max(0, Math.floor(value));
+      }
+      if (typeof value === 'string' && value.trim()) {
+        const parsed = Number(value);
+        if (Number.isFinite(parsed)) {
+          return Math.max(0, Math.floor(parsed));
+        }
+      }
+      return null;
+    }
+
+    const directCount = parseCount(payload);
+    if (directCount !== null) {
+      return directCount;
+    }
+
+    const objectPayload = payload && typeof payload === 'object' ? payload : {};
+    const directCandidates = [
+      objectPayload.data,
+      objectPayload.count,
+      objectPayload.stock,
+      objectPayload.available,
+      objectPayload.total,
+    ];
+    for (const candidate of directCandidates) {
+      const parsed = parseCount(candidate);
+      if (parsed !== null) {
+        return parsed;
+      }
+    }
+
+    const nestedPayload = objectPayload.data && typeof objectPayload.data === 'object'
+      ? objectPayload.data
+      : {};
+    const nestedCandidates = [
+      nestedPayload.count,
+      nestedPayload.stock,
+      nestedPayload.available,
+      nestedPayload.total,
+    ];
+    for (const candidate of nestedCandidates) {
+      const parsed = parseCount(candidate);
+      if (parsed !== null) {
+        return parsed;
+      }
+    }
+
+    return 0;
+  }
+
+  function buildHotmail007StockUnavailableMessage(mailType, count = 0) {
+    const normalizedMailType = normalizeHotmail007MailType(mailType);
+    const normalizedCount = Math.max(0, Math.floor(Number(count) || 0));
+    return `Hotmail007 \u5f53\u524d\u5e93\u5b58\u4e3a ${normalizedCount}\uff1a${normalizedMailType}\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5\u6216\u5207\u6362\u5176\u5b83\u91c7\u8d2d\u7c7b\u578b\u3002`;
+  }
+
   function parseHotmail007AccountString(rawValue = '') {
     const value = String(rawValue || '').trim();
     if (!value) {
@@ -433,6 +492,7 @@
     buildHotmailMailApiLatestUrl,
     buildHotmail007GetMailUrl,
     buildHotmail007GetStockUrl,
+    buildHotmail007StockUnavailableMessage,
     extractVerificationCodeFromMessage,
     filterHotmailAccountsByUsage,
     extractVerificationCode,
@@ -444,6 +504,7 @@
     getHotmailVerificationRequestTimestamp,
     isAuthorizedHotmailAccount,
     normalizeHotmail007MailType,
+    normalizeHotmail007StockCount,
     normalizeHotmailServiceMode,
     normalizeHotmailMailApiMessages,
     normalizeTimestamp,

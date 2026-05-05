@@ -105,6 +105,7 @@ const FINAL_OAUTH_CHAIN_START_STEP = 7;
 const {
   buildHotmail007GetMailUrl,
   buildHotmail007GetStockUrl,
+  buildHotmail007StockUnavailableMessage,
   extractVerificationCodeFromMessage,
   filterHotmailAccountsByUsage,
   getLatestHotmailMessage,
@@ -112,6 +113,7 @@ const {
   getHotmailVerificationPollConfig,
   getHotmailVerificationRequestTimestamp,
   normalizeHotmail007MailType,
+  normalizeHotmail007StockCount,
   normalizeHotmailServiceMode,
   normalizeHotmailMailApiMessages,
   parseHotmail007AccountString,
@@ -3297,6 +3299,63 @@ async function releaseCurrentHotmailSelectionAfterFailure(options = {}) {
   return { released: true };
 }
 
+async function fetchHotmail007StockCount(options = {}) {
+  const mailType = normalizeHotmail007MailType(options.mailType);
+  const timeoutMs = Math.max(3000, Number(options.timeoutMs) || 8000);
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(new Error('timeout')), timeoutMs);
+
+  let response;
+  try {
+    response = await fetch(buildHotmail007GetStockUrl({
+      mailType,
+    }), {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json',
+      },
+      signal: controller.signal,
+    });
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+
+  const text = await response.text();
+  let payload = {};
+  try {
+    payload = text ? JSON.parse(text) : {};
+  } catch {
+    return null;
+  }
+
+  if (!response.ok) {
+    return null;
+  }
+  if (payload?.success === false || (payload?.code !== undefined && Number(payload.code) !== 0)) {
+    return null;
+  }
+
+  return normalizeHotmail007StockCount(payload);
+}
+
+async function resolveHotmail007PurchaseFailureMessage(detail, options = {}) {
+  if (!/buy error/i.test(String(detail || '').trim())) {
+    return null;
+  }
+
+  const quantity = Math.max(1, Math.floor(Number(options.quantity) || 1));
+  const stockCount = await fetchHotmail007StockCount({
+    mailType: options.mailType,
+    timeoutMs: options.timeoutMs,
+  });
+  if (stockCount !== null && stockCount < quantity) {
+    return buildHotmail007StockUnavailableMessage(options.mailType, stockCount);
+  }
+  return null;
+}
+
 async function purchaseHotmailAccountFromHotmail007(options = {}) {
   const clientKey = String(options.clientKey || '').trim();
   if (!clientKey) {
@@ -3306,6 +3365,14 @@ async function purchaseHotmailAccountFromHotmail007(options = {}) {
   const mailType = normalizeHotmail007MailType(options.mailType);
   const quantity = Math.max(1, Math.floor(Number(options.quantity) || HOTMAIL007_AUTO_PURCHASE_QUANTITY));
   const timeoutMs = Math.max(5000, Number(options.timeoutMs) || 15000);
+  const stockCount = await fetchHotmail007StockCount({
+    mailType,
+    timeoutMs: Math.min(timeoutMs, 8000),
+  });
+  if (stockCount !== null && stockCount < quantity) {
+    throw new Error(buildHotmail007StockUnavailableMessage(mailType, stockCount));
+  }
+
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(new Error('timeout')), timeoutMs);
 
@@ -3341,11 +3408,21 @@ async function purchaseHotmailAccountFromHotmail007(options = {}) {
 
   if (!response.ok) {
     const detail = payload?.msg || payload?.message || payload?.error || text || `HTTP ${response.status}`;
-    throw new Error(`Hotmail007 采购失败：${detail}`);
+    const stockFailureMessage = await resolveHotmail007PurchaseFailureMessage(detail, {
+      mailType,
+      quantity,
+      timeoutMs: Math.min(timeoutMs, 8000),
+    });
+    throw new Error(stockFailureMessage || `Hotmail007 采购失败：${detail}`);
   }
   if (payload?.success === false || (payload?.code !== undefined && Number(payload.code) !== 0)) {
     const detail = payload?.msg || payload?.message || payload?.error || '未返回成功状态';
-    throw new Error(`Hotmail007 采购失败：${detail}`);
+    const stockFailureMessage = await resolveHotmail007PurchaseFailureMessage(detail, {
+      mailType,
+      quantity,
+      timeoutMs: Math.min(timeoutMs, 8000),
+    });
+    throw new Error(stockFailureMessage || `Hotmail007 采购失败：${detail}`);
   }
 
   const rawAccount = Array.isArray(payload?.data) ? payload.data.find(Boolean) : '';

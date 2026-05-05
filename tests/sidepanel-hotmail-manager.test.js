@@ -74,6 +74,13 @@ test('sidepanel html contains hotmail007 automation controls and account view to
   assert.match(html, /id="btn-toggle-hotmail-view"/);
 });
 
+test('sidepanel css gives hotmail007 action row enough room and allows the status text to wrap', () => {
+  const css = fs.readFileSync('sidepanel/sidepanel.css', 'utf8');
+  assert.match(css, /#row-hotmail007-prefetch > \.data-label/);
+  assert.match(css, /\.hotmail007-inline\s*\{[^}]*flex-wrap:\s*wrap;/s);
+  assert.match(css, /\.hotmail007-status\s*\{[^}]*white-space:\s*normal;/s);
+});
+
 test('hotmail manager exposes a factory and renders empty state', () => {
   const source = fs.readFileSync('sidepanel/hotmail-manager.js', 'utf8');
   const windowObject = {

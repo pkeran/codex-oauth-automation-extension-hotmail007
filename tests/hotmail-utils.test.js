@@ -5,6 +5,7 @@ const {
   buildHotmailMailApiLatestUrl,
   buildHotmail007GetMailUrl,
   buildHotmail007GetStockUrl,
+  buildHotmail007StockUnavailableMessage,
   extractVerificationCodeFromMessage,
   filterHotmailAccountsByUsage,
   extractVerificationCode,
@@ -15,6 +16,7 @@ const {
   getHotmailVerificationPollConfig,
   getHotmailVerificationRequestTimestamp,
   normalizeHotmail007MailType,
+  normalizeHotmail007StockCount,
   normalizeHotmailServiceMode,
   normalizeHotmailMailApiMessages,
   parseHotmail007AccountString,
@@ -435,6 +437,20 @@ test('parseHotmail007AccountString preserves refresh tokens that contain additio
     refreshToken: 'M.C521_BAY.0.U.-token:segment',
     clientId: '8b4ba9dd-3ea5-4e5f-86f1-ddba2230dcf2',
   });
+});
+
+test('normalizeHotmail007StockCount extracts a usable numeric stock count from documented payload shapes', () => {
+  assert.equal(normalizeHotmail007StockCount({ code: 0, data: 12, success: true }), 12);
+  assert.equal(normalizeHotmail007StockCount({ data: '3' }), 3);
+  assert.equal(normalizeHotmail007StockCount(0), 0);
+  assert.equal(normalizeHotmail007StockCount({ data: null }), 0);
+});
+
+test('buildHotmail007StockUnavailableMessage explains zero-stock buy errors with the selected mail type', () => {
+  assert.equal(
+    buildHotmail007StockUnavailableMessage('hotmail Trusted', 0),
+    'Hotmail007 当前库存为 0：hotmail Trusted，请稍后重试或切换其它采购类型。'
+  );
 });
 
 test('normalizeHotmailMailApiMessages maps third-party payload fields into verification message shape', () => {
