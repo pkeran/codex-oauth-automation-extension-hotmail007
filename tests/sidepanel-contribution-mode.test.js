@@ -107,7 +107,7 @@ test('sidepanel html contains contribution mode runtime UI and loads the module 
   const moduleIndex = html.indexOf('<script src="contribution-mode.js"></script>');
   const sidepanelIndex = html.indexOf('<script src="sidepanel.js"></script>');
 
-  assert.match(html, /id="btn-contribution-mode"/);
+  assert.doesNotMatch(html, /id="btn-contribution-mode"/);
   assert.match(html, /id="contribution-mode-panel"/);
   assert.match(html, /id="contribution-oauth-status"/);
   assert.match(html, /id="contribution-callback-status"/);

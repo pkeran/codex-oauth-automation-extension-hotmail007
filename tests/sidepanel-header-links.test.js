@@ -113,3 +113,19 @@ return {
     'https://github.com/example/project/releases',
   ]);
 });
+
+test('sidepanel html moves the account cost ledger entry into the header button row', () => {
+  const html = fs.readFileSync('sidepanel/sidepanel.html', 'utf8');
+  const headerButtonsMatch = html.match(/<div class="header-btns">[\s\S]*?<\/header>/);
+
+  assert.ok(headerButtonsMatch, 'missing header button row');
+  assert.match(
+    headerButtonsMatch[0],
+    /id="btn-open-account-cost-ledger"[\s\S]*?>记账<\/button>/
+  );
+  assert.doesNotMatch(headerButtonsMatch[0], /id="btn-contribution-mode"/);
+  assert.doesNotMatch(
+    html,
+    /<div id="config-menu"[\s\S]*id="btn-open-account-cost-ledger"/
+  );
+});

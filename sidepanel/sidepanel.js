@@ -2040,7 +2040,7 @@ async function openAutoSkipFailuresConfirmModal() {
 async function openAutoRunFallbackRiskConfirmModal(totalRuns) {
   const result = await openConfirmModalWithOption({
     title: '自动运行风险提醒',
-    message: `当前轮数已经不适合单节点情况，请确保已经配置并打开节点轮询功能（若没有配置，请点击贡献/使用按钮，根据网页中使用教程进行配置），避免连续使用一个节点注册，导致出现手机号验证。`,
+    message: `当前轮数已经不适合单节点情况，请确保已经配置并打开节点轮询功能（若没有配置，请先根据下方贡献模式区域中的使用教程进行配置），避免连续使用一个节点注册，导致出现手机号验证。`,
     confirmLabel: '继续',
   });
 
@@ -8916,7 +8916,9 @@ function getContributionUpdatePromptLines(snapshot = currentContributionContentS
     && String(item.slug || '').trim().toLowerCase() === 'auto_run_notice'
   );
   if (autoRunNoticeItem) {
-    const noticeText = String(autoRunNoticeItem.text || '').trim();
+    const noticeText = String(autoRunNoticeItem.text || '').trim()
+      .replace(/可点上方“贡献\/使用教程”查看。?/g, '可在下方“贡献模式”区域查看。')
+      .replace(/可点上方“贡献\/使用”查看。?/g, '可在下方“贡献模式”区域查看。');
     return autoRunNoticeItem.isVisible && noticeText ? [noticeText] : [];
   }
 
@@ -8933,7 +8935,7 @@ function getContributionUpdatePromptLines(snapshot = currentContributionContentS
 
   const lines = [];
   if (hasAnnouncementOrTutorial) {
-    lines.push('公告 / 使用教程有更新了，可点上方“贡献/使用”查看。');
+    lines.push('公告 / 使用教程有更新了，可在下方“贡献模式”区域查看。');
   }
   if (hasQuestionnaire) {
     lines.push('有新的征求意见，请佬友共同参与选择。');

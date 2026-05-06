@@ -33,8 +33,8 @@
     </div>
     <div class="header-btns">
       <div class="run-group">
-        <button id="btn-contribution-mode" class="btn btn-outline btn-sm btn-contribution-mode" type="button"
-          aria-pressed="false" title="进入贡献模式并打开官网页">贡献/使用教程</button>
+        <button id="btn-open-account-cost-ledger" class="btn btn-outline btn-sm" type="button"
+          title="打开记账面板">记账</button>
         <input type="number" id="input-run-count" class="run-count-input" value="1" min="1" title="运行次数" />
         <button id="btn-auto-run" class="btn btn-success" title="自动执行全部步骤">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
@@ -73,7 +73,6 @@
         <button id="btn-config-menu" class="btn btn-ghost btn-sm header-config-btn" type="button" aria-haspopup="menu"
           aria-expanded="false">配置</button>
         <div id="config-menu" class="header-dropdown" role="menu" aria-labelledby="btn-config-menu" hidden>
-          <button id="btn-open-account-cost-ledger" class="header-dropdown-item" type="button" role="menuitem">记账</button>
           <button id="btn-export-settings" class="header-dropdown-item" type="button" role="menuitem">导出配置</button>
           <button id="btn-import-settings" class="header-dropdown-item" type="button" role="menuitem">导入配置</button>
         </div>
@@ -84,7 +83,7 @@
   <div id="contribution-update-layer" class="contribution-update-layer" hidden>
     <div id="contribution-update-hint" class="contribution-update-hint" aria-live="polite" hidden>
       <p id="contribution-update-hint-text" class="contribution-update-hint-text">
-        公告 / 使用教程有更新了，可点上方“贡献/使用教程”查看。
+        公告 / 使用教程有更新了，可在下方“贡献模式”区域查看。
       </p>
       <button id="btn-dismiss-contribution-update-hint" class="contribution-update-hint-close" type="button"
         aria-label="关闭更新提示" title="关闭更新提示">×</button>

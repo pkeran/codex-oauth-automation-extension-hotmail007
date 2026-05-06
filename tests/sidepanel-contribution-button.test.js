@@ -2,15 +2,17 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 
-test('sidepanel html keeps a single contribution mode button in header', () => {
+test('sidepanel html replaces the header contribution shortcut with a ledger shortcut', () => {
   const html = fs.readFileSync('sidepanel/sidepanel.html', 'utf8');
-  const matches = html.match(/id="btn-contribution-mode"/g) || [];
+  const contributionMatches = html.match(/id="btn-contribution-mode"/g) || [];
+  const ledgerMatches = html.match(/id="btn-open-account-cost-ledger"/g) || [];
   const serviceIndex = html.indexOf('<script src="contribution-content-update-service.js"></script>');
   const sidepanelIndex = html.indexOf('<script src="sidepanel.js"></script>');
 
-  assert.equal(matches.length, 1);
-  assert.match(html, /id="btn-contribution-mode"[^>]*title="进入贡献模式并打开官网页"/);
-  assert.match(html, />贡献\/使用教程<\/button>/);
+  assert.equal(contributionMatches.length, 0);
+  assert.equal(ledgerMatches.length, 1);
+  assert.match(html, /id="btn-open-account-cost-ledger"[^>]*title="打开记账面板"/);
+  assert.match(html, />记账<\/button>/);
   assert.match(html, /<\/header>\s*<div id="contribution-update-layer"/);
   assert.match(html, /id="contribution-update-layer"/);
   assert.match(html, /id="contribution-update-hint"/);
