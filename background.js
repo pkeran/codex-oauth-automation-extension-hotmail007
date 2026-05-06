@@ -7640,6 +7640,13 @@ function isStep4Route405RecoveryLimitFailure(error) {
 }
 
 function isPhoneSmsPlatformRateLimitFailure(error) {
+  const rawPhoneSmsRateLimitMessage = getErrorMessage(error);
+  if (error && typeof error === 'object' && String(error.code || '').trim() === 'PHONE_SMS_RATE_LIMIT') {
+    return true;
+  }
+  if (/(?:5sim|hero\s*sms|herosms|nexsms|phone[\s-]*sms)[\s\S]*(?:闄愭祦|rate\s*limit|too\s*many\s*requests|temporary\s+unavailable|temporarily\s+unavailable)|(?:^|[\s:(])429(?:[\s).:]|$)|PHONE_SMS_RATE_LIMIT::/i.test(rawPhoneSmsRateLimitMessage)) {
+    return true;
+  }
   const message = getErrorMessage(error);
   return /FIVE_SIM_RATE_LIMIT::|5sim[\s\S]*(?:限流|rate\s*limit)/i.test(message);
 }

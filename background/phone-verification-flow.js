@@ -84,12 +84,23 @@
       PHONE_SMS_PROVIDER_NEXSMS,
     ]);
     const MAX_PHONE_REUSABLE_POOL = 12;
+    const PHONE_ERROR_CODE_RATE_LIMIT = 'PHONE_SMS_RATE_LIMIT';
+    const PHONE_ERROR_CODE_NO_SUPPLY = 'PHONE_SMS_NO_SUPPLY';
+    const PHONE_ERROR_CODE_ROUTE_405_RECOVERY_FAILED = 'PHONE_ROUTE_405_RECOVERY_FAILED';
+    const PHONE_ERROR_CODE_ACTIVATION_NOT_FOUND = 'PHONE_ACTIVATION_NOT_FOUND';
+    const PHONE_ERROR_CODE_TRANSIENT_POLL = 'PHONE_SMS_TRANSIENT_POLL_ERROR';
+    const PHONE_ERROR_CODE_ADD_PHONE_REJECT_UNKNOWN = 'PHONE_ADD_PHONE_REJECT_UNKNOWN';
+    const PHONE_SMS_RATE_LIMIT_ERROR_PREFIX = 'PHONE_SMS_RATE_LIMIT::';
     const PHONE_CODE_TIMEOUT_ERROR_PREFIX = 'PHONE_CODE_TIMEOUT::';
     const PHONE_RESTART_STEP7_ERROR_PREFIX = 'PHONE_RESTART_STEP7::';
     const PHONE_RESEND_THROTTLED_ERROR_PREFIX = 'PHONE_RESEND_THROTTLED::';
     const PHONE_ROUTE_405_RECOVERY_FAILED_ERROR_PREFIX = 'PHONE_ROUTE_405_RECOVERY_FAILED::';
     const PHONE_SMS_FAILURE_SKIP_THRESHOLD = 2;
     const MAX_ACTIVATION_PRICE_HINTS = 256;
+    const PHONE_SMS_TRANSIENT_POLL_RETRY_LIMIT = 2;
+    const PHONE_SMS_TRANSIENT_POLL_RETRY_DELAY_MS = 1000;
+    const PHONE_UNKNOWN_ADD_PHONE_REJECT_RETRY_LIMIT = 2;
+    const PHONE_UNKNOWN_ADD_PHONE_REJECT_RETRY_DELAY_MS = 1000;
     const activationPriceHintsByKey = new Map();
     let activePhoneVerificationLogStep = null;
     let activePhoneVerificationLogStepKey = null;
@@ -124,6 +135,57 @@
       }
       delete normalizedOptions.visibleStep;
       return rawAddLog(normalizePhoneVerificationLogMessage(message), level, normalizedOptions);
+    }
+
+    function createPhoneFlowError(code, message, options = {}) {
+      const error = new Error(String(message || '').trim() || 'unknown phone flow error');
+      error.code = String(code || '').trim() || undefined;
+      if (options && typeof options === 'object') {
+        if (options.payload !== undefined) {
+          error.payload = options.payload;
+        }
+        if (options.status !== undefined) {
+          error.status = options.status;
+        }
+        if (options.provider !== undefined) {
+          error.provider = normalizePhoneSmsProvider(options.provider);
+        }
+        if (options.reason !== undefined) {
+          error.reason = String(options.reason || '').trim();
+        }
+        if (options.fingerprint !== undefined) {
+          error.fingerprint = String(options.fingerprint || '').trim();
+        }
+      }
+      return error;
+    }
+
+    function getPhoneFlowErrorCode(error) {
+      const directCode = String(error?.code || '').trim();
+      if (directCode) {
+        return directCode;
+      }
+      const message = String(error?.message || error || '').trim();
+      if (!message) {
+        return '';
+      }
+      if (message.startsWith(FIVE_SIM_RATE_LIMIT_ERROR_PREFIX) || message.startsWith(PHONE_SMS_RATE_LIMIT_ERROR_PREFIX)) {
+        return PHONE_ERROR_CODE_RATE_LIMIT;
+      }
+      if (message.startsWith(PHONE_ROUTE_405_RECOVERY_FAILED_ERROR_PREFIX)) {
+        return PHONE_ERROR_CODE_ROUTE_405_RECOVERY_FAILED;
+      }
+      return '';
+    }
+
+    function hasPhoneFlowErrorCode(error, code) {
+      return getPhoneFlowErrorCode(error) === String(code || '').trim();
+    }
+
+    function getPhoneFlowRetryDelayMs(baseDelayMs, attempt) {
+      const base = Math.max(250, Math.floor(Number(baseDelayMs) || 0));
+      const safeAttempt = Math.max(1, Math.floor(Number(attempt) || 1));
+      return Math.min(5000, base * (2 ** (safeAttempt - 1)));
     }
 
     async function withPhoneVerificationLogContext(options = {}, action) {
@@ -1259,6 +1321,54 @@
         || /flow\s+was\s+stopped|stopped\s+by\s+user/i.test(message);
     }
 
+    function isPhoneSmsTransientPollError(error, provider = '') {
+      if (!error) {
+        return false;
+      }
+      if (hasPhoneFlowErrorCode(error, PHONE_ERROR_CODE_RATE_LIMIT)) {
+        return true;
+      }
+      if (hasPhoneFlowErrorCode(error, PHONE_ERROR_CODE_TRANSIENT_POLL)) {
+        return true;
+      }
+      if (isStopRequestedError(error) || isPhoneCodeTimeoutError(error) || isPhoneActivationOrderMissingError(error, provider)) {
+        return false;
+      }
+      const status = Number(error?.status) || 0;
+      if (status === 429 || status >= 500) {
+        return true;
+      }
+      const message = String(error?.message || error || '').trim();
+      if (!message) {
+        return false;
+      }
+      if (isNetworkFetchFailure(error) || /\btimed?\s*out\b/i.test(message)) {
+        return true;
+      }
+      const normalizedProvider = normalizePhoneSmsProvider(provider);
+      if (normalizedProvider === PHONE_SMS_PROVIDER_HERO) {
+        return isHeroSmsRateLimitError(error?.payload || message, status)
+          || isPhoneSmsTemporaryUnavailableError(error?.payload || message);
+      }
+      if (normalizedProvider === PHONE_SMS_PROVIDER_5SIM) {
+        return isFiveSimRateLimitError(error?.payload || message, status)
+          || isPhoneSmsTemporaryUnavailableError(error?.payload || message);
+      }
+      if (normalizedProvider === PHONE_SMS_PROVIDER_NEXSMS) {
+        return isNexSmsRateLimitError(error?.payload || message, status)
+          || isPhoneSmsTemporaryUnavailableError(error?.payload || message);
+      }
+      return isPhoneSmsTemporaryUnavailableError(message);
+    }
+
+    function buildAddPhoneRejectFingerprint(value = '') {
+      return String(value || '')
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, ' ')
+        .slice(0, 240);
+    }
+
     function buildPhoneRestartStep7Error(phoneNumber = '') {
       const suffix = phoneNumber ? ` 当前号码：${phoneNumber}。` : '';
       return new Error(
@@ -1272,6 +1382,17 @@
       return new Error(
         `步骤 9：更换 ${safeMax} 次号码后手机号验证仍未成功。最后原因：${safeReason}. `
         + `Step 9: phone verification did not succeed after ${safeMax} number replacements. Last reason: ${safeReason}.`
+      );
+    }
+
+    function buildPhoneReplacementLimitError(maxNumberReplacementAttempts, reason = '') {
+      const safeMax = Math.max(0, Math.floor(Number(maxNumberReplacementAttempts) || 0));
+      const safeReason = String(reason || 'unknown').trim() || 'unknown';
+      return createPhoneFlowError(
+        'PHONE_REPLACEMENT_LIMIT',
+        `步骤 9：更换 ${safeMax} 次号码后手机号验证仍未成功。最后原因：${safeReason}. `
+        + `Step 9: phone verification did not succeed after ${safeMax} number replacements. Last reason: ${safeReason}.`,
+        { reason: safeReason }
       );
     }
 
@@ -1749,6 +1870,48 @@
       return /\bNO_BALANCE\b|\bNOT_ENOUGH_BALANCE\b|\bBAD_KEY\b|\bINVALID_KEY\b|\bBANNED\b|\bACCOUNT_BANNED\b|\bWRONG_KEY\b/i.test(text);
     }
 
+    function isHeroSmsRateLimitError(payloadOrMessage, status = 0) {
+      if (Number(status) === 429) {
+        return true;
+      }
+      const text = describeHeroSmsPayload(payloadOrMessage);
+      return /rate\s*limit|too\s*many\s*requests|temporary\s+unavailable|temporarily\s+unavailable|429/i.test(text);
+    }
+
+    function isPhoneSmsTemporaryUnavailableError(payloadOrMessage) {
+      const text = String(
+        typeof payloadOrMessage === 'string'
+          ? payloadOrMessage
+          : describeHeroSmsPayload(payloadOrMessage)
+      ).trim();
+      return /temporary\s+unavailable|temporarily\s+unavailable|service\s+unavailable|server\s+error|try\s+later|retry\s+later|timeout|timed\s+out|upstream/i.test(text);
+    }
+
+    function buildPhoneSmsRateLimitError(providerLabel = 'phone-sms', details = [], options = {}) {
+      const normalizedDetails = Array.isArray(details)
+        ? details.map((item) => String(item || '').trim()).filter(Boolean)
+        : [];
+      const suffix = normalizedDetails.length ? `：${normalizedDetails.join(' | ')}` : '';
+      const legacyPrefix = options?.legacyFiveSimPrefix ? FIVE_SIM_RATE_LIMIT_ERROR_PREFIX : '';
+      return createPhoneFlowError(
+        PHONE_ERROR_CODE_RATE_LIMIT,
+        `${legacyPrefix}${providerLabel} 接码接口触发限流，请稍后再试${suffix}`,
+        options
+      );
+    }
+
+    function buildPhoneSmsNoSupplyError(message, options = {}) {
+      return createPhoneFlowError(PHONE_ERROR_CODE_NO_SUPPLY, message, options);
+    }
+
+    function isPhoneSmsRateLimitFailureMessage(message = '') {
+      const text = String(message || '').trim();
+      if (!text) {
+        return false;
+      }
+      return /FIVE_SIM_RATE_LIMIT::|PHONE_SMS_RATE_LIMIT::|rate\s*limit|too\s*many\s*requests|temporary\s+unavailable|temporarily\s+unavailable|\b429\b/i.test(text);
+    }
+
     function isProviderNoSupplyFailureMessage(message = '') {
       const text = String(message || '').trim();
       if (!text) {
@@ -2086,6 +2249,17 @@
         ? `：${details.join(' | ')}。`
         : '。';
       return new Error(`${FIVE_SIM_RATE_LIMIT_ERROR_PREFIX}5sim 购买接口触发限流，请稍后再试${suffix}`);
+    }
+
+    function buildFiveSimRateLimitError(details = []) {
+      const suffix = Array.isArray(details) && details.length
+        ? `：${details.join(' | ')}。`
+        : '。';
+      return createPhoneFlowError(
+        PHONE_ERROR_CODE_RATE_LIMIT,
+        `${FIVE_SIM_RATE_LIMIT_ERROR_PREFIX}5sim 购买接口触发限流，请稍后再试${suffix}`,
+        { provider: PHONE_SMS_PROVIDER_5SIM }
+      );
     }
 
     function isFiveSimTerminalError(payloadOrMessage, status = 0) {
@@ -2501,8 +2675,9 @@
       }
 
       if (finalNoNumbersByCountry.length) {
-        throw new Error(
-          `5sim no numbers available across ${countryCandidates.length} country candidate(s): ${finalNoNumbersByCountry.join(' | ')}.`
+        throw buildPhoneSmsNoSupplyError(
+          `5sim no numbers available across ${countryCandidates.length} country candidate(s): ${finalNoNumbersByCountry.join(' | ')}.`,
+          { provider: PHONE_SMS_PROVIDER_5SIM }
         );
       }
       if (finalRateLimitByCountry.length) {
@@ -2530,6 +2705,14 @@
       }
       const text = describeNexSmsPayload(payloadOrMessage);
       return /invalid\s*api\s*key|bad[_\s-]*key|wrong[_\s-]*key|unauthorized|forbidden|no\s*balance|insufficient\s*balance|余额不足|账号.*封禁|banned/i.test(text);
+    }
+
+    function isNexSmsRateLimitError(payloadOrMessage, status = 0) {
+      if (Number(status) === 429) {
+        return true;
+      }
+      const text = describeNexSmsPayload(payloadOrMessage);
+      return /rate\s*limit|too\s*many\s*requests|temporary\s+unavailable|temporarily\s+unavailable|429/i.test(text);
     }
 
     function collectNexSmsPriceCandidates(countryData = {}) {
@@ -2690,6 +2873,7 @@
       const maxAcquireRounds = Math.max(2, configuredAcquireRounds);
       const retryDelayMs = normalizePhoneActivationRetryDelayMs(state?.heroSmsActivationRetryDelayMs);
       let finalNoNumbersByCountry = [];
+      let finalRateLimitByCountry = [];
       let finalLastError = null;
 
       for (let round = 1; round <= maxAcquireRounds; round += 1) {
@@ -2747,6 +2931,7 @@
         }
 
         const noNumbersByCountry = [];
+        const rateLimitByCountry = [];
         const retryableNoNumberCountries = [];
         let lastError = null;
 
@@ -2759,6 +2944,10 @@
             try {
               pricePlan = await resolveNexSmsCountryPricePlan(config, attempt.countryConfig, state);
             } catch (error) {
+              if (isNexSmsRateLimitError(error?.payload || error?.message, error?.status)) {
+                rateLimitByCountry.push(`${countryLabel}: ${describeNexSmsPayload(error?.payload || error?.message) || 'rate limit'}`);
+                continue;
+              }
               if (isNexSmsTerminalError(error?.payload || error?.message, error?.status)) {
                 throw new Error(`NexSMS price lookup failed: ${describeNexSmsPayload(error?.payload || error?.message) || 'unknown terminal error'}`);
               }
@@ -2836,6 +3025,10 @@
                 }
               );
               if (!isNexSmsSuccessPayload(payload)) {
+                if (isNexSmsRateLimitError(payload)) {
+                  rateLimitByCountry.push(`${countryLabel}: ${describeNexSmsPayload(payload) || 'rate limit'}`);
+                  continue;
+                }
                 if (isNexSmsNoNumbersError(payload)) {
                   continue;
                 }
@@ -2861,6 +3054,10 @@
               if (isNexSmsTerminalError(error?.payload || error?.message, error?.status)) {
                 throw new Error(`NexSMS purchase failed: ${describeNexSmsPayload(error?.payload || error?.message) || 'unknown terminal error'}`);
               }
+              if (isNexSmsRateLimitError(error?.payload || error?.message, error?.status)) {
+                rateLimitByCountry.push(`${countryLabel}: ${describeNexSmsPayload(error?.payload || error?.message) || 'rate limit'}`);
+                continue;
+              }
               if (isNexSmsNoNumbersError(error?.payload || error?.message)) {
                 continue;
               }
@@ -2874,7 +3071,12 @@
         }
 
         finalNoNumbersByCountry = noNumbersByCountry;
+        finalRateLimitByCountry = rateLimitByCountry;
         finalLastError = lastError;
+
+        if (rateLimitByCountry.length) {
+          throw buildPhoneSmsRateLimitError('NexSMS', rateLimitByCountry, { provider: PHONE_SMS_PROVIDER_NEXSMS });
+        }
 
         if (
           noNumbersByCountry.length
@@ -2893,9 +3095,13 @@
       }
 
       if (finalNoNumbersByCountry.length) {
-        throw new Error(
-          `NexSMS no numbers available across ${countryCandidates.length} country candidate(s): ${finalNoNumbersByCountry.join(' | ')}.`
+        throw buildPhoneSmsNoSupplyError(
+          `NexSMS no numbers available across ${countryCandidates.length} country candidate(s): ${finalNoNumbersByCountry.join(' | ')}.`,
+          { provider: PHONE_SMS_PROVIDER_NEXSMS }
         );
+      }
+      if (finalRateLimitByCountry.length) {
+        throw buildPhoneSmsRateLimitError('NexSMS', finalRateLimitByCountry, { provider: PHONE_SMS_PROVIDER_NEXSMS });
       }
       if (finalLastError) {
         throw finalLastError;
@@ -2956,6 +3162,7 @@
       );
 
       let finalNoNumbersByCountry = [];
+      let finalRateLimitByCountry = [];
       let finalLastError = null;
       let finalLastFailureText = '';
 
@@ -3016,6 +3223,7 @@
         }
 
         const noNumbersByCountry = [];
+        const rateLimitByCountry = [];
         const retryableNoNumberCountries = [];
         let lastError = null;
         let lastFailureText = '';
@@ -3028,7 +3236,18 @@
             countryId: countryConfig.id,
             ...(requestAction === 'getNumberV2' ? { statusAction: 'getStatusV2' } : {}),
           });
-          const pricePlan = attempt.pricePlan || await resolvePhoneActivationPricePlan(config, countryConfig, state);
+          let pricePlan = attempt.pricePlan;
+          if (!pricePlan) {
+            try {
+              pricePlan = await resolvePhoneActivationPricePlan(config, countryConfig, state);
+            } catch (error) {
+              if (isHeroSmsRateLimitError(error?.payload || error?.message, error?.status)) {
+                rateLimitByCountry.push(`${countryConfig.label}: ${describeHeroSmsPayload(error?.payload || error?.message) || 'rate limit'}`);
+                continue;
+              }
+              throw error;
+            }
+          }
           let noNumbersObservedInCountry = false;
 
           const orderedPrices = reorderPriceCandidates(pricePlan.prices, acquirePriority, preferredPriceTier);
@@ -3130,6 +3349,10 @@
                   lastFailureText = payloadText || lastFailureText;
                   continue;
                 }
+                if (isHeroSmsRateLimitError(payload)) {
+                  rateLimitByCountry.push(`${countryConfig.label}: ${payloadText || 'rate limit'}`);
+                  continue;
+                }
                 if (isHeroSmsTerminalError(payload)) {
                   throw new Error(`HeroSMS ${requestAction} failed: ${payloadText || 'empty response'}`);
                 }
@@ -3137,6 +3360,10 @@
                 lastError = new Error(`HeroSMS ${requestAction} failed: ${payloadText || 'empty response'}`);
               } catch (error) {
                 const payloadOrMessage = error?.payload || error?.message;
+                if (isHeroSmsRateLimitError(payloadOrMessage, error?.status)) {
+                  rateLimitByCountry.push(`${countryConfig.label}: ${describeHeroSmsPayload(payloadOrMessage) || 'rate limit'}`);
+                  continue;
+                }
                 if (isHeroSmsTerminalError(payloadOrMessage)) {
                   throw new Error(`HeroSMS ${requestAction} failed: ${describeHeroSmsPayload(payloadOrMessage) || 'empty response'}`);
                 }
@@ -3174,8 +3401,13 @@
         }
 
         finalNoNumbersByCountry = noNumbersByCountry;
+        finalRateLimitByCountry = rateLimitByCountry;
         finalLastError = lastError;
         finalLastFailureText = lastFailureText;
+
+        if (rateLimitByCountry.length) {
+          throw buildPhoneSmsRateLimitError('HeroSMS', rateLimitByCountry, { provider: PHONE_SMS_PROVIDER_HERO });
+        }
 
         if (
           noNumbersByCountry.length
@@ -3388,6 +3620,13 @@
       const start = Date.now();
       let lastResponse = '';
       let pollCount = 0;
+      const transientPollRetryLimitRaw = Math.floor(Number(options.transientPollRetryLimit));
+      const transientPollRetryLimit = transientPollRetryLimitRaw > 0 ? transientPollRetryLimitRaw : 0;
+      const transientPollRetryDelayBaseMs = Math.max(
+        250,
+        Number(options.transientPollRetryDelayMs) || PHONE_SMS_TRANSIENT_POLL_RETRY_DELAY_MS
+      );
+      let transientPollRetryCount = 0;
       const extractVerificationCode = (rawCode) => {
         const trimmed = String(rawCode || '').trim();
         if (!trimmed) {
@@ -3396,6 +3635,39 @@
         const digitMatch = trimmed.match(/\b(\d{4,8})\b/);
         return digitMatch?.[1] || '';
       };
+      const maybeRecoverTransientPollError = async (error) => {
+        if (transientPollRetryLimit <= 0 || !isPhoneSmsTransientPollError(error, normalizedActivation.provider)) {
+          return false;
+        }
+        transientPollRetryCount += 1;
+        if (transientPollRetryCount > transientPollRetryLimit) {
+          throw createPhoneFlowError(
+            PHONE_ERROR_CODE_TRANSIENT_POLL,
+            `${getPhoneSmsProviderLabel(normalizedActivation.provider)} polling kept failing for ${normalizedActivation.phoneNumber} after ${transientPollRetryCount} transient retry attempt(s). ${error.message || error}`,
+            {
+              provider: normalizedActivation.provider,
+              reason: 'transient_poll_error',
+              payload: error?.payload,
+              status: error?.status,
+            }
+          );
+        }
+        const retryDelayMs = getPhoneFlowRetryDelayMs(
+          transientPollRetryDelayBaseMs,
+          transientPollRetryCount
+        );
+        if (typeof options.onTransientError === 'function') {
+          await options.onTransientError({
+            activation: normalizedActivation,
+            attempt: transientPollRetryCount,
+            retryLimit: transientPollRetryLimit,
+            retryDelayMs,
+            error,
+          });
+        }
+        await sleepWithStop(retryDelayMs);
+        return true;
+      };
 
       if (config.provider === PHONE_SMS_PROVIDER_5SIM) {
         while (Date.now() - start < timeoutMs) {
@@ -3403,11 +3675,20 @@
             break;
           }
           throwIfStopped();
-          const payload = await fetchFiveSimPayload(
-            config,
-            `/user/check/${activationOrderId}`,
-            '5sim check activation'
-          );
+          let payload = null;
+          try {
+            payload = await fetchFiveSimPayload(
+              config,
+              `/user/check/${activationOrderId}`,
+              '5sim check activation'
+            );
+            transientPollRetryCount = 0;
+          } catch (error) {
+            if (await maybeRecoverTransientPollError(error)) {
+              continue;
+            }
+            throw error;
+          }
           const text = describeFiveSimPayload(payload);
           lastResponse = text;
           pollCount += 1;
@@ -3452,17 +3733,26 @@
             break;
           }
           throwIfStopped();
-          const payload = await fetchNexSmsPayload(
-            config,
-            '/api/sms/messages',
-            'NexSMS get sms messages',
-            {
-              query: {
-                phoneNumber: normalizedActivation.phoneNumber,
-                format: 'json_latest',
-              },
+          let payload = null;
+          try {
+            payload = await fetchNexSmsPayload(
+              config,
+              '/api/sms/messages',
+              'NexSMS get sms messages',
+              {
+                query: {
+                  phoneNumber: normalizedActivation.phoneNumber,
+                  format: 'json_latest',
+                },
+              }
+            );
+            transientPollRetryCount = 0;
+          } catch (error) {
+            if (await maybeRecoverTransientPollError(error)) {
+              continue;
             }
-          );
+            throw error;
+          }
           const text = describeNexSmsPayload(payload);
           lastResponse = text;
           pollCount += 1;
@@ -3504,10 +3794,19 @@
           break;
         }
         throwIfStopped();
-        const payload = await fetchHeroSmsPayload(config, {
-          action: statusAction,
-          id: activationOrderId,
-        }, `HeroSMS ${statusAction}`);
+        let payload = null;
+        try {
+          payload = await fetchHeroSmsPayload(config, {
+            action: statusAction,
+            id: activationOrderId,
+          }, `HeroSMS ${statusAction}`);
+          transientPollRetryCount = 0;
+        } catch (error) {
+          if (await maybeRecoverTransientPollError(error)) {
+            continue;
+          }
+          throw error;
+        }
         const text = describeHeroSmsPayload(payload);
         lastResponse = text;
         pollCount += 1;
@@ -4049,6 +4348,7 @@
 
       let lastProviderError = null;
       const providerErrors = [];
+      const providerFailures = [];
       const skippedFallbackProviders = [];
       for (const providerCandidate of providerOrder) {
         const useBlockedCountryIds = providerCandidate === provider
@@ -4103,16 +4403,42 @@
             continue;
           }
           lastProviderError = error;
+          providerFailures.push({
+            provider: providerCandidate,
+            error,
+            message: providerErrorMessage,
+          });
           providerErrors.push(`${providerCandidate}: ${providerErrorMessage}`);
         }
       }
 
       if (providerErrors.length) {
-        await logNoSupplyDiagnostics(state, providerOrder, providerErrors);
+        const allNoSupply = providerFailures.length > 0
+          && providerFailures.every(({ error, message }) => (
+            hasPhoneFlowErrorCode(error, PHONE_ERROR_CODE_NO_SUPPLY)
+            || isProviderNoSupplyFailureMessage(message)
+          ));
+        const allRateLimit = providerFailures.length > 0
+          && providerFailures.every(({ error, message }) => (
+            hasPhoneFlowErrorCode(error, PHONE_ERROR_CODE_RATE_LIMIT)
+            || isPhoneSmsRateLimitFailureMessage(message)
+          ));
+        if (allNoSupply) {
+          await logNoSupplyDiagnostics(state, providerOrder, providerErrors);
+        } else {
+          await resetPhoneNoSupplyFailureStreak(state);
+        }
         const skippedSuffix = skippedFallbackProviders.length
           ? ` | skipped fallback providers: ${skippedFallbackProviders.join('; ')}`
           : '';
-        throw new Error(`Step ${getActivePhoneVerificationVisibleStep()}: all provider candidates failed to acquire number. ${providerErrors.join(' | ')}${skippedSuffix}`);
+        const aggregateMessage = `Step ${getActivePhoneVerificationVisibleStep()}: all provider candidates failed to acquire number. ${providerErrors.join(' | ')}${skippedSuffix}`;
+        if (allNoSupply) {
+          throw buildPhoneSmsNoSupplyError(aggregateMessage, { provider });
+        }
+        if (allRateLimit) {
+          throw buildPhoneSmsRateLimitError('phone-sms', providerErrors, { provider });
+        }
+        throw new Error(aggregateMessage);
       }
       throw lastProviderError || new Error(`Step ${getActivePhoneVerificationVisibleStep()}: failed to acquire phone activation.`);
     }
@@ -4203,13 +4529,22 @@
       let lastLoggedStatus = '';
       let lastLoggedPollCount = 0;
       let resendTriggeredForCurrentNumber = false;
+      const transientPollRetryCountsByWindow = new Map();
+      let repeatWindowIndex = 0;
 
       for (let windowIndex = 1; windowIndex <= timeoutWindows; windowIndex += 1) {
-        await setPhoneRuntimeCountdown(normalizedActivation, waitSeconds, windowIndex, timeoutWindows);
-        await addLog(
+        const isTransientRetryWindow = repeatWindowIndex === windowIndex;
+        repeatWindowIndex = 0;
+        if (!isTransientRetryWindow) {
+          transientPollRetryCountsByWindow.delete(windowIndex);
+          await setPhoneRuntimeCountdown(normalizedActivation, waitSeconds, windowIndex, timeoutWindows);
+        }
+        if (!isTransientRetryWindow) {
+          await addLog(
           `步骤 9：等待号码 ${normalizedActivation.phoneNumber} 接收短信，最长 ${waitSeconds} 秒（第 ${windowIndex}/${timeoutWindows} 轮）。`,
           'info'
-        );
+          );
+        }
         try {
           const code = await pollPhoneActivationCode(state, normalizedActivation, {
             actionLabel: windowIndex === 1
@@ -4252,6 +4587,37 @@
                 code: '',
                 replaceNumber: true,
                 reason: 'activation_not_found',
+              };
+            }
+            if (isPhoneSmsTransientPollError(error, normalizedActivation.provider)) {
+              const transientPollRetryCount = Math.max(
+                0,
+                Math.floor(Number(transientPollRetryCountsByWindow.get(windowIndex)) || 0)
+              ) + 1;
+              if (transientPollRetryCount <= PHONE_SMS_TRANSIENT_POLL_RETRY_LIMIT) {
+                transientPollRetryCountsByWindow.set(windowIndex, transientPollRetryCount);
+                const retryDelayMs = getPhoneFlowRetryDelayMs(
+                  PHONE_SMS_TRANSIENT_POLL_RETRY_DELAY_MS,
+                  transientPollRetryCount
+                );
+                await addLog(
+                  `Step 9: ${providerLabel} polling hit a transient provider error for ${normalizedActivation.phoneNumber}; keep current activation and retry in ${Math.ceil(retryDelayMs / 1000)}s (${transientPollRetryCount}/${PHONE_SMS_TRANSIENT_POLL_RETRY_LIMIT}). ${error.message || error}`,
+                  'warn'
+                );
+                repeatWindowIndex = windowIndex;
+                await sleepWithStop(retryDelayMs);
+                windowIndex -= 1;
+                continue;
+              }
+              await addLog(
+                `Step 9: ${providerLabel} transient polling kept failing for ${normalizedActivation.phoneNumber}; replacing number after ${transientPollRetryCount} attempt(s). ${error.message || error}`,
+                'warn'
+              );
+              await clearPhoneRuntimeCountdown();
+              return {
+                code: '',
+                replaceNumber: true,
+                reason: 'transient_poll_error',
               };
             }
             throw error;
@@ -4347,9 +4713,15 @@
         const pollMaxRounds = normalizePhoneCodePollMaxRounds(state?.phoneCodePollMaxRounds);
         let lastLoggedStatus = '';
         let lastLoggedPollCount = 0;
+        const transientPollRetryCountsByWindow = new Map();
+        let repeatWindowIndex = 0;
 
         for (let windowIndex = 1; windowIndex <= timeoutWindows; windowIndex += 1) {
-          await setPhoneRuntimeState({
+          const isTransientRetryWindow = repeatWindowIndex === windowIndex;
+          repeatWindowIndex = 0;
+          if (!isTransientRetryWindow) {
+            transientPollRetryCountsByWindow.delete(windowIndex);
+            await setPhoneRuntimeState({
             signupPhoneActivation: normalizedActivation,
             signupPhoneNumber: normalizedActivation.phoneNumber,
             signupPhoneVerificationPurpose: purpose,
@@ -4357,12 +4729,15 @@
             [PHONE_RUNTIME_COUNTDOWN_ENDS_AT_KEY]: Date.now() + waitSeconds * 1000,
             [PHONE_RUNTIME_COUNTDOWN_WINDOW_INDEX_KEY]: windowIndex,
             [PHONE_RUNTIME_COUNTDOWN_WINDOW_TOTAL_KEY]: timeoutWindows,
-          });
-          await addLog(
+            });
+          }
+          if (!isTransientRetryWindow) {
+            await addLog(
             `步骤 ${visibleStep}：正在等待 ${normalizedActivation.phoneNumber} 的短信验证码（${windowIndex}/${timeoutWindows}，最长 ${waitSeconds} 秒）。`,
             'info',
             { step: visibleStep, stepKey }
-          );
+            );
+          }
           try {
             const code = await pollPhoneActivationCode(state, normalizedActivation, {
               actionLabel: windowIndex === 1
@@ -4371,6 +4746,8 @@
               timeoutMs: waitSeconds * 1000,
               intervalMs: pollIntervalSeconds * 1000,
               maxRounds: pollMaxRounds,
+              transientPollRetryLimit: PHONE_SMS_TRANSIENT_POLL_RETRY_LIMIT,
+              transientPollRetryDelayMs: PHONE_SMS_TRANSIENT_POLL_RETRY_DELAY_MS,
               onStatus: async ({ elapsedMs, pollCount, statusText }) => {
                 const shouldLog = (
                   pollCount === 1
@@ -4385,6 +4762,13 @@
                 await addLog(
                   `步骤 ${visibleStep}：${providerLabel} 状态 ${normalizedActivation.phoneNumber}: ${statusText}（已等待 ${Math.ceil(elapsedMs / 1000)} 秒，第 ${pollCount}/${pollMaxRounds} 轮）。`,
                   'info',
+                  { step: visibleStep, stepKey }
+                );
+              },
+              onTransientError: async ({ attempt, retryLimit, retryDelayMs, error }) => {
+                await addLog(
+                  `Step ${visibleStep}: ${providerLabel} polling hit a transient provider error for ${normalizedActivation.phoneNumber}; keep current activation and retry in ${Math.ceil(retryDelayMs / 1000)}s (${attempt}/${retryLimit}). ${error.message || error}`,
+                  'warn',
                   { step: visibleStep, stepKey }
                 );
               },
@@ -4831,6 +5215,7 @@
       let addPhoneReentryWithSameActivation = 0;
       const countrySmsFailureCounts = new Map();
       const countryPriceFloorByKey = new Map();
+      const addPhoneRejectRetryCounts = new Map();
       const normalizeCountryFailureKey = (countryId, provider = activation?.provider || state?.phoneSmsProvider || '') => {
         const normalizedProvider = normalizePhoneSmsProvider(provider || state?.phoneSmsProvider || '');
         if (normalizedProvider === PHONE_SMS_PROVIDER_5SIM) {
@@ -5240,6 +5625,40 @@
                   );
                   continue;
                 }
+                const rejectFingerprint = buildAddPhoneRejectFingerprint(retryRejectText || addPhoneRejectText);
+                const rejectRetryKey = `${activation.provider || 'unknown'}:${activation.phoneNumber || 'unknown'}:${rejectFingerprint}`;
+                const rejectRetryCount = Math.max(
+                  0,
+                  Math.floor(Number(addPhoneRejectRetryCounts.get(rejectRetryKey)) || 0)
+                ) + 1;
+                addPhoneRejectRetryCounts.set(rejectRetryKey, rejectRetryCount);
+                if (rejectRetryCount <= PHONE_UNKNOWN_ADD_PHONE_REJECT_RETRY_LIMIT) {
+                  const retryDelayMs = getPhoneFlowRetryDelayMs(
+                    PHONE_UNKNOWN_ADD_PHONE_REJECT_RETRY_DELAY_MS,
+                    rejectRetryCount
+                  );
+                  await addLog(
+                    `Step 9: add-phone rejected ${activation.phoneNumber} with an unknown fingerprint; keep current activation and retry after ${Math.ceil(retryDelayMs / 1000)}s (${rejectRetryCount}/${PHONE_UNKNOWN_ADD_PHONE_REJECT_RETRY_LIMIT}). ${retryRejectText}`,
+                    'warn'
+                  );
+                  pageState = {
+                    ...pageState,
+                    ...submitResult,
+                    addPhonePage: true,
+                    phoneVerificationPage: false,
+                  };
+                  await sleepWithStop(retryDelayMs);
+                  continue;
+                }
+                throw createPhoneFlowError(
+                  PHONE_ERROR_CODE_ADD_PHONE_REJECT_UNKNOWN,
+                  `Step 9: add-phone keeps rejecting ${activation.phoneNumber} without a used-number signal: ${retryRejectText}.`,
+                  {
+                    provider: activation.provider,
+                    reason: 'add_phone_rejected_unknown',
+                    fingerprint: rejectFingerprint,
+                  }
+                );
                 throw new Error(
                   `步骤 9：添加手机号页面持续拒绝当前号码，但没有明确“已使用”状态：${submitResult.errorText || submitResult.url || '未知错误'}。`
                 );

@@ -102,6 +102,9 @@
     }
 
     function isPhoneNumberSupplyExhaustedFailure(errorLike) {
+      if (errorLike && typeof errorLike === 'object' && String(errorLike.code || '').trim() === 'PHONE_SMS_NO_SUPPLY') {
+        return true;
+      }
       const message = String(
         typeof errorLike === 'string'
           ? errorLike
@@ -128,6 +131,9 @@
     }
 
     function isPhoneNumberSupplyExhaustedFailure(error) {
+      if (error && typeof error === 'object' && String(error.code || '').trim() === 'PHONE_SMS_NO_SUPPLY') {
+        return true;
+      }
       const text = String(
         typeof getErrorMessage === 'function'
           ? getErrorMessage(error)
