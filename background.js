@@ -345,6 +345,21 @@ const DEFAULT_PHONE_CODE_POLL_INTERVAL_SECONDS = 5;
 const PHONE_CODE_POLL_ROUNDS_MIN = 1;
 const PHONE_CODE_POLL_ROUNDS_MAX = 120;
 const DEFAULT_PHONE_CODE_POLL_ROUNDS = 4;
+const PHONE_ADD_PHONE_RETRY_LIMIT_MIN = 0;
+const PHONE_ADD_PHONE_RETRY_LIMIT_MAX = 5;
+const DEFAULT_PHONE_UNABLE_SEND_CODE_RETRY_LIMIT = 0;
+const PHONE_PAGE_RATE_LIMIT_COOLDOWN_SECONDS_MIN = 0;
+const PHONE_PAGE_RATE_LIMIT_COOLDOWN_SECONDS_MAX = 300;
+const DEFAULT_PHONE_PAGE_RATE_LIMIT_COOLDOWN_SECONDS = 90;
+const PHONE_COUNTRY_FAILURE_THRESHOLD_MIN = 1;
+const PHONE_COUNTRY_FAILURE_THRESHOLD_MAX = 10;
+const DEFAULT_PHONE_COUNTRY_FAILURE_THRESHOLD = 2;
+const PHONE_PAGE_RATE_LIMIT_ACTION_ROTATE_AFTER_COOLDOWN = 'rotate_after_cooldown';
+const PHONE_PAGE_RATE_LIMIT_ACTION_RESTART_STEP7_AFTER_COOLDOWN = 'restart_step7_after_cooldown';
+const DEFAULT_PHONE_PAGE_RATE_LIMIT_ACTION = PHONE_PAGE_RATE_LIMIT_ACTION_ROTATE_AFTER_COOLDOWN;
+const DEFAULT_PHONE_PROVIDER_IMMEDIATE_FALLBACK_ENABLED = true;
+const DEFAULT_PHONE_PROVIDER_ORDER_STRICT = true;
+const DEFAULT_PHONE_SKIP_BLOCKED_COUNTRIES_ENABLED = true;
 const LEGACY_AUTO_STEP_DELAY_KEYS = ['autoStepRandomDelayMinSeconds', 'autoStepRandomDelayMaxSeconds'];
 const LEGACY_VERIFICATION_RESEND_COUNT_KEYS = ['signupVerificationResendCount', 'loginVerificationResendCount'];
 const DEFAULT_LOCAL_CPA_STEP9_MODE = 'submit';
@@ -649,6 +664,14 @@ const PERSISTED_SETTING_DEFAULTS = {
   phoneCodeTimeoutWindows: DEFAULT_PHONE_CODE_TIMEOUT_WINDOWS,
   phoneCodePollIntervalSeconds: DEFAULT_PHONE_CODE_POLL_INTERVAL_SECONDS,
   phoneCodePollMaxRounds: DEFAULT_PHONE_CODE_POLL_ROUNDS,
+  phoneUnableSendCodeRetryLimit: DEFAULT_PHONE_UNABLE_SEND_CODE_RETRY_LIMIT,
+  phonePageRateLimitCooldownSeconds: DEFAULT_PHONE_PAGE_RATE_LIMIT_COOLDOWN_SECONDS,
+  phonePageRateLimitAction: DEFAULT_PHONE_PAGE_RATE_LIMIT_ACTION,
+  phoneUnknownAddPhoneRejectRetryLimit: 2,
+  phoneCountryFailureThreshold: DEFAULT_PHONE_COUNTRY_FAILURE_THRESHOLD,
+  phoneProviderImmediateFallbackEnabled: DEFAULT_PHONE_PROVIDER_IMMEDIATE_FALLBACK_ENABLED,
+  phoneProviderOrderStrict: DEFAULT_PHONE_PROVIDER_ORDER_STRICT,
+  phoneSkipBlockedCountriesEnabled: DEFAULT_PHONE_SKIP_BLOCKED_COUNTRIES_ENABLED,
   mailProvider: '163',
   mail2925Mode: DEFAULT_MAIL_2925_MODE,
   mail2925UseAccountPool: false,
@@ -1030,6 +1053,78 @@ function normalizePhoneCodePollMaxRounds(value, fallback = DEFAULT_PHONE_CODE_PO
     PHONE_CODE_POLL_ROUNDS_MAX,
     Math.max(PHONE_CODE_POLL_ROUNDS_MIN, Math.floor(numeric))
   );
+}
+
+function normalizePhoneAddPhoneRetryLimit(value, fallback = DEFAULT_PHONE_UNABLE_SEND_CODE_RETRY_LIMIT) {
+  const rawValue = String(value ?? '').trim();
+  const numeric = Number(rawValue);
+  if (!rawValue || !Number.isFinite(numeric)) {
+    return Math.min(
+      PHONE_ADD_PHONE_RETRY_LIMIT_MAX,
+      Math.max(PHONE_ADD_PHONE_RETRY_LIMIT_MIN, Math.floor(Number(fallback) || 0))
+    );
+  }
+  return Math.min(
+    PHONE_ADD_PHONE_RETRY_LIMIT_MAX,
+    Math.max(PHONE_ADD_PHONE_RETRY_LIMIT_MIN, Math.floor(numeric))
+  );
+}
+
+function normalizePhonePageRateLimitCooldownSeconds(value, fallback = DEFAULT_PHONE_PAGE_RATE_LIMIT_COOLDOWN_SECONDS) {
+  const rawValue = String(value ?? '').trim();
+  const numeric = Number(rawValue);
+  if (!rawValue || !Number.isFinite(numeric)) {
+    return Math.min(
+      PHONE_PAGE_RATE_LIMIT_COOLDOWN_SECONDS_MAX,
+      Math.max(PHONE_PAGE_RATE_LIMIT_COOLDOWN_SECONDS_MIN, Math.floor(Number(fallback) || DEFAULT_PHONE_PAGE_RATE_LIMIT_COOLDOWN_SECONDS))
+    );
+  }
+  return Math.min(
+    PHONE_PAGE_RATE_LIMIT_COOLDOWN_SECONDS_MAX,
+    Math.max(PHONE_PAGE_RATE_LIMIT_COOLDOWN_SECONDS_MIN, Math.floor(numeric))
+  );
+}
+
+function normalizePhoneCountryFailureThreshold(value, fallback = DEFAULT_PHONE_COUNTRY_FAILURE_THRESHOLD) {
+  const rawValue = String(value ?? '').trim();
+  const numeric = Number(rawValue);
+  if (!rawValue || !Number.isFinite(numeric)) {
+    return Math.min(
+      PHONE_COUNTRY_FAILURE_THRESHOLD_MAX,
+      Math.max(PHONE_COUNTRY_FAILURE_THRESHOLD_MIN, Math.floor(Number(fallback) || DEFAULT_PHONE_COUNTRY_FAILURE_THRESHOLD))
+    );
+  }
+  return Math.min(
+    PHONE_COUNTRY_FAILURE_THRESHOLD_MAX,
+    Math.max(PHONE_COUNTRY_FAILURE_THRESHOLD_MIN, Math.floor(numeric))
+  );
+}
+
+function normalizePhonePageRateLimitAction(value = '') {
+  return String(value || '').trim().toLowerCase() === PHONE_PAGE_RATE_LIMIT_ACTION_RESTART_STEP7_AFTER_COOLDOWN
+    ? PHONE_PAGE_RATE_LIMIT_ACTION_RESTART_STEP7_AFTER_COOLDOWN
+    : PHONE_PAGE_RATE_LIMIT_ACTION_ROTATE_AFTER_COOLDOWN;
+}
+
+function normalizePhoneProviderImmediateFallbackEnabled(value) {
+  if (value === undefined || value === null) {
+    return DEFAULT_PHONE_PROVIDER_IMMEDIATE_FALLBACK_ENABLED;
+  }
+  return value !== false;
+}
+
+function normalizePhoneProviderOrderStrict(value) {
+  if (value === undefined || value === null) {
+    return DEFAULT_PHONE_PROVIDER_ORDER_STRICT;
+  }
+  return value !== false;
+}
+
+function normalizePhoneSkipBlockedCountriesEnabled(value) {
+  if (value === undefined || value === null) {
+    return DEFAULT_PHONE_SKIP_BLOCKED_COUNTRIES_ENABLED;
+  }
+  return value !== false;
 }
 
 function normalizeHeroSmsMaxPrice(value = '') {
@@ -2296,6 +2391,22 @@ function normalizePersistentSettingValue(key, value) {
       return normalizePhoneCodePollIntervalSeconds(value, DEFAULT_PHONE_CODE_POLL_INTERVAL_SECONDS);
     case 'phoneCodePollMaxRounds':
       return normalizePhoneCodePollMaxRounds(value, DEFAULT_PHONE_CODE_POLL_ROUNDS);
+    case 'phoneUnableSendCodeRetryLimit':
+      return normalizePhoneAddPhoneRetryLimit(value, DEFAULT_PHONE_UNABLE_SEND_CODE_RETRY_LIMIT);
+    case 'phonePageRateLimitCooldownSeconds':
+      return normalizePhonePageRateLimitCooldownSeconds(value, DEFAULT_PHONE_PAGE_RATE_LIMIT_COOLDOWN_SECONDS);
+    case 'phonePageRateLimitAction':
+      return normalizePhonePageRateLimitAction(value);
+    case 'phoneUnknownAddPhoneRejectRetryLimit':
+      return normalizePhoneAddPhoneRetryLimit(value, 2);
+    case 'phoneCountryFailureThreshold':
+      return normalizePhoneCountryFailureThreshold(value, DEFAULT_PHONE_COUNTRY_FAILURE_THRESHOLD);
+    case 'phoneProviderImmediateFallbackEnabled':
+      return normalizePhoneProviderImmediateFallbackEnabled(value);
+    case 'phoneProviderOrderStrict':
+      return normalizePhoneProviderOrderStrict(value);
+    case 'phoneSkipBlockedCountriesEnabled':
+      return normalizePhoneSkipBlockedCountriesEnabled(value);
     case 'mailProvider':
       return normalizeMailProvider(value);
     case 'mail2925Mode':

@@ -1502,6 +1502,110 @@
                 </div>
               </div>
             </div>
+            <div class="data-row" id="row-phone-recovery-strategy-group" style="display:none;">
+              <span class="data-label">换号恢复</span>
+              <div class="data-inline hero-sms-settings-grid">
+                <div class="hero-sms-settings-cell">
+                  <span class="hero-sms-settings-caption">已用号</span>
+                  <div class="setting-controls">
+                    <span class="data-value">直接拉黑并换号</span>
+                  </div>
+                </div>
+                <div class="hero-sms-settings-cell">
+                  <span class="hero-sms-settings-caption">无效号</span>
+                  <div class="setting-controls">
+                    <span class="data-value">取消订单并换号</span>
+                  </div>
+                </div>
+                <div class="hero-sms-settings-cell">
+                  <span class="hero-sms-settings-caption">Unable 重试</span>
+                  <div class="setting-controls">
+                    <input type="number" id="input-phone-unable-send-code-retry-limit" class="data-input auto-delay-input" value="0" min="0" max="5" step="1" title="Unable to send a verification code 时，同号短重试次数" />
+                    <span class="data-unit">次</span>
+                  </div>
+                </div>
+                <div class="hero-sms-settings-cell">
+                  <span class="hero-sms-settings-caption">限流动作</span>
+                  <div class="setting-controls">
+                    <select id="select-phone-page-rate-limit-action" class="data-select mono" title="Too many phone verification requests 时的动作">
+                      <option value="rotate_after_cooldown">冷却后换号</option>
+                      <option value="restart_step7_after_cooldown">冷却后重开步骤 7</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="hero-sms-settings-cell">
+                  <span class="hero-sms-settings-caption">限流冷却</span>
+                  <div class="setting-controls">
+                    <input type="number" id="input-phone-page-rate-limit-cooldown-seconds" class="data-input auto-delay-input" value="90" min="0" max="300" step="1" title="页面提示请求过多时，切换/重开前的冷却秒数" />
+                    <span class="data-unit">秒</span>
+                  </div>
+                </div>
+                <div class="hero-sms-settings-cell">
+                  <span class="hero-sms-settings-caption">未知拒绝重试</span>
+                  <div class="setting-controls">
+                    <input type="number" id="input-phone-unknown-reject-retry-limit" class="data-input auto-delay-input" value="2" min="0" max="5" step="1" title="未识别 add-phone reject 的同号短重试次数" />
+                    <span class="data-unit">次</span>
+                  </div>
+                </div>
+                <div class="hero-sms-settings-cell">
+                  <span class="hero-sms-settings-caption">轮询瞬时错误</span>
+                  <div class="setting-controls">
+                    <span class="data-value">保留当前 activation 并退避重试</span>
+                  </div>
+                </div>
+                <div class="hero-sms-settings-cell">
+                  <span class="hero-sms-settings-caption">平台无号</span>
+                  <div class="setting-controls">
+                    <span class="data-value">按国家 / 服务商顺序回退</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="data-row" id="row-phone-provider-fallback-strategy-group" style="display:none;">
+              <span class="data-label">回退顺序</span>
+              <div class="data-inline hero-sms-settings-grid">
+                <div class="hero-sms-settings-cell">
+                  <span class="hero-sms-settings-caption">国家失败阈值</span>
+                  <div class="setting-controls">
+                    <input type="number" id="input-phone-country-failure-threshold" class="data-input auto-delay-input" value="2" min="1" max="10" step="1" title="软失败累计达到该次数后，国家进入临时跳过" />
+                    <span class="data-unit">次</span>
+                  </div>
+                </div>
+                <div class="hero-sms-settings-cell">
+                  <span class="hero-sms-settings-caption">立刻切平台</span>
+                  <div class="setting-controls hero-sms-toggle-controls">
+                    <label class="toggle-switch" for="input-phone-provider-immediate-fallback-enabled" title="当前 provider 的已选国家都被本地策略封禁时，是否立刻切到下一个 provider">
+                      <input type="checkbox" id="input-phone-provider-immediate-fallback-enabled" checked />
+                      <span class="toggle-switch-track" aria-hidden="true">
+                        <span class="toggle-switch-thumb"></span>
+                      </span>
+                    </label>
+                  </div>
+                </div>
+                <div class="hero-sms-settings-cell">
+                  <span class="hero-sms-settings-caption">严格顺序</span>
+                  <div class="setting-controls hero-sms-toggle-controls">
+                    <label class="toggle-switch" for="input-phone-provider-order-strict" title="开启后只按手动服务商顺序尝试；关闭后会自动补充其他已配置 provider 作为 fallback">
+                      <input type="checkbox" id="input-phone-provider-order-strict" checked />
+                      <span class="toggle-switch-track" aria-hidden="true">
+                        <span class="toggle-switch-thumb"></span>
+                      </span>
+                    </label>
+                  </div>
+                </div>
+                <div class="hero-sms-settings-cell">
+                  <span class="hero-sms-settings-caption">跳过封禁国家</span>
+                  <div class="setting-controls hero-sms-toggle-controls">
+                    <label class="toggle-switch" for="input-phone-skip-blocked-countries-enabled" title="是否跳过本地失败策略已封禁的国家">
+                      <input type="checkbox" id="input-phone-skip-blocked-countries-enabled" checked />
+                      <span class="toggle-switch-track" aria-hidden="true">
+                        <span class="toggle-switch-thumb"></span>
+                      </span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>

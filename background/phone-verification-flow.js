@@ -91,6 +91,10 @@
     const PHONE_ERROR_CODE_ROUTE_405_RECOVERY_FAILED = 'PHONE_ROUTE_405_RECOVERY_FAILED';
     const PHONE_ERROR_CODE_ACTIVATION_NOT_FOUND = 'PHONE_ACTIVATION_NOT_FOUND';
     const PHONE_ERROR_CODE_TRANSIENT_POLL = 'PHONE_SMS_TRANSIENT_POLL_ERROR';
+    const PHONE_ERROR_CODE_ADD_PHONE_UNABLE_TO_SEND_CODE = 'PHONE_ADD_PHONE_UNABLE_TO_SEND_CODE';
+    const PHONE_ERROR_CODE_ADD_PHONE_PAGE_RATE_LIMIT = 'PHONE_ADD_PHONE_PAGE_RATE_LIMIT';
+    const PHONE_ERROR_CODE_ADD_PHONE_NUMBER_USED = 'PHONE_ADD_PHONE_NUMBER_USED';
+    const PHONE_ERROR_CODE_ADD_PHONE_NUMBER_INVALID = 'PHONE_ADD_PHONE_NUMBER_INVALID';
     const PHONE_ERROR_CODE_ADD_PHONE_REJECT_UNKNOWN = 'PHONE_ADD_PHONE_REJECT_UNKNOWN';
     const PHONE_SMS_RATE_LIMIT_ERROR_PREFIX = 'PHONE_SMS_RATE_LIMIT::';
     const PHONE_CODE_TIMEOUT_ERROR_PREFIX = 'PHONE_CODE_TIMEOUT::';
@@ -98,6 +102,20 @@
     const PHONE_RESEND_THROTTLED_ERROR_PREFIX = 'PHONE_RESEND_THROTTLED::';
     const PHONE_ROUTE_405_RECOVERY_FAILED_ERROR_PREFIX = 'PHONE_ROUTE_405_RECOVERY_FAILED::';
     const PHONE_SMS_FAILURE_SKIP_THRESHOLD = 2;
+    const PHONE_COUNTRY_FAILURE_THRESHOLD_MIN = 1;
+    const PHONE_COUNTRY_FAILURE_THRESHOLD_MAX = 10;
+    const PHONE_ADD_PHONE_RETRY_LIMIT_MIN = 0;
+    const PHONE_ADD_PHONE_RETRY_LIMIT_MAX = 5;
+    const DEFAULT_PHONE_UNABLE_SEND_CODE_RETRY_LIMIT = 0;
+    const DEFAULT_PHONE_PAGE_RATE_LIMIT_COOLDOWN_SECONDS = 90;
+    const PHONE_PAGE_RATE_LIMIT_COOLDOWN_SECONDS_MIN = 0;
+    const PHONE_PAGE_RATE_LIMIT_COOLDOWN_SECONDS_MAX = 300;
+    const PHONE_PAGE_RATE_LIMIT_ACTION_ROTATE_AFTER_COOLDOWN = 'rotate_after_cooldown';
+    const PHONE_PAGE_RATE_LIMIT_ACTION_RESTART_STEP7_AFTER_COOLDOWN = 'restart_step7_after_cooldown';
+    const DEFAULT_PHONE_PAGE_RATE_LIMIT_ACTION = PHONE_PAGE_RATE_LIMIT_ACTION_ROTATE_AFTER_COOLDOWN;
+    const DEFAULT_PHONE_PROVIDER_IMMEDIATE_FALLBACK_ENABLED = true;
+    const DEFAULT_PHONE_PROVIDER_ORDER_STRICT = true;
+    const DEFAULT_PHONE_SKIP_BLOCKED_COUNTRIES_ENABLED = true;
     const MAX_ACTIVATION_PRICE_HINTS = 256;
     const PHONE_SMS_TRANSIENT_POLL_RETRY_LIMIT = 2;
     const PHONE_SMS_TRANSIENT_POLL_RETRY_DELAY_MS = 1000;
@@ -381,6 +399,70 @@
       return Math.max(1, Math.min(20, parsed));
     }
 
+    function normalizePhoneAddPhoneRetryLimit(value, fallback = PHONE_UNKNOWN_ADD_PHONE_REJECT_RETRY_LIMIT) {
+      const parsed = Math.floor(Number(value));
+      if (!Number.isFinite(parsed) || parsed < 0) {
+        return Math.max(
+          PHONE_ADD_PHONE_RETRY_LIMIT_MIN,
+          Math.min(PHONE_ADD_PHONE_RETRY_LIMIT_MAX, Math.floor(Number(fallback) || 0))
+        );
+      }
+      return Math.max(PHONE_ADD_PHONE_RETRY_LIMIT_MIN, Math.min(PHONE_ADD_PHONE_RETRY_LIMIT_MAX, parsed));
+    }
+
+    function normalizePhoneUnableSendCodeRetryLimit(value) {
+      return normalizePhoneAddPhoneRetryLimit(value, DEFAULT_PHONE_UNABLE_SEND_CODE_RETRY_LIMIT);
+    }
+
+    function normalizePhonePageRateLimitCooldownSeconds(value) {
+      const parsed = Math.floor(Number(value));
+      if (!Number.isFinite(parsed) || parsed < 0) {
+        return DEFAULT_PHONE_PAGE_RATE_LIMIT_COOLDOWN_SECONDS;
+      }
+      return Math.max(
+        PHONE_PAGE_RATE_LIMIT_COOLDOWN_SECONDS_MIN,
+        Math.min(PHONE_PAGE_RATE_LIMIT_COOLDOWN_SECONDS_MAX, parsed)
+      );
+    }
+
+    function normalizePhoneCountryFailureThreshold(value) {
+      const parsed = Math.floor(Number(value));
+      if (!Number.isFinite(parsed) || parsed <= 0) {
+        return PHONE_SMS_FAILURE_SKIP_THRESHOLD;
+      }
+      return Math.max(
+        PHONE_COUNTRY_FAILURE_THRESHOLD_MIN,
+        Math.min(PHONE_COUNTRY_FAILURE_THRESHOLD_MAX, parsed)
+      );
+    }
+
+    function normalizePhoneProviderImmediateFallbackEnabled(value) {
+      if (value === undefined || value === null) {
+        return DEFAULT_PHONE_PROVIDER_IMMEDIATE_FALLBACK_ENABLED;
+      }
+      return value !== false;
+    }
+
+    function normalizePhoneProviderOrderStrict(value) {
+      if (value === undefined || value === null) {
+        return DEFAULT_PHONE_PROVIDER_ORDER_STRICT;
+      }
+      return value !== false;
+    }
+
+    function normalizePhoneSkipBlockedCountriesEnabled(value) {
+      if (value === undefined || value === null) {
+        return DEFAULT_PHONE_SKIP_BLOCKED_COUNTRIES_ENABLED;
+      }
+      return value !== false;
+    }
+
+    function normalizePhonePageRateLimitAction(value = '') {
+      return String(value || '').trim().toLowerCase() === PHONE_PAGE_RATE_LIMIT_ACTION_RESTART_STEP7_AFTER_COOLDOWN
+        ? PHONE_PAGE_RATE_LIMIT_ACTION_RESTART_STEP7_AFTER_COOLDOWN
+        : PHONE_PAGE_RATE_LIMIT_ACTION_ROTATE_AFTER_COOLDOWN;
+    }
+
     function normalizePhoneActivationRetryRounds(value) {
       const parsed = Math.floor(Number(value));
       if (!Number.isFinite(parsed) || parsed <= 0) {
@@ -429,6 +511,42 @@
         return false;
       }
       return /phone\s+number\s+is\s+not\s+valid|invalid\s+phone\s+number|invalid\s+phone|not\s+a\s+valid\s+phone|号码.*无效|手机号.*无效|电话号码.*无效/i.test(text);
+    }
+
+    function isAddPhoneUnableToSendCodeError(value) {
+      const text = String(value || '').trim();
+      if (!text) {
+        return false;
+      }
+      return /unable\s+to\s+send\s+a\s+verification\s+code\s+to\s+this\s+phone\s+number|unable\s+to\s+send\s+a\s+verification\s+code/i.test(text);
+    }
+
+    function isAddPhonePageRateLimitError(value) {
+      const text = String(value || '').trim();
+      if (!text) {
+        return false;
+      }
+      return /you'?ve\s+made\s+too\s+many\s+phone\s+verification\s+requests|too\s+many\s+phone\s+verification\s+requests/i.test(text);
+    }
+
+    function classifyAddPhoneRejectCode(value) {
+      const text = String(value || '').trim();
+      if (!text) {
+        return PHONE_ERROR_CODE_ADD_PHONE_REJECT_UNKNOWN;
+      }
+      if (isPhoneNumberUsedError(text)) {
+        return PHONE_ERROR_CODE_ADD_PHONE_NUMBER_USED;
+      }
+      if (isPhoneNumberInvalidError(text)) {
+        return PHONE_ERROR_CODE_ADD_PHONE_NUMBER_INVALID;
+      }
+      if (isAddPhoneUnableToSendCodeError(text)) {
+        return PHONE_ERROR_CODE_ADD_PHONE_UNABLE_TO_SEND_CODE;
+      }
+      if (isAddPhonePageRateLimitError(text)) {
+        return PHONE_ERROR_CODE_ADD_PHONE_PAGE_RATE_LIMIT;
+      }
+      return PHONE_ERROR_CODE_ADD_PHONE_REJECT_UNKNOWN;
     }
 
     function isRecoverableAddPhoneSubmitError(value) {
@@ -551,6 +669,7 @@
       const currentProvider = normalizePhoneSmsProvider(
         preferredProvider || state?.phoneSmsProvider || DEFAULT_PHONE_SMS_PROVIDER
       );
+      const strictProviderOrder = normalizePhoneProviderOrderStrict(state?.phoneProviderOrderStrict);
       const hasExplicitOrder = Array.isArray(state?.phoneSmsProviderOrder)
         ? state.phoneSmsProviderOrder.length > 0
         : String(state?.phoneSmsProviderOrder || '').trim().length > 0;
@@ -560,7 +679,18 @@
           []
         );
         if (explicitOrder.length) {
-          return explicitOrder;
+          if (strictProviderOrder) {
+            return explicitOrder;
+          }
+          const extendedOrder = [...explicitOrder];
+          [currentProvider, ...DEFAULT_PHONE_SMS_PROVIDER_ORDER].forEach((candidate) => {
+            const normalizedCandidate = normalizePhoneSmsProvider(candidate);
+            if (!normalizedCandidate || extendedOrder.includes(normalizedCandidate)) {
+              return;
+            }
+            extendedOrder.push(normalizedCandidate);
+          });
+          return extendedOrder.slice(0, DEFAULT_PHONE_SMS_PROVIDER_ORDER.length);
         }
         return [currentProvider];
       }
@@ -1375,6 +1505,15 @@
       const suffix = phoneNumber ? ` 当前号码：${phoneNumber}。` : '';
       return new Error(
         `${PHONE_RESTART_STEP7_ERROR_PREFIX}手机验证重发后仍未收到短信，请从步骤 7 重新获取新号码。${suffix}`
+      );
+    }
+
+    function buildRestartStep7WithNewNumberError(reason = '') {
+      const suffix = String(reason || '').trim();
+      return createPhoneFlowError(
+        PHONE_ERROR_CODE_ADD_PHONE_PAGE_RATE_LIMIT,
+        `${PHONE_RESTART_STEP7_ERROR_PREFIX}restart step 7 with a new number after add-phone page rate limit.${suffix ? ` ${suffix}` : ''}`,
+        { reason: suffix || 'restart_step7_with_new_number' }
       );
     }
 
@@ -4416,6 +4555,7 @@
         const providerCountryCandidates = resolveCountryCandidatesForProvider(scopedState, providerCandidate);
         const allProviderCountriesBlocked = (
           providerCandidate === provider
+          && normalizePhoneProviderImmediateFallbackEnabled(state?.phoneProviderImmediateFallbackEnabled)
           && useBlockedCountryIds.length > 0
           && hasUsableFallbackProvider(providerCandidate)
           && providerCountryCandidates.length > 0
@@ -5298,6 +5438,7 @@
       let addPhoneReentryWithSameActivation = 0;
       const countrySmsFailureCounts = new Map();
       const countryPriceFloorByKey = new Map();
+      const hardBlockedCountryKeys = new Set();
       const addPhoneRejectRetryCounts = new Map();
       const normalizeCountryFailureKey = (countryId, provider = activation?.provider || state?.phoneSmsProvider || '') => {
         const normalizedProvider = normalizePhoneSmsProvider(provider || state?.phoneSmsProvider || '');
@@ -5396,6 +5537,31 @@
         return latest;
       };
 
+      const getCountryFailureThreshold = () => normalizePhoneCountryFailureThreshold(
+        state?.phoneCountryFailureThreshold
+      );
+      const getUnableSendCodeRetryLimit = () => normalizePhoneUnableSendCodeRetryLimit(
+        state?.phoneUnableSendCodeRetryLimit
+      );
+      const getUnknownAddPhoneRejectRetryLimit = () => normalizePhoneAddPhoneRetryLimit(
+        state?.phoneUnknownAddPhoneRejectRetryLimit,
+        PHONE_UNKNOWN_ADD_PHONE_REJECT_RETRY_LIMIT
+      );
+      const getPageRateLimitCooldownMs = () => (
+        normalizePhonePageRateLimitCooldownSeconds(
+          state?.phonePageRateLimitCooldownSeconds
+        ) * 1000
+      );
+      const getPageRateLimitAction = () => normalizePhonePageRateLimitAction(
+        state?.phonePageRateLimitAction
+      );
+      const getProviderImmediateFallbackEnabled = () => normalizePhoneProviderImmediateFallbackEnabled(
+        state?.phoneProviderImmediateFallbackEnabled
+      );
+      const getSkipBlockedCountriesEnabled = () => normalizePhoneSkipBlockedCountriesEnabled(
+        state?.phoneSkipBlockedCountriesEnabled
+      );
+
       const getCountryFailureKey = (countryId, providerId = normalizePhoneSmsProvider(state?.phoneSmsProvider)) => (
         normalizePhoneSmsProvider(providerId) === PHONE_SMS_PROVIDER_FIVE_SIM
           ? normalizeFiveSimCountryId(countryId, '')
@@ -5410,7 +5576,12 @@
         return Math.max(0, Math.floor(Number(countrySmsFailureCounts.get(countryKey)) || 0));
       };
 
-      const markCountrySmsFailure = async (countryId, reason = 'sms_timeout', providerId = normalizePhoneSmsProvider(state?.phoneSmsProvider)) => {
+      const markCountrySmsFailure = async (
+        countryId,
+        reason = 'sms_timeout',
+        providerId = normalizePhoneSmsProvider(state?.phoneSmsProvider),
+        options = {}
+      ) => {
         const countryKey = normalizeCountryFailureKey(countryId, providerId);
         if (!countryKey) {
           return;
@@ -5418,7 +5589,10 @@
         const parsed = splitCountryFailureKey(countryKey, providerId);
         const nextCount = getCountryFailureCount(parsed.countryKey, parsed.provider) + 1;
         countrySmsFailureCounts.set(countryKey, nextCount);
-        if (nextCount >= PHONE_SMS_FAILURE_SKIP_THRESHOLD) {
+        if (options && typeof options === 'object' && options.hardBlock) {
+          hardBlockedCountryKeys.add(countryKey);
+        }
+        if (nextCount >= getCountryFailureThreshold() || hardBlockedCountryKeys.has(countryKey)) {
           const countryLabel = resolveCountryLabelByFailureKey(countryKey, providerId);
           await addLog(
             `步骤 9：${countryLabel} 已累计 ${nextCount} 次短信失败（${formatStep9Reason(reason)}）；下次获取号码会优先尝试其它已选国家。`,
@@ -5434,16 +5608,20 @@
         }
         countrySmsFailureCounts.delete(countryKey);
         countryPriceFloorByKey.delete(countryKey);
+        hardBlockedCountryKeys.delete(countryKey);
       };
 
       const getBlockedCountryIds = () => {
+        if (!getSkipBlockedCountriesEnabled()) {
+          return [];
+        }
         const activeProvider = normalizePhoneSmsProvider(
           state?.phoneSmsProvider || activation?.provider || DEFAULT_PHONE_SMS_PROVIDER
         );
         return Array.from(countrySmsFailureCounts.entries())
           .filter(([countryKey, count]) => (
-            Number(count) >= PHONE_SMS_FAILURE_SKIP_THRESHOLD
-            || !countryPriceFloorByKey.has(countryKey)
+            Number(count) >= getCountryFailureThreshold()
+            || hardBlockedCountryKeys.has(countryKey)
           ))
           .map(([countryKey]) => splitCountryFailureKey(countryKey, activeProvider))
           .filter((entry) => entry.provider === activeProvider)
@@ -5526,16 +5704,7 @@
         );
       };
 
-      const rotateActivationAfterAddPhoneFailure = async (failureReason, failureCode, submitState = {}) => {
-        await markPreferredActivationExhausted(failureCode || failureReason);
-        usedNumberReplacementAttempts += 1;
-        if (usedNumberReplacementAttempts > maxNumberReplacementAttempts) {
-          throw buildPhoneReplacementLimitError(maxNumberReplacementAttempts, failureCode || 'add_phone_rejected');
-        }
-        await addLog(
-          `Step 9: replacing number after add-phone failure (${failureReason}) (${usedNumberReplacementAttempts}/${maxNumberReplacementAttempts}).`,
-          'warn'
-        );
+      const abandonCurrentActivationAfterAddPhoneFailure = async (submitState = {}, options = {}) => {
         if (shouldCancelActivation && activation) {
           await cancelPhoneActivation(state, activation);
         }
@@ -5544,6 +5713,15 @@
         shouldCancelActivation = false;
         preferReuseExistingActivationOnAddPhone = false;
         addPhoneReentryWithSameActivation = 0;
+        if (options && options.skipAddPhoneRecovery) {
+          pageState = {
+            ...pageState,
+            ...submitState,
+            addPhonePage: true,
+            phoneVerificationPage: false,
+          };
+          return;
+        }
         let addPhoneSnapshot = {
           ...pageState,
           ...submitState,
@@ -5579,6 +5757,41 @@
           );
         }
         pageState = addPhoneSnapshot;
+      };
+
+      const restartStep7AfterAddPhoneFailure = async (failureReason, failureCode, submitState = {}, options = {}) => {
+        await markPreferredActivationExhausted(failureCode || failureReason);
+        const cooldownMs = Math.max(0, Math.floor(Number(options.cooldownMs) || 0));
+        if (cooldownMs > 0) {
+          await addLog(
+            `Step 9: cooling down for ${Math.ceil(cooldownMs / 1000)}s before restarting step 7 after add-phone failure (${failureReason}).`,
+            'warn'
+          );
+          await sleepWithStop(cooldownMs);
+        }
+        await abandonCurrentActivationAfterAddPhoneFailure(submitState, { skipAddPhoneRecovery: true });
+        throw buildRestartStep7WithNewNumberError(failureCode || failureReason);
+      };
+
+      const rotateActivationAfterAddPhoneFailure = async (failureReason, failureCode, submitState = {}, options = {}) => {
+        await markPreferredActivationExhausted(failureCode || failureReason);
+        const cooldownMs = Math.max(0, Math.floor(Number(options.cooldownMs) || 0));
+        if (cooldownMs > 0) {
+          await addLog(
+            `Step 9: cooling down for ${Math.ceil(cooldownMs / 1000)}s before rotating number after add-phone failure (${failureReason}).`,
+            'warn'
+          );
+          await sleepWithStop(cooldownMs);
+        }
+        usedNumberReplacementAttempts += 1;
+        if (usedNumberReplacementAttempts > maxNumberReplacementAttempts) {
+          throw buildPhoneReplacementLimitError(maxNumberReplacementAttempts, failureCode || 'add_phone_rejected');
+        }
+        await addLog(
+          `Step 9: replacing number after add-phone failure (${failureReason}) (${usedNumberReplacementAttempts}/${maxNumberReplacementAttempts}).`,
+          'warn'
+        );
+        await abandonCurrentActivationAfterAddPhoneFailure(submitState);
       };
 
       try {
@@ -5643,9 +5856,12 @@
             } catch (submitError) {
               const submitErrorText = String(submitError?.message || submitError || 'unknown error');
               if (isRecoverableAddPhoneSubmitError(submitErrorText)) {
+                const submitFailureCode = isPhoneNumberInvalidError(submitErrorText)
+                  ? PHONE_ERROR_CODE_ADD_PHONE_NUMBER_INVALID
+                  : 'add_phone_submit_failed';
                 await rotateActivationAfterAddPhoneFailure(
                   submitErrorText,
-                  'add_phone_submit_failed',
+                  submitFailureCode,
                   { url: pageState?.url || '' }
                 );
                 continue;
@@ -5654,7 +5870,8 @@
             }
             if (submitResult.addPhoneRejected) {
               const addPhoneRejectText = String(submitResult.errorText || submitResult.url || 'unknown error');
-              if (isPhoneNumberUsedError(addPhoneRejectText)) {
+              const addPhoneRejectCode = classifyAddPhoneRejectCode(addPhoneRejectText);
+              if (addPhoneRejectCode === PHONE_ERROR_CODE_ADD_PHONE_NUMBER_USED) {
                 usedNumberReplacementAttempts += 1;
                 if (usedNumberReplacementAttempts > maxNumberReplacementAttempts) {
                   throw new Error(
@@ -5687,6 +5904,76 @@
                 `步骤 9：添加手机号页面拒绝当前号码，但未明确提示已使用（${addPhoneRejectText}），将用同一号码再试一次。`,
                 'warn'
               );
+              const rejectFingerprint = buildAddPhoneRejectFingerprint(addPhoneRejectText);
+              const rejectRetryKey = `${activation.provider || 'unknown'}:${activation.phoneNumber || 'unknown'}:${addPhoneRejectCode}:${rejectFingerprint}`;
+              const rejectRetryCount = Math.max(
+                0,
+                Math.floor(Number(addPhoneRejectRetryCounts.get(rejectRetryKey)) || 0)
+              ) + 1;
+              addPhoneRejectRetryCounts.set(rejectRetryKey, rejectRetryCount);
+              const retryLimit = addPhoneRejectCode === PHONE_ERROR_CODE_ADD_PHONE_UNABLE_TO_SEND_CODE
+                ? getUnableSendCodeRetryLimit()
+                : (addPhoneRejectCode === PHONE_ERROR_CODE_ADD_PHONE_REJECT_UNKNOWN
+                  ? getUnknownAddPhoneRejectRetryLimit()
+                  : 0);
+              if (rejectRetryCount <= retryLimit) {
+                const retryDelayMs = getPhoneFlowRetryDelayMs(
+                  PHONE_UNKNOWN_ADD_PHONE_REJECT_RETRY_DELAY_MS,
+                  rejectRetryCount
+                );
+                await addLog(
+                  `Step 9: add-phone rejected ${activation.phoneNumber} (${addPhoneRejectCode}); keep current activation and retry after ${Math.ceil(retryDelayMs / 1000)}s (${rejectRetryCount}/${retryLimit}). ${addPhoneRejectText}`,
+                  'warn'
+                );
+                pageState = {
+                  ...pageState,
+                  ...submitResult,
+                  addPhonePage: true,
+                  phoneVerificationPage: false,
+                };
+                await sleepWithStop(retryDelayMs);
+                continue;
+              }
+
+              const failureReasonMap = {
+                [PHONE_ERROR_CODE_ADD_PHONE_NUMBER_INVALID]: 'add_phone_number_invalid',
+                [PHONE_ERROR_CODE_ADD_PHONE_UNABLE_TO_SEND_CODE]: 'add_phone_unable_to_send_code',
+                [PHONE_ERROR_CODE_ADD_PHONE_PAGE_RATE_LIMIT]: 'add_phone_page_rate_limit',
+                [PHONE_ERROR_CODE_ADD_PHONE_REJECT_UNKNOWN]: 'add_phone_rejected_unknown',
+              };
+              const failureReason = failureReasonMap[addPhoneRejectCode] || 'add_phone_rejected';
+              await markCountrySmsFailure(
+                activation.countryId,
+                failureReason,
+                activation.provider,
+                { hardBlock: true }
+              );
+              if (addPhoneRejectCode === PHONE_ERROR_CODE_ADD_PHONE_PAGE_RATE_LIMIT) {
+                const pageRateLimitAction = getPageRateLimitAction();
+                if (pageRateLimitAction === PHONE_PAGE_RATE_LIMIT_ACTION_RESTART_STEP7_AFTER_COOLDOWN) {
+                  await restartStep7AfterAddPhoneFailure(
+                    `page rate limit while adding ${activation.phoneNumber}`,
+                    addPhoneRejectCode,
+                    submitResult || {},
+                    { cooldownMs: getPageRateLimitCooldownMs() }
+                  );
+                  continue;
+                }
+                await rotateActivationAfterAddPhoneFailure(
+                  `page rate limit while adding ${activation.phoneNumber} (${addPhoneRejectText})`,
+                  addPhoneRejectCode,
+                  submitResult || {},
+                  { cooldownMs: getPageRateLimitCooldownMs() }
+                );
+                continue;
+              }
+              await rotateActivationAfterAddPhoneFailure(
+                `add-phone rejected ${activation.phoneNumber} (${addPhoneRejectText})`,
+                addPhoneRejectCode,
+                submitResult || {}
+              );
+              continue;
+
               let retrySubmitError = null;
               try {
                 submitResult = await submitPhoneNumber(tabId, activation.phoneNumber, activation);

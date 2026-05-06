@@ -3404,6 +3404,283 @@ test('phone verification helper short-retries unknown add-phone rejections with 
   assert.equal(sleeps.some((ms) => ms >= 1000), true, 'unknown add-phone rejection should trigger a short backoff before same-number retry');
 });
 
+test('phone verification helper rotates immediately when add-phone reports unable-to-send-code', async () => {
+  const requests = [];
+  const submitNumbers = [];
+  const sleeps = [];
+  let currentState = {
+    heroSmsApiKey: 'demo-key',
+    heroSmsCountryId: 52,
+    heroSmsCountryLabel: 'Thailand',
+    heroSmsCountryFallback: [{ id: 16, label: 'United Kingdom' }],
+    verificationResendCount: 0,
+    phoneVerificationReplacementLimit: 2,
+    currentPhoneActivation: null,
+    reusablePhoneActivation: null,
+  };
+
+  const helpers = api.createPhoneVerificationHelpers({
+    addLog: async () => {},
+    ensureStep8SignupPageReady: async () => {},
+    fetchImpl: async (url) => {
+      const parsedUrl = new URL(url);
+      requests.push(parsedUrl);
+      const action = parsedUrl.searchParams.get('action');
+      const id = parsedUrl.searchParams.get('id');
+      const country = parsedUrl.searchParams.get('country');
+      if (action === 'getPrices') {
+        return {
+          ok: true,
+          text: async () => buildHeroSmsPricesPayload({
+            country,
+            cost: country === '52' ? 0.08 : 0.09,
+          }),
+        };
+      }
+      if (action === 'getNumber') {
+        if (country === '52') {
+          return {
+            ok: true,
+            text: async () => 'ACCESS_NUMBER:520011:66950000111',
+          };
+        }
+        if (country === '16') {
+          return {
+            ok: true,
+            text: async () => 'ACCESS_NUMBER:160011:447955001122',
+          };
+        }
+      }
+      if (action === 'getStatus') {
+        if (id === '160011') {
+          return {
+            ok: true,
+            text: async () => 'STATUS_OK:654321',
+          };
+        }
+        return {
+          ok: true,
+          text: async () => 'STATUS_WAIT_CODE',
+        };
+      }
+      if (action === 'setStatus') {
+        return {
+          ok: true,
+          text: async () => `STATUS_UPDATED:${id}`,
+        };
+      }
+      throw new Error(`Unexpected HeroSMS action: ${action} @ country ${country || 'n/a'}`);
+    },
+    getOAuthFlowStepTimeoutMs: async (defaultTimeoutMs) => defaultTimeoutMs,
+    getState: async () => ({ ...currentState }),
+    sendToContentScriptResilient: async (_source, message) => {
+      if (message.type === 'SUBMIT_PHONE_NUMBER') {
+        submitNumbers.push(message.payload.phoneNumber);
+        if (message.payload.countryId === 52) {
+          return {
+            addPhoneRejected: true,
+            errorText: 'Unable to send a verification code to this phone number. Please try again later or use a different number.',
+            url: 'https://auth.openai.com/add-phone',
+          };
+        }
+        return {
+          phoneVerificationPage: true,
+          url: 'https://auth.openai.com/phone-verification',
+        };
+      }
+      if (message.type === 'RETURN_TO_ADD_PHONE') {
+        return {
+          addPhonePage: true,
+          phoneVerificationPage: false,
+          url: 'https://auth.openai.com/add-phone',
+        };
+      }
+      if (message.type === 'SUBMIT_PHONE_VERIFICATION_CODE') {
+        return {
+          success: true,
+          consentReady: true,
+          url: 'https://auth.openai.com/authorize',
+        };
+      }
+      throw new Error(`Unexpected content-script message: ${message.type}`);
+    },
+    setState: async (updates) => {
+      currentState = { ...currentState, ...updates };
+    },
+    sleepWithStop: async (ms) => {
+      sleeps.push(ms);
+    },
+    throwIfStopped: () => {},
+  });
+
+  const result = await helpers.completePhoneVerificationFlow(1, {
+    addPhonePage: true,
+    phoneVerificationPage: false,
+    url: 'https://auth.openai.com/add-phone',
+  });
+
+  assert.deepStrictEqual(result, {
+    success: true,
+    consentReady: true,
+    url: 'https://auth.openai.com/authorize',
+  });
+  assert.deepStrictEqual(
+    requests
+      .filter((requestUrl) => requestUrl.searchParams.get('action') === 'getNumber')
+      .map((requestUrl) => requestUrl.searchParams.get('country')),
+    ['52', '16']
+  );
+  assert.equal(
+    requests.some((requestUrl) => (
+      requestUrl.searchParams.get('action') === 'setStatus'
+      && requestUrl.searchParams.get('id') === '520011'
+      && requestUrl.searchParams.get('status') === '8'
+    )),
+    true
+  );
+  assert.equal(submitNumbers.filter((number) => number === '66950000111').length, 1);
+  assert.equal(sleeps.some((ms) => ms >= 1000), false);
+});
+
+test('phone verification helper cools down and rotates immediately on add-phone page verification rate limit', async () => {
+  const requests = [];
+  const submitNumbers = [];
+  const sleeps = [];
+  let currentState = {
+    heroSmsApiKey: 'demo-key',
+    heroSmsCountryId: 52,
+    heroSmsCountryLabel: 'Thailand',
+    heroSmsCountryFallback: [{ id: 16, label: 'United Kingdom' }],
+    verificationResendCount: 0,
+    phoneVerificationReplacementLimit: 2,
+    phonePageRateLimitCooldownSeconds: 90,
+    currentPhoneActivation: null,
+    reusablePhoneActivation: null,
+  };
+
+  const helpers = api.createPhoneVerificationHelpers({
+    addLog: async () => {},
+    ensureStep8SignupPageReady: async () => {},
+    fetchImpl: async (url) => {
+      const parsedUrl = new URL(url);
+      requests.push(parsedUrl);
+      const action = parsedUrl.searchParams.get('action');
+      const id = parsedUrl.searchParams.get('id');
+      const country = parsedUrl.searchParams.get('country');
+      if (action === 'getPrices') {
+        return {
+          ok: true,
+          text: async () => buildHeroSmsPricesPayload({
+            country,
+            cost: country === '52' ? 0.08 : 0.09,
+          }),
+        };
+      }
+      if (action === 'getNumber') {
+        if (country === '52') {
+          return {
+            ok: true,
+            text: async () => 'ACCESS_NUMBER:520021:66950000121',
+          };
+        }
+        if (country === '16') {
+          return {
+            ok: true,
+            text: async () => 'ACCESS_NUMBER:160021:447955001222',
+          };
+        }
+      }
+      if (action === 'getStatus') {
+        if (id === '160021') {
+          return {
+            ok: true,
+            text: async () => 'STATUS_OK:777777',
+          };
+        }
+        return {
+          ok: true,
+          text: async () => 'STATUS_WAIT_CODE',
+        };
+      }
+      if (action === 'setStatus') {
+        return {
+          ok: true,
+          text: async () => `STATUS_UPDATED:${id}`,
+        };
+      }
+      throw new Error(`Unexpected HeroSMS action: ${action} @ country ${country || 'n/a'}`);
+    },
+    getOAuthFlowStepTimeoutMs: async (defaultTimeoutMs) => defaultTimeoutMs,
+    getState: async () => ({ ...currentState }),
+    sendToContentScriptResilient: async (_source, message) => {
+      if (message.type === 'SUBMIT_PHONE_NUMBER') {
+        submitNumbers.push(message.payload.phoneNumber);
+        if (message.payload.countryId === 52) {
+          return {
+            addPhoneRejected: true,
+            errorText: 'You\'ve made too many phone verification requests. Please try again later.',
+            url: 'https://auth.openai.com/add-phone',
+          };
+        }
+        return {
+          phoneVerificationPage: true,
+          url: 'https://auth.openai.com/phone-verification',
+        };
+      }
+      if (message.type === 'RETURN_TO_ADD_PHONE') {
+        return {
+          addPhonePage: true,
+          phoneVerificationPage: false,
+          url: 'https://auth.openai.com/add-phone',
+        };
+      }
+      if (message.type === 'SUBMIT_PHONE_VERIFICATION_CODE') {
+        return {
+          success: true,
+          consentReady: true,
+          url: 'https://auth.openai.com/authorize',
+        };
+      }
+      throw new Error(`Unexpected content-script message: ${message.type}`);
+    },
+    setState: async (updates) => {
+      currentState = { ...currentState, ...updates };
+    },
+    sleepWithStop: async (ms) => {
+      sleeps.push(ms);
+    },
+    throwIfStopped: () => {},
+  });
+
+  const result = await helpers.completePhoneVerificationFlow(1, {
+    addPhonePage: true,
+    phoneVerificationPage: false,
+    url: 'https://auth.openai.com/add-phone',
+  });
+
+  assert.deepStrictEqual(result, {
+    success: true,
+    consentReady: true,
+    url: 'https://auth.openai.com/authorize',
+  });
+  assert.deepStrictEqual(
+    requests
+      .filter((requestUrl) => requestUrl.searchParams.get('action') === 'getNumber')
+      .map((requestUrl) => requestUrl.searchParams.get('country')),
+    ['52', '16']
+  );
+  assert.equal(submitNumbers.filter((number) => number === '66950000121').length, 1);
+  assert.equal(sleeps.includes(90000), true);
+  assert.equal(
+    requests.some((requestUrl) => (
+      requestUrl.searchParams.get('action') === 'setStatus'
+      && requestUrl.searchParams.get('id') === '520021'
+      && requestUrl.searchParams.get('status') === '8'
+    )),
+    true
+  );
+});
+
 test('phone verification helper cancels unknown add-phone rejects and rotates to the next country after retry budget is exhausted', async () => {
   const requests = [];
   const submitNumbers = [];
@@ -3539,7 +3816,7 @@ test('phone verification helper cancels unknown add-phone rejects and rotates to
     true,
     'first rejected activation should be cancelled before rotating'
   );
-  assert.equal(submitNumbers.filter((number) => number === '66950000111').length >= 6, true);
+  assert.equal(submitNumbers.filter((number) => number === '66950000111').length >= 3, true);
   assert.equal(submitNumbers.includes('447955001122'), true);
   assert.equal(sleeps.filter((ms) => ms >= 1000).length >= 2, true);
 });
@@ -3715,11 +3992,290 @@ test('phone verification helper falls back to the next provider when all current
     'HeroSMS should not be reacquired once its selected countries are locally blocked'
   );
   assert.equal(
-    submitCountries.filter((countryId) => countryId === '52').length >= 6,
+    submitCountries.filter((countryId) => countryId === '52').length >= 3,
     true,
-    'current provider should exhaust same-number short retries before platform fallback'
+    'current provider should exhaust configured same-number retries before platform fallback'
   );
   assert.equal(submitCountries[submitCountries.length - 1], 'vietnam');
+});
+
+test('phone verification helper appends fallback providers when provider order is not strict', async () => {
+  const requests = [];
+  let currentState = {
+    phoneSmsProvider: 'hero-sms',
+    phoneSmsProviderOrder: ['hero-sms'],
+    phoneProviderOrderStrict: false,
+    heroSmsApiKey: 'hero-key',
+    heroSmsCountryId: 52,
+    heroSmsCountryLabel: 'Thailand',
+    heroSmsCountryFallback: [],
+    fiveSimApiKey: 'five-key',
+    fiveSimCountryId: 'vietnam',
+    fiveSimCountryLabel: 'Vietnam',
+    fiveSimCountryOrder: ['vietnam'],
+    fiveSimOperator: 'any',
+    verificationResendCount: 0,
+    phoneVerificationReplacementLimit: 2,
+    currentPhoneActivation: null,
+    reusablePhoneActivation: null,
+  };
+
+  const helpers = api.createPhoneVerificationHelpers({
+    addLog: async () => {},
+    ensureStep8SignupPageReady: async () => {},
+    fetchImpl: async (url) => {
+      const parsedUrl = new URL(url);
+      requests.push(parsedUrl);
+      if (parsedUrl.pathname.endsWith('/v1/guest/products/vietnam/any')) {
+        return {
+          ok: true,
+          text: async () => JSON.stringify({
+            openai: {
+              Price: 12,
+              Qty: 10,
+            },
+          }),
+        };
+      }
+      if (parsedUrl.pathname.endsWith('/v1/guest/prices')) {
+        return {
+          ok: true,
+          text: async () => JSON.stringify({
+            openai: {
+              vietnam: {
+                cost: 12,
+                count: 10,
+              },
+            },
+          }),
+        };
+      }
+      if (parsedUrl.pathname.endsWith('/v1/user/buy/activation/vietnam/any/openai')) {
+        return {
+          ok: true,
+          text: async () => JSON.stringify({
+            id: '510091',
+            phone: '+84985550091',
+            country: 'vietnam',
+          }),
+        };
+      }
+      if (parsedUrl.pathname.endsWith('/v1/user/check/510091')) {
+        return {
+          ok: true,
+          text: async () => JSON.stringify({
+            status: 'RECEIVED',
+            sms: [{ code: '112244', text: '112244' }],
+          }),
+        };
+      }
+      if (parsedUrl.pathname.endsWith('/v1/user/finish/510091')) {
+        return {
+          ok: true,
+          text: async () => JSON.stringify({ status: 'FINISHED' }),
+        };
+      }
+
+      const action = parsedUrl.searchParams.get('action');
+      const country = parsedUrl.searchParams.get('country');
+      const id = parsedUrl.searchParams.get('id');
+      if (action === 'getPrices') {
+        return {
+          ok: true,
+          text: async () => buildHeroSmsPricesPayload({ country, cost: 0.08, count: 0, physicalCount: 0 }),
+        };
+      }
+      if (action === 'getNumber' || action === 'getNumberV2') {
+        return {
+          ok: true,
+          text: async () => 'NO_NUMBERS: Numbers Not Found. Try Later',
+        };
+      }
+      if (action === 'getStatus' && id === '510091') {
+        return {
+          ok: true,
+          text: async () => 'STATUS_OK:112244',
+        };
+      }
+      if (action === 'setStatus' && id === '510091') {
+        return {
+          ok: true,
+          text: async () => `STATUS_UPDATED:${id}`,
+        };
+      }
+
+      throw new Error(`Unexpected request: ${parsedUrl.pathname}${parsedUrl.search}`);
+    },
+    getOAuthFlowStepTimeoutMs: async (defaultTimeoutMs) => defaultTimeoutMs,
+    getState: async () => ({ ...currentState }),
+    sendToContentScriptResilient: async (_source, message) => {
+      if (message.type === 'SUBMIT_PHONE_NUMBER') {
+        return {
+          phoneVerificationPage: true,
+          url: 'https://auth.openai.com/phone-verification',
+        };
+      }
+      if (message.type === 'SUBMIT_PHONE_VERIFICATION_CODE') {
+        return {
+          success: true,
+          consentReady: true,
+          url: 'https://auth.openai.com/authorize',
+        };
+      }
+      throw new Error(`Unexpected content-script message: ${message.type}`);
+    },
+    setState: async (updates) => {
+      currentState = { ...currentState, ...updates };
+    },
+    sleepWithStop: async () => {},
+    throwIfStopped: () => {},
+  });
+
+  const result = await helpers.completePhoneVerificationFlow(1, {
+    addPhonePage: true,
+    phoneVerificationPage: false,
+    url: 'https://auth.openai.com/add-phone',
+  });
+
+  assert.deepStrictEqual(result, {
+    success: true,
+    consentReady: true,
+    url: 'https://auth.openai.com/authorize',
+  });
+  assert.equal(
+    requests.some((requestUrl) => requestUrl.pathname.endsWith('/v1/user/buy/activation/vietnam/any/openai')),
+    true
+  );
+});
+
+test('phone verification helper keeps current provider retries when immediate provider fallback is disabled', async () => {
+  const requests = [];
+  let currentState = {
+    phoneSmsProvider: 'hero-sms',
+    phoneSmsProviderOrder: ['hero-sms', '5sim'],
+    phoneProviderImmediateFallbackEnabled: false,
+    heroSmsApiKey: 'hero-key',
+    heroSmsCountryId: 52,
+    heroSmsCountryLabel: 'Thailand',
+    heroSmsCountryFallback: [],
+    fiveSimApiKey: 'five-key',
+    fiveSimCountryId: 'vietnam',
+    fiveSimCountryLabel: 'Vietnam',
+    fiveSimCountryOrder: ['vietnam'],
+    fiveSimOperator: 'any',
+    verificationResendCount: 0,
+    phoneVerificationReplacementLimit: 1,
+    currentPhoneActivation: null,
+    reusablePhoneActivation: null,
+  };
+
+  let heroAcquireCount = 0;
+
+  const helpers = api.createPhoneVerificationHelpers({
+    addLog: async () => {},
+    ensureStep8SignupPageReady: async () => {},
+    fetchImpl: async (url) => {
+      const parsedUrl = new URL(url);
+      requests.push(parsedUrl);
+      if (parsedUrl.pathname.endsWith('/v1/guest/products/vietnam/any')) {
+        return {
+          ok: true,
+          text: async () => JSON.stringify({
+            openai: {
+              Price: 12,
+              Qty: 10,
+            },
+          }),
+        };
+      }
+      if (parsedUrl.pathname.endsWith('/v1/guest/prices')) {
+        return {
+          ok: true,
+          text: async () => JSON.stringify({
+            openai: {
+              vietnam: {
+                cost: 12,
+                count: 10,
+              },
+            },
+          }),
+        };
+      }
+      if (parsedUrl.pathname.endsWith('/v1/user/buy/activation/vietnam/any/openai')) {
+        return {
+          ok: true,
+          text: async () => JSON.stringify({
+            id: '510099',
+            phone: '+84985550099',
+            country: 'vietnam',
+          }),
+        };
+      }
+
+      const action = parsedUrl.searchParams.get('action');
+      const id = parsedUrl.searchParams.get('id');
+      const country = parsedUrl.searchParams.get('country');
+      if (action === 'getPrices') {
+        return {
+          ok: true,
+          text: async () => buildHeroSmsPricesPayload({ country, cost: 0.08 }),
+        };
+      }
+      if (action === 'getNumber') {
+        heroAcquireCount += 1;
+        return {
+          ok: true,
+          text: async () => `ACCESS_NUMBER:5200${heroAcquireCount}:66950000${110 + heroAcquireCount}`,
+        };
+      }
+      if (action === 'setStatus') {
+        return {
+          ok: true,
+          text: async () => `STATUS_UPDATED:${id}`,
+        };
+      }
+      throw new Error(`Unexpected request: ${parsedUrl.pathname}${parsedUrl.search}`);
+    },
+    getOAuthFlowStepTimeoutMs: async (defaultTimeoutMs) => defaultTimeoutMs,
+    getState: async () => ({ ...currentState }),
+    sendToContentScriptResilient: async (_source, message) => {
+      if (message.type === 'SUBMIT_PHONE_NUMBER') {
+        return {
+          addPhoneRejected: true,
+          errorText: 'Unable to send a verification code to this phone number. Please try again later or use a different number.',
+          url: 'https://auth.openai.com/add-phone',
+        };
+      }
+      if (message.type === 'RETURN_TO_ADD_PHONE') {
+        return {
+          addPhonePage: true,
+          phoneVerificationPage: false,
+          url: 'https://auth.openai.com/add-phone',
+        };
+      }
+      throw new Error(`Unexpected content-script message: ${message.type}`);
+    },
+    setState: async (updates) => {
+      currentState = { ...currentState, ...updates };
+    },
+    sleepWithStop: async () => {},
+    throwIfStopped: () => {},
+  });
+
+  await assert.rejects(
+    () => helpers.completePhoneVerificationFlow(1, {
+      addPhonePage: true,
+      phoneVerificationPage: false,
+      url: 'https://auth.openai.com/add-phone',
+    }),
+    /phone verification did not succeed|number replacements/i
+  );
+
+  assert.equal(heroAcquireCount >= 2, true);
+  assert.equal(
+    requests.some((requestUrl) => requestUrl.pathname.endsWith('/v1/user/buy/activation/vietnam/any/openai')),
+    false
+  );
 });
 
 test('phone verification helper reuses the same number up to three successful registrations', async () => {

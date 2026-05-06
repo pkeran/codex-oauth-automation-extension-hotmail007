@@ -411,6 +411,8 @@ const rowPhoneCodeWaitSeconds = document.getElementById('row-phone-code-wait-sec
 const rowPhoneCodeTimeoutWindows = document.getElementById('row-phone-code-timeout-windows');
 const rowPhoneCodePollIntervalSeconds = document.getElementById('row-phone-code-poll-interval-seconds');
 const rowPhoneCodePollMaxRounds = document.getElementById('row-phone-code-poll-max-rounds');
+const rowPhoneRecoveryStrategyGroup = document.getElementById('row-phone-recovery-strategy-group');
+const rowPhoneProviderFallbackStrategyGroup = document.getElementById('row-phone-provider-fallback-strategy-group');
 const inputHeroSmsApiKey = document.getElementById('input-hero-sms-api-key');
 const btnToggleHeroSmsApiKey = document.getElementById('btn-toggle-hero-sms-api-key');
 const inputFiveSimApiKey = document.getElementById('input-five-sim-api-key');
@@ -427,6 +429,14 @@ const inputPhoneCodeWaitSeconds = document.getElementById('input-phone-code-wait
 const inputPhoneCodeTimeoutWindows = document.getElementById('input-phone-code-timeout-windows');
 const inputPhoneCodePollIntervalSeconds = document.getElementById('input-phone-code-poll-interval-seconds');
 const inputPhoneCodePollMaxRounds = document.getElementById('input-phone-code-poll-max-rounds');
+const inputPhoneUnableSendCodeRetryLimit = document.getElementById('input-phone-unable-send-code-retry-limit');
+const selectPhonePageRateLimitAction = document.getElementById('select-phone-page-rate-limit-action');
+const inputPhonePageRateLimitCooldownSeconds = document.getElementById('input-phone-page-rate-limit-cooldown-seconds');
+const inputPhoneUnknownRejectRetryLimit = document.getElementById('input-phone-unknown-reject-retry-limit');
+const inputPhoneCountryFailureThreshold = document.getElementById('input-phone-country-failure-threshold');
+const inputPhoneProviderImmediateFallbackEnabled = document.getElementById('input-phone-provider-immediate-fallback-enabled');
+const inputPhoneProviderOrderStrict = document.getElementById('input-phone-provider-order-strict');
+const inputPhoneSkipBlockedCountriesEnabled = document.getElementById('input-phone-skip-blocked-countries-enabled');
 const inputHeroSmsReuseEnabled = document.getElementById('input-hero-sms-reuse-enabled');
 const selectHeroSmsCountry = document.getElementById('select-hero-sms-country');
 const selectHeroSmsCountryFallback = document.getElementById('select-hero-sms-country-fallback');
@@ -546,6 +556,21 @@ const DEFAULT_PHONE_CODE_POLL_INTERVAL_SECONDS = 5;
 const PHONE_CODE_POLL_MAX_ROUNDS_MIN = 1;
 const PHONE_CODE_POLL_MAX_ROUNDS_MAX = 120;
 const DEFAULT_PHONE_CODE_POLL_MAX_ROUNDS = 4;
+const PHONE_ADD_PHONE_RETRY_LIMIT_MIN = 0;
+const PHONE_ADD_PHONE_RETRY_LIMIT_MAX = 5;
+const DEFAULT_PHONE_UNABLE_SEND_CODE_RETRY_LIMIT = 0;
+const PHONE_PAGE_RATE_LIMIT_COOLDOWN_SECONDS_MIN = 0;
+const PHONE_PAGE_RATE_LIMIT_COOLDOWN_SECONDS_MAX = 300;
+const DEFAULT_PHONE_PAGE_RATE_LIMIT_COOLDOWN_SECONDS = 90;
+const PHONE_COUNTRY_FAILURE_THRESHOLD_MIN = 1;
+const PHONE_COUNTRY_FAILURE_THRESHOLD_MAX = 10;
+const DEFAULT_PHONE_COUNTRY_FAILURE_THRESHOLD = 2;
+const PHONE_PAGE_RATE_LIMIT_ACTION_ROTATE_AFTER_COOLDOWN = 'rotate_after_cooldown';
+const PHONE_PAGE_RATE_LIMIT_ACTION_RESTART_STEP7_AFTER_COOLDOWN = 'restart_step7_after_cooldown';
+const DEFAULT_PHONE_PAGE_RATE_LIMIT_ACTION = PHONE_PAGE_RATE_LIMIT_ACTION_ROTATE_AFTER_COOLDOWN;
+const DEFAULT_PHONE_PROVIDER_IMMEDIATE_FALLBACK_ENABLED = true;
+const DEFAULT_PHONE_PROVIDER_ORDER_STRICT = true;
+const DEFAULT_PHONE_SKIP_BLOCKED_COUNTRIES_ENABLED = true;
 const PHONE_SMS_PROVIDER_HERO = 'hero-sms';
 const PHONE_SMS_PROVIDER_FIVE_SIM = '5sim';
 const PHONE_SMS_PROVIDER_HERO_SMS = PHONE_SMS_PROVIDER_HERO;
@@ -3058,6 +3083,27 @@ function collectSettingsPayload() {
   const defaultPhoneCodePollMaxRounds = typeof DEFAULT_PHONE_CODE_POLL_MAX_ROUNDS !== 'undefined'
     ? DEFAULT_PHONE_CODE_POLL_MAX_ROUNDS
     : 12;
+  const defaultPhoneUnableSendCodeRetryLimit = typeof DEFAULT_PHONE_UNABLE_SEND_CODE_RETRY_LIMIT !== 'undefined'
+    ? DEFAULT_PHONE_UNABLE_SEND_CODE_RETRY_LIMIT
+    : 0;
+  const defaultPhonePageRateLimitCooldownSeconds = typeof DEFAULT_PHONE_PAGE_RATE_LIMIT_COOLDOWN_SECONDS !== 'undefined'
+    ? DEFAULT_PHONE_PAGE_RATE_LIMIT_COOLDOWN_SECONDS
+    : 90;
+  const defaultPhonePageRateLimitAction = typeof DEFAULT_PHONE_PAGE_RATE_LIMIT_ACTION !== 'undefined'
+    ? DEFAULT_PHONE_PAGE_RATE_LIMIT_ACTION
+    : 'rotate_after_cooldown';
+  const defaultPhoneCountryFailureThreshold = typeof DEFAULT_PHONE_COUNTRY_FAILURE_THRESHOLD !== 'undefined'
+    ? DEFAULT_PHONE_COUNTRY_FAILURE_THRESHOLD
+    : 2;
+  const defaultPhoneProviderImmediateFallbackEnabled = typeof DEFAULT_PHONE_PROVIDER_IMMEDIATE_FALLBACK_ENABLED !== 'undefined'
+    ? DEFAULT_PHONE_PROVIDER_IMMEDIATE_FALLBACK_ENABLED
+    : true;
+  const defaultPhoneProviderOrderStrict = typeof DEFAULT_PHONE_PROVIDER_ORDER_STRICT !== 'undefined'
+    ? DEFAULT_PHONE_PROVIDER_ORDER_STRICT
+    : true;
+  const defaultPhoneSkipBlockedCountriesEnabled = typeof DEFAULT_PHONE_SKIP_BLOCKED_COUNTRIES_ENABLED !== 'undefined'
+    ? DEFAULT_PHONE_SKIP_BLOCKED_COUNTRIES_ENABLED
+    : true;
   const heroSmsReuseEnabledValue = typeof inputHeroSmsReuseEnabled !== 'undefined' && inputHeroSmsReuseEnabled
     ? normalizeHeroSmsReuseEnabledValue(inputHeroSmsReuseEnabled.checked)
     : defaultHeroSmsReuseEnabled;
@@ -3159,6 +3205,42 @@ function collectSettingsPayload() {
       latestState?.phoneCodePollMaxRounds
     )
     : defaultPhoneCodePollMaxRounds;
+  const phoneUnableSendCodeRetryLimitValue = typeof inputPhoneUnableSendCodeRetryLimit !== 'undefined' && inputPhoneUnableSendCodeRetryLimit
+    ? normalizePhoneAddPhoneRetryLimitValue(
+      inputPhoneUnableSendCodeRetryLimit.value,
+      latestState?.phoneUnableSendCodeRetryLimit
+    )
+    : defaultPhoneUnableSendCodeRetryLimit;
+  const phonePageRateLimitCooldownSecondsValue = typeof inputPhonePageRateLimitCooldownSeconds !== 'undefined' && inputPhonePageRateLimitCooldownSeconds
+    ? normalizePhonePageRateLimitCooldownSecondsValue(
+      inputPhonePageRateLimitCooldownSeconds.value,
+      latestState?.phonePageRateLimitCooldownSeconds
+    )
+    : defaultPhonePageRateLimitCooldownSeconds;
+  const phonePageRateLimitActionValue = typeof selectPhonePageRateLimitAction !== 'undefined' && selectPhonePageRateLimitAction
+    ? normalizePhonePageRateLimitActionValue(selectPhonePageRateLimitAction.value)
+    : defaultPhonePageRateLimitAction;
+  const phoneUnknownRejectRetryLimitValue = typeof inputPhoneUnknownRejectRetryLimit !== 'undefined' && inputPhoneUnknownRejectRetryLimit
+    ? normalizePhoneAddPhoneRetryLimitValue(
+      inputPhoneUnknownRejectRetryLimit.value,
+      latestState?.phoneUnknownAddPhoneRejectRetryLimit ?? 2
+    )
+    : 2;
+  const phoneCountryFailureThresholdValue = typeof inputPhoneCountryFailureThreshold !== 'undefined' && inputPhoneCountryFailureThreshold
+    ? normalizePhoneCountryFailureThresholdValue(
+      inputPhoneCountryFailureThreshold.value,
+      latestState?.phoneCountryFailureThreshold
+    )
+    : defaultPhoneCountryFailureThreshold;
+  const phoneProviderImmediateFallbackEnabledValue = typeof inputPhoneProviderImmediateFallbackEnabled !== 'undefined' && inputPhoneProviderImmediateFallbackEnabled
+    ? normalizePhoneProviderImmediateFallbackEnabledValue(inputPhoneProviderImmediateFallbackEnabled.checked)
+    : defaultPhoneProviderImmediateFallbackEnabled;
+  const phoneProviderOrderStrictValue = typeof inputPhoneProviderOrderStrict !== 'undefined' && inputPhoneProviderOrderStrict
+    ? normalizePhoneProviderOrderStrictValue(inputPhoneProviderOrderStrict.checked)
+    : defaultPhoneProviderOrderStrict;
+  const phoneSkipBlockedCountriesEnabledValue = typeof inputPhoneSkipBlockedCountriesEnabled !== 'undefined' && inputPhoneSkipBlockedCountriesEnabled
+    ? normalizePhoneSkipBlockedCountriesEnabledValue(inputPhoneSkipBlockedCountriesEnabled.checked)
+    : defaultPhoneSkipBlockedCountriesEnabled;
   const selectedPhoneSmsCountry = phoneSmsProviderValue === PHONE_SMS_PROVIDER_FIVE_SIM
     ? ((typeof getSelectedFiveSimCountries === 'function' ? getSelectedFiveSimCountries()[0] : null)
       || { id: DEFAULT_FIVE_SIM_COUNTRY_ID, code: DEFAULT_FIVE_SIM_COUNTRY_ID, label: DEFAULT_FIVE_SIM_COUNTRY_LABEL })
@@ -3436,6 +3518,14 @@ function collectSettingsPayload() {
     phoneCodeTimeoutWindows: phoneCodeTimeoutWindowsValue,
     phoneCodePollIntervalSeconds: phoneCodePollIntervalSecondsValue,
     phoneCodePollMaxRounds: phoneCodePollMaxRoundsValue,
+    phoneUnableSendCodeRetryLimit: phoneUnableSendCodeRetryLimitValue,
+    phonePageRateLimitCooldownSeconds: phonePageRateLimitCooldownSecondsValue,
+    phonePageRateLimitAction: phonePageRateLimitActionValue,
+    phoneUnknownAddPhoneRejectRetryLimit: phoneUnknownRejectRetryLimitValue,
+    phoneCountryFailureThreshold: phoneCountryFailureThresholdValue,
+    phoneProviderImmediateFallbackEnabled: phoneProviderImmediateFallbackEnabledValue,
+    phoneProviderOrderStrict: phoneProviderOrderStrictValue,
+    phoneSkipBlockedCountriesEnabled: phoneSkipBlockedCountriesEnabledValue,
     heroSmsCountryId: heroSmsCountry.id,
     heroSmsCountryLabel: heroSmsCountry.label,
     heroSmsCountryFallback,
@@ -3759,8 +3849,24 @@ function resolveNormalizedProviderOrderForRuntime(state = {}) {
     ? state.phoneSmsProviderOrder
     : [];
   const normalizedOrder = normalizePhoneSmsProviderOrderValue(rawOrder, []);
+  const strictOrder = normalizePhoneProviderOrderStrictValue(
+    state?.phoneProviderOrderStrict !== undefined
+      ? state.phoneProviderOrderStrict
+      : (typeof inputPhoneProviderOrderStrict !== 'undefined' ? inputPhoneProviderOrderStrict?.checked : undefined)
+  );
   if (normalizedOrder.length) {
-    return normalizedOrder;
+    if (strictOrder) {
+      return normalizedOrder;
+    }
+    const extendedOrder = [...normalizedOrder];
+    [state?.phoneSmsProvider || DEFAULT_PHONE_SMS_PROVIDER, ...DEFAULT_PHONE_SMS_PROVIDER_ORDER].forEach((provider) => {
+      const normalizedProvider = normalizePhoneSmsProviderValue(provider);
+      if (!normalizedProvider || extendedOrder.includes(normalizedProvider)) {
+        return;
+      }
+      extendedOrder.push(normalizedProvider);
+    });
+    return extendedOrder.slice(0, DEFAULT_PHONE_SMS_PROVIDER_ORDER.length);
   }
   const fallbackProvider = normalizePhoneSmsProviderValue(
     state?.phoneSmsProvider || selectPhoneSmsProvider?.value || DEFAULT_PHONE_SMS_PROVIDER
@@ -4233,6 +4339,75 @@ function normalizePhoneCodePollMaxRoundsValue(value, fallback = DEFAULT_PHONE_CO
     );
   }
   return Math.max(PHONE_CODE_POLL_MAX_ROUNDS_MIN, Math.min(PHONE_CODE_POLL_MAX_ROUNDS_MAX, parsed));
+}
+
+function normalizePhoneAddPhoneRetryLimitValue(value, fallback = DEFAULT_PHONE_UNABLE_SEND_CODE_RETRY_LIMIT) {
+  const rawValue = String(value ?? '').trim();
+  const parsed = Number.parseInt(rawValue, 10);
+  if (!Number.isFinite(parsed)) {
+    return Math.max(
+      PHONE_ADD_PHONE_RETRY_LIMIT_MIN,
+      Math.min(PHONE_ADD_PHONE_RETRY_LIMIT_MAX, Number(fallback) || DEFAULT_PHONE_UNABLE_SEND_CODE_RETRY_LIMIT)
+    );
+  }
+  return Math.max(PHONE_ADD_PHONE_RETRY_LIMIT_MIN, Math.min(PHONE_ADD_PHONE_RETRY_LIMIT_MAX, parsed));
+}
+
+function normalizePhonePageRateLimitCooldownSecondsValue(value, fallback = DEFAULT_PHONE_PAGE_RATE_LIMIT_COOLDOWN_SECONDS) {
+  const rawValue = String(value ?? '').trim();
+  const parsed = Number.parseInt(rawValue, 10);
+  if (!Number.isFinite(parsed)) {
+    return Math.max(
+      PHONE_PAGE_RATE_LIMIT_COOLDOWN_SECONDS_MIN,
+      Math.min(PHONE_PAGE_RATE_LIMIT_COOLDOWN_SECONDS_MAX, Number(fallback) || DEFAULT_PHONE_PAGE_RATE_LIMIT_COOLDOWN_SECONDS)
+    );
+  }
+  return Math.max(
+    PHONE_PAGE_RATE_LIMIT_COOLDOWN_SECONDS_MIN,
+    Math.min(PHONE_PAGE_RATE_LIMIT_COOLDOWN_SECONDS_MAX, parsed)
+  );
+}
+
+function normalizePhoneCountryFailureThresholdValue(value, fallback = DEFAULT_PHONE_COUNTRY_FAILURE_THRESHOLD) {
+  const rawValue = String(value ?? '').trim();
+  const parsed = Number.parseInt(rawValue, 10);
+  if (!Number.isFinite(parsed)) {
+    return Math.max(
+      PHONE_COUNTRY_FAILURE_THRESHOLD_MIN,
+      Math.min(PHONE_COUNTRY_FAILURE_THRESHOLD_MAX, Number(fallback) || DEFAULT_PHONE_COUNTRY_FAILURE_THRESHOLD)
+    );
+  }
+  return Math.max(
+    PHONE_COUNTRY_FAILURE_THRESHOLD_MIN,
+    Math.min(PHONE_COUNTRY_FAILURE_THRESHOLD_MAX, parsed)
+  );
+}
+
+function normalizePhonePageRateLimitActionValue(value = '') {
+  return String(value || '').trim().toLowerCase() === PHONE_PAGE_RATE_LIMIT_ACTION_RESTART_STEP7_AFTER_COOLDOWN
+    ? PHONE_PAGE_RATE_LIMIT_ACTION_RESTART_STEP7_AFTER_COOLDOWN
+    : PHONE_PAGE_RATE_LIMIT_ACTION_ROTATE_AFTER_COOLDOWN;
+}
+
+function normalizePhoneProviderImmediateFallbackEnabledValue(value) {
+  if (value === undefined || value === null) {
+    return DEFAULT_PHONE_PROVIDER_IMMEDIATE_FALLBACK_ENABLED;
+  }
+  return value !== false;
+}
+
+function normalizePhoneProviderOrderStrictValue(value) {
+  if (value === undefined || value === null) {
+    return DEFAULT_PHONE_PROVIDER_ORDER_STRICT;
+  }
+  return value !== false;
+}
+
+function normalizePhoneSkipBlockedCountriesEnabledValue(value) {
+  if (value === undefined || value === null) {
+    return DEFAULT_PHONE_SKIP_BLOCKED_COUNTRIES_ENABLED;
+  }
+  return value !== false;
 }
 
 function normalizeHeroSmsReuseEnabledValue(value) {
@@ -7012,6 +7187,8 @@ function updatePhoneVerificationSettingsUI() {
     typeof rowHeroSmsMaxPrice !== 'undefined' ? rowHeroSmsMaxPrice : null,
     typeof rowFiveSimOperator !== 'undefined' ? rowFiveSimOperator : null,
     typeof rowPhoneCodeSettingsGroup !== 'undefined' ? rowPhoneCodeSettingsGroup : null,
+    typeof rowPhoneRecoveryStrategyGroup !== 'undefined' ? rowPhoneRecoveryStrategyGroup : null,
+    typeof rowPhoneProviderFallbackStrategyGroup !== 'undefined' ? rowPhoneProviderFallbackStrategyGroup : null,
     typeof rowPhoneVerificationResendCount !== 'undefined' ? rowPhoneVerificationResendCount : null,
     typeof rowPhoneReplacementLimit !== 'undefined' ? rowPhoneReplacementLimit : null,
     typeof rowPhoneCodeWaitSeconds !== 'undefined' ? rowPhoneCodeWaitSeconds : null,
@@ -7057,6 +7234,16 @@ function updatePhoneVerificationSettingsUI() {
   }
   if (!showSettings && typeof rowHeroSmsPriceTiers !== 'undefined' && rowHeroSmsPriceTiers) {
     rowHeroSmsPriceTiers.style.display = 'none';
+  }
+  if (
+    typeof inputPhonePageRateLimitCooldownSeconds !== 'undefined' && inputPhonePageRateLimitCooldownSeconds
+    && typeof selectPhonePageRateLimitAction !== 'undefined' && selectPhonePageRateLimitAction
+  ) {
+    const isRestartAfterCooldown = normalizePhonePageRateLimitActionValue(selectPhonePageRateLimitAction.value)
+      === PHONE_PAGE_RATE_LIMIT_ACTION_RESTART_STEP7_AFTER_COOLDOWN;
+    inputPhonePageRateLimitCooldownSeconds.title = isRestartAfterCooldown
+      ? '遇到页面级限流后，先冷却再重开步骤 7'
+      : '遇到页面级限流后，先冷却再切换号码';
   }
   updateHeroSmsPlatformDisplay();
 }
@@ -8237,6 +8424,58 @@ function applySettingsState(state) {
   if (typeof inputPhoneCodePollMaxRounds !== 'undefined' && inputPhoneCodePollMaxRounds) {
     inputPhoneCodePollMaxRounds.value = String(
       normalizePhoneCodePollMaxRoundsValue(state?.phoneCodePollMaxRounds, DEFAULT_PHONE_CODE_POLL_MAX_ROUNDS)
+    );
+  }
+  if (typeof inputPhoneUnableSendCodeRetryLimit !== 'undefined' && inputPhoneUnableSendCodeRetryLimit) {
+    inputPhoneUnableSendCodeRetryLimit.value = String(
+      normalizePhoneAddPhoneRetryLimitValue(
+        state?.phoneUnableSendCodeRetryLimit,
+        DEFAULT_PHONE_UNABLE_SEND_CODE_RETRY_LIMIT
+      )
+    );
+  }
+  if (typeof selectPhonePageRateLimitAction !== 'undefined' && selectPhonePageRateLimitAction) {
+    selectPhonePageRateLimitAction.value = normalizePhonePageRateLimitActionValue(
+      state?.phonePageRateLimitAction
+    );
+  }
+  if (typeof inputPhonePageRateLimitCooldownSeconds !== 'undefined' && inputPhonePageRateLimitCooldownSeconds) {
+    inputPhonePageRateLimitCooldownSeconds.value = String(
+      normalizePhonePageRateLimitCooldownSecondsValue(
+        state?.phonePageRateLimitCooldownSeconds,
+        DEFAULT_PHONE_PAGE_RATE_LIMIT_COOLDOWN_SECONDS
+      )
+    );
+  }
+  if (typeof inputPhoneUnknownRejectRetryLimit !== 'undefined' && inputPhoneUnknownRejectRetryLimit) {
+    inputPhoneUnknownRejectRetryLimit.value = String(
+      normalizePhoneAddPhoneRetryLimitValue(
+        state?.phoneUnknownAddPhoneRejectRetryLimit,
+        2
+      )
+    );
+  }
+  if (typeof inputPhoneCountryFailureThreshold !== 'undefined' && inputPhoneCountryFailureThreshold) {
+    inputPhoneCountryFailureThreshold.value = String(
+      normalizePhoneCountryFailureThresholdValue(
+        state?.phoneCountryFailureThreshold,
+        DEFAULT_PHONE_COUNTRY_FAILURE_THRESHOLD
+      )
+    );
+  }
+  if (typeof inputPhoneProviderImmediateFallbackEnabled !== 'undefined' && inputPhoneProviderImmediateFallbackEnabled) {
+    inputPhoneProviderImmediateFallbackEnabled.checked = normalizePhoneProviderImmediateFallbackEnabledValue(
+      state?.phoneProviderImmediateFallbackEnabled
+    );
+  }
+  if (typeof inputPhoneProviderOrderStrict !== 'undefined' && inputPhoneProviderOrderStrict) {
+    inputPhoneProviderOrderStrict.checked = normalizePhoneProviderOrderStrictValue(
+      state?.phoneProviderOrderStrict
+    );
+  }
+  if (typeof inputPhoneSkipBlockedCountriesEnabled !== 'undefined' && inputPhoneSkipBlockedCountriesEnabled) {
+    inputPhoneSkipBlockedCountriesEnabled.checked = normalizePhoneSkipBlockedCountriesEnabledValue(
+      state?.phoneSkipBlockedCountriesEnabled
     );
   }
   if (typeof applyHeroSmsFallbackSelection === 'function') {
@@ -12704,6 +12943,79 @@ inputPhoneCodePollMaxRounds?.addEventListener('blur', () => {
   );
   saveSettings({ silent: true }).catch(() => { });
 });
+inputPhoneUnableSendCodeRetryLimit?.addEventListener('input', () => {
+  markSettingsDirty(true);
+  scheduleSettingsAutoSave();
+});
+inputPhoneUnableSendCodeRetryLimit?.addEventListener('blur', () => {
+  inputPhoneUnableSendCodeRetryLimit.value = String(
+    normalizePhoneAddPhoneRetryLimitValue(
+      inputPhoneUnableSendCodeRetryLimit.value,
+      DEFAULT_PHONE_UNABLE_SEND_CODE_RETRY_LIMIT
+    )
+  );
+  saveSettings({ silent: true }).catch(() => { });
+});
+selectPhonePageRateLimitAction?.addEventListener('change', () => {
+  selectPhonePageRateLimitAction.value = normalizePhonePageRateLimitActionValue(
+    selectPhonePageRateLimitAction.value
+  );
+  updatePhoneVerificationSettingsUI();
+  markSettingsDirty(true);
+  saveSettings({ silent: true }).catch(() => { });
+});
+inputPhonePageRateLimitCooldownSeconds?.addEventListener('input', () => {
+  markSettingsDirty(true);
+  scheduleSettingsAutoSave();
+});
+inputPhonePageRateLimitCooldownSeconds?.addEventListener('blur', () => {
+  inputPhonePageRateLimitCooldownSeconds.value = String(
+    normalizePhonePageRateLimitCooldownSecondsValue(
+      inputPhonePageRateLimitCooldownSeconds.value,
+      DEFAULT_PHONE_PAGE_RATE_LIMIT_COOLDOWN_SECONDS
+    )
+  );
+  saveSettings({ silent: true }).catch(() => { });
+});
+inputPhoneUnknownRejectRetryLimit?.addEventListener('input', () => {
+  markSettingsDirty(true);
+  scheduleSettingsAutoSave();
+});
+inputPhoneUnknownRejectRetryLimit?.addEventListener('blur', () => {
+  inputPhoneUnknownRejectRetryLimit.value = String(
+    normalizePhoneAddPhoneRetryLimitValue(
+      inputPhoneUnknownRejectRetryLimit.value,
+      2
+    )
+  );
+  saveSettings({ silent: true }).catch(() => { });
+});
+inputPhoneCountryFailureThreshold?.addEventListener('input', () => {
+  markSettingsDirty(true);
+  scheduleSettingsAutoSave();
+});
+inputPhoneCountryFailureThreshold?.addEventListener('blur', () => {
+  inputPhoneCountryFailureThreshold.value = String(
+    normalizePhoneCountryFailureThresholdValue(
+      inputPhoneCountryFailureThreshold.value,
+      DEFAULT_PHONE_COUNTRY_FAILURE_THRESHOLD
+    )
+  );
+  saveSettings({ silent: true }).catch(() => { });
+});
+inputPhoneProviderImmediateFallbackEnabled?.addEventListener('change', () => {
+  markSettingsDirty(true);
+  saveSettings({ silent: true }).catch(() => { });
+});
+inputPhoneProviderOrderStrict?.addEventListener('change', () => {
+  updatePhoneVerificationSettingsUI();
+  markSettingsDirty(true);
+  saveSettings({ silent: true }).catch(() => { });
+});
+inputPhoneSkipBlockedCountriesEnabled?.addEventListener('change', () => {
+  markSettingsDirty(true);
+  saveSettings({ silent: true }).catch(() => { });
+});
 selectHeroSmsCountry?.addEventListener('change', () => {
   syncHeroSmsFallbackSelectionOrderFromSelect({
     enforceMax: true,
@@ -13401,6 +13713,58 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       if (message.payload.phoneCodePollMaxRounds !== undefined && inputPhoneCodePollMaxRounds) {
         inputPhoneCodePollMaxRounds.value = String(
           normalizePhoneCodePollMaxRoundsValue(message.payload.phoneCodePollMaxRounds, DEFAULT_PHONE_CODE_POLL_MAX_ROUNDS)
+        );
+      }
+      if (message.payload.phoneUnableSendCodeRetryLimit !== undefined && inputPhoneUnableSendCodeRetryLimit) {
+        inputPhoneUnableSendCodeRetryLimit.value = String(
+          normalizePhoneAddPhoneRetryLimitValue(
+            message.payload.phoneUnableSendCodeRetryLimit,
+            DEFAULT_PHONE_UNABLE_SEND_CODE_RETRY_LIMIT
+          )
+        );
+      }
+      if (message.payload.phonePageRateLimitAction !== undefined && selectPhonePageRateLimitAction) {
+        selectPhonePageRateLimitAction.value = normalizePhonePageRateLimitActionValue(
+          message.payload.phonePageRateLimitAction
+        );
+      }
+      if (message.payload.phonePageRateLimitCooldownSeconds !== undefined && inputPhonePageRateLimitCooldownSeconds) {
+        inputPhonePageRateLimitCooldownSeconds.value = String(
+          normalizePhonePageRateLimitCooldownSecondsValue(
+            message.payload.phonePageRateLimitCooldownSeconds,
+            DEFAULT_PHONE_PAGE_RATE_LIMIT_COOLDOWN_SECONDS
+          )
+        );
+      }
+      if (message.payload.phoneUnknownAddPhoneRejectRetryLimit !== undefined && inputPhoneUnknownRejectRetryLimit) {
+        inputPhoneUnknownRejectRetryLimit.value = String(
+          normalizePhoneAddPhoneRetryLimitValue(
+            message.payload.phoneUnknownAddPhoneRejectRetryLimit,
+            2
+          )
+        );
+      }
+      if (message.payload.phoneCountryFailureThreshold !== undefined && inputPhoneCountryFailureThreshold) {
+        inputPhoneCountryFailureThreshold.value = String(
+          normalizePhoneCountryFailureThresholdValue(
+            message.payload.phoneCountryFailureThreshold,
+            DEFAULT_PHONE_COUNTRY_FAILURE_THRESHOLD
+          )
+        );
+      }
+      if (message.payload.phoneProviderImmediateFallbackEnabled !== undefined && inputPhoneProviderImmediateFallbackEnabled) {
+        inputPhoneProviderImmediateFallbackEnabled.checked = normalizePhoneProviderImmediateFallbackEnabledValue(
+          message.payload.phoneProviderImmediateFallbackEnabled
+        );
+      }
+      if (message.payload.phoneProviderOrderStrict !== undefined && inputPhoneProviderOrderStrict) {
+        inputPhoneProviderOrderStrict.checked = normalizePhoneProviderOrderStrictValue(
+          message.payload.phoneProviderOrderStrict
+        );
+      }
+      if (message.payload.phoneSkipBlockedCountriesEnabled !== undefined && inputPhoneSkipBlockedCountriesEnabled) {
+        inputPhoneSkipBlockedCountriesEnabled.checked = normalizePhoneSkipBlockedCountriesEnabledValue(
+          message.payload.phoneSkipBlockedCountriesEnabled
         );
       }
       if (
