@@ -189,6 +189,17 @@
       return String(value || '').trim().toLowerCase() === 'auto' ? 'auto' : 'manual';
     }
 
+    function normalizeSignupMethod(value = '', fallback = 'email') {
+      const normalized = String(value || '').trim().toLowerCase();
+      if (normalized === 'phone') {
+        return 'phone';
+      }
+      if (normalized === 'email') {
+        return 'email';
+      }
+      return String(fallback || '').trim().toLowerCase() === 'phone' ? 'phone' : 'email';
+    }
+
     function normalizeCostAmount(value) {
       const numeric = Number(value);
       if (!Number.isFinite(numeric) || numeric < 0) {
@@ -332,14 +343,17 @@
       const source = normalizeSource(record.source || (autoRunContext ? 'auto' : 'manual'));
       const computedFailureLabel = buildFailureLabel(finalStatus, failedStep, failureDetail);
       const rawFailureLabel = String(record.failureLabel || '').trim();
-      const normalizedCosts = finalStatus === 'success'
-        ? normalizeAccountRunCosts(record.costs || record.runCosts)
-        : null;
+      const normalizedCosts = normalizeAccountRunCosts(record.costs || record.runCosts);
+      const signupMethod = normalizeSignupMethod(
+        record.signupMethod || record.resolvedSignupMethod,
+        accountIdentifierType === 'phone' ? 'phone' : 'email'
+      );
 
       return {
         recordId: String(record.recordId || '').trim() || buildRecordId(accountIdentifier, accountIdentifierType),
         accountIdentifierType,
         accountIdentifier,
+        signupMethod,
         email,
         phoneNumber,
         password,
@@ -414,14 +428,17 @@
       const autoRunContext = source === 'auto' ? buildAutoRunContextFromState(state) : null;
       const retryCount = source === 'auto' ? getRetryCountFromState(state) : 0;
       const finishedAt = new Date().toISOString();
-      const normalizedCosts = finalStatus === 'success'
-        ? normalizeAccountRunCosts(state.runCosts)
-        : null;
+      const normalizedCosts = normalizeAccountRunCosts(state.runCosts);
+      const signupMethod = normalizeSignupMethod(
+        state.resolvedSignupMethod || state.signupMethod,
+        accountIdentifierType === 'phone' ? 'phone' : 'email'
+      );
 
       return {
         recordId: buildRecordId(accountIdentifier, accountIdentifierType),
         accountIdentifierType,
         accountIdentifier,
+        signupMethod,
         email,
         phoneNumber,
         password,

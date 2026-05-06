@@ -320,15 +320,15 @@ test('signup phone helper finalizes or cancels signup activation without clearin
   assert.deepStrictEqual(statusActions, ['6']);
   assert.equal(currentState.signupPhoneNumber, '66959916439');
   assert.equal(currentState.signupPhoneActivation, null);
-  assert.deepStrictEqual(currentState.signupPhoneCompletedActivation, {
-    activationId: 'signup-123',
-    phoneNumber: '66959916439',
-    provider: 'hero-sms',
-    serviceCode: 'dr',
-    countryId: 52,
-    successfulUses: 1,
-    maxUses: 3,
-  });
+  assert.equal(currentState.signupPhoneCompletedActivation.activationId, 'signup-123');
+  assert.equal(currentState.signupPhoneCompletedActivation.phoneNumber, '66959916439');
+  assert.equal(currentState.signupPhoneCompletedActivation.provider, 'hero-sms');
+  assert.equal(currentState.signupPhoneCompletedActivation.serviceCode, 'dr');
+  assert.equal(currentState.signupPhoneCompletedActivation.countryId, 52);
+  assert.equal(currentState.signupPhoneCompletedActivation.successfulUses, 1);
+  assert.equal(currentState.signupPhoneCompletedActivation.maxUses, 3);
+  assert.equal(currentState.signupPhoneCompletedActivation.costOutcome, 'consumed');
+  assert.ok(currentState.signupPhoneCompletedActivation.costSettledAt);
   assert.equal(currentState.signupPhoneVerificationPurpose, '');
   assert.equal(currentState.accountIdentifierType, 'phone');
   assert.equal(currentState.accountIdentifier, '66959916439');
@@ -538,16 +538,16 @@ test('signup phone helper completes login SMS verification by reusing the comple
   assert.equal(currentState.signupPhoneActivation, null);
   assert.equal(currentState.signupPhoneVerificationPurpose, '');
   assert.equal(currentState.currentPhoneVerificationCode, '');
-  assert.deepStrictEqual(currentState.signupPhoneCompletedActivation, {
-    activationId: 'signup-done',
-    phoneNumber: '66959916439',
-    provider: 'hero-sms',
-    serviceCode: 'dr',
-    countryId: 52,
-    countryLabel: 'Thailand',
-    successfulUses: 2,
-    maxUses: 3,
-  });
+  assert.equal(currentState.signupPhoneCompletedActivation.activationId, 'signup-done');
+  assert.equal(currentState.signupPhoneCompletedActivation.phoneNumber, '66959916439');
+  assert.equal(currentState.signupPhoneCompletedActivation.provider, 'hero-sms');
+  assert.equal(currentState.signupPhoneCompletedActivation.serviceCode, 'dr');
+  assert.equal(currentState.signupPhoneCompletedActivation.countryId, 52);
+  assert.equal(currentState.signupPhoneCompletedActivation.countryLabel, 'Thailand');
+  assert.equal(currentState.signupPhoneCompletedActivation.successfulUses, 2);
+  assert.equal(currentState.signupPhoneCompletedActivation.maxUses, 3);
+  assert.equal(currentState.signupPhoneCompletedActivation.costOutcome, 'consumed');
+  assert.ok(currentState.signupPhoneCompletedActivation.costSettledAt);
   assert.equal(currentState.currentPhoneActivation.activationId, 'add-phone-activation');
   assert.ok(setStateCalls.some((updates) => updates.signupPhoneVerificationPurpose === 'login'));
   assert.ok(!setStateCalls.some((updates) => Object.prototype.hasOwnProperty.call(updates, 'currentPhoneActivation')));
@@ -1787,6 +1787,131 @@ test('phone verification helper treats HeroSMS STATUS_WAIT_RETRY payload status 
   assert.equal(statusUpdates[0], 'STATUS_WAIT_RETRY:846171');
 });
 
+test('phone verification helper settles HeroSMS activation spend when SMS code is received', async () => {
+  const settlements = [];
+  const helpers = api.createPhoneVerificationHelpers({
+    addLog: async () => {},
+    appendAccountCostLedgerEntries: async () => [],
+    buildPhoneActivationCostLedgerEntry: () => null,
+    ensureStep8SignupPageReady: async () => {},
+    fetchImpl: async (url) => {
+      const parsedUrl = new URL(url);
+      const action = parsedUrl.searchParams.get('action');
+      if (action === 'getStatus') {
+        return {
+          ok: true,
+          text: async () => 'STATUS_OK:Your OpenAI code is 246810',
+        };
+      }
+      throw new Error(`Unexpected HeroSMS action: ${action}`);
+    },
+    getState: async () => ({
+      phoneSmsProvider: 'hero-sms',
+      heroSmsApiKey: 'demo-key',
+      heroSmsCountry: 52,
+      heroSmsServiceCode: 'dr',
+      heroSmsActivationRetryRounds: 1,
+    }),
+    settlePersistedPhoneActivationCostLedger: async (activation, options = {}) => {
+      settlements.push({ activation, options });
+      return [];
+    },
+    sendToContentScriptResilient: async () => ({}),
+    setState: async () => {},
+    sleepWithStop: async () => {},
+    throwIfStopped: () => {},
+  });
+
+  const code = await helpers.pollPhoneActivationCode(
+    {
+      phoneSmsProvider: 'hero-sms',
+      heroSmsApiKey: 'demo-key',
+      heroSmsCountry: 52,
+      heroSmsServiceCode: 'dr',
+      heroSmsActivationRetryRounds: 1,
+    },
+    {
+      activationId: '123456',
+      latestActivationId: '123456',
+      phoneNumber: '66800000000',
+      provider: 'hero-sms',
+      serviceCode: 'dr',
+      countryId: 52,
+      successfulUses: 0,
+      maxUses: 1,
+      costLedgerEntryKey: 'phone:hero-sms:123456:66800000000:acquire:1710000000000',
+    },
+    {
+      timeoutMs: 2000,
+      intervalMs: 1,
+      maxRounds: 1,
+    }
+  );
+
+  assert.equal(code, '246810');
+  assert.equal(settlements.length, 1);
+  assert.equal(settlements[0].options.outcome, 'consumed');
+});
+
+test('phone verification helper settles refundable activation spend when cancelling signup activation', async () => {
+  const settlements = [];
+  const helpers = api.createPhoneVerificationHelpers({
+    addLog: async () => {},
+    appendAccountCostLedgerEntries: async () => [],
+    buildPhoneActivationCostLedgerEntry: () => null,
+    ensureStep8SignupPageReady: async () => {},
+    fetchImpl: async (url) => {
+      const parsedUrl = new URL(url);
+      const action = parsedUrl.searchParams.get('action');
+      if (action === 'setStatus') {
+        assert.equal(parsedUrl.searchParams.get('status'), '8');
+        return {
+          ok: true,
+          text: async () => 'ACCESS_CANCEL',
+        };
+      }
+      throw new Error(`Unexpected HeroSMS action: ${action}`);
+    },
+    getState: async () => ({
+      phoneSmsProvider: 'hero-sms',
+      heroSmsApiKey: 'demo-key',
+      heroSmsCountry: 52,
+      heroSmsServiceCode: 'dr',
+    }),
+    settlePersistedPhoneActivationCostLedger: async (activation, options = {}) => {
+      settlements.push({ activation, options });
+      return [];
+    },
+    sendToContentScriptResilient: async () => ({}),
+    setState: async () => {},
+    sleepWithStop: async () => {},
+    throwIfStopped: () => {},
+  });
+
+  await helpers.cancelSignupPhoneActivation(
+    {
+      phoneSmsProvider: 'hero-sms',
+      heroSmsApiKey: 'demo-key',
+      heroSmsCountry: 52,
+      heroSmsServiceCode: 'dr',
+    },
+    {
+      activationId: '123456',
+      latestActivationId: '123456',
+      phoneNumber: '66800000000',
+      provider: 'hero-sms',
+      serviceCode: 'dr',
+      countryId: 52,
+      successfulUses: 0,
+      maxUses: 1,
+      costLedgerEntryKey: 'phone:hero-sms:123456:66800000000:acquire:1710000000000',
+    }
+  );
+
+  assert.equal(settlements.length, 1);
+  assert.equal(settlements[0].options.outcome, 'refunded');
+});
+
 test('phone verification helper reuses 5sim number via product-plus-number endpoint', async () => {
   const requests = [];
   const helpers = api.createPhoneVerificationHelpers({
@@ -2837,16 +2962,17 @@ test('phone verification helper reuses the current number first when code submis
     'setStatus:111111',
   ]);
   assert.deepStrictEqual(currentState.currentPhoneActivation, null);
-  assert.deepStrictEqual(currentState.reusablePhoneActivation, {
-    activationId: '111111',
-    latestActivationId: '111111',
-    phoneNumber: '66950000001',
-    provider: 'hero-sms',
-    serviceCode: 'dr',
-    countryId: 52,
-    successfulUses: 1,
-    maxUses: 3,
-  });
+  assert.equal(currentState.reusablePhoneActivation.activationId, '111111');
+  assert.equal(currentState.reusablePhoneActivation.latestActivationId, '111111');
+  assert.equal(currentState.reusablePhoneActivation.phoneNumber, '66950000001');
+  assert.equal(currentState.reusablePhoneActivation.provider, 'hero-sms');
+  assert.equal(currentState.reusablePhoneActivation.serviceCode, 'dr');
+  assert.equal(currentState.reusablePhoneActivation.countryId, 52);
+  assert.equal(currentState.reusablePhoneActivation.successfulUses, 1);
+  assert.equal(currentState.reusablePhoneActivation.maxUses, 3);
+  assert.equal(currentState.reusablePhoneActivation.price, 0.08);
+  assert.equal(currentState.reusablePhoneActivation.costOutcome, 'consumed');
+  assert.ok(currentState.reusablePhoneActivation.costSettledAt);
 });
 
 test('phone verification helper immediately replaces number when page says the phone number was already used', async () => {
@@ -4467,18 +4593,17 @@ test('phone verification helper replaces stale reusable pool entry when same pho
   assert.equal(currentState.reusablePhoneActivation.activationId, '222333');
   assert.equal(currentState.reusablePhoneActivation.latestActivationId, '222333');
   assert.equal(currentState.reusablePhoneActivation.successfulUses, 2);
-  assert.deepStrictEqual(currentState.phoneReusableActivationPool, [
-    {
-      activationId: '222333',
-      latestActivationId: '222333',
-      phoneNumber: '66959916439',
-      provider: 'hero-sms',
-      serviceCode: 'dr',
-      countryId: 52,
-      successfulUses: 2,
-      maxUses: 3,
-    },
-  ]);
+  assert.equal(currentState.phoneReusableActivationPool.length, 1);
+  assert.equal(currentState.phoneReusableActivationPool[0].activationId, '222333');
+  assert.equal(currentState.phoneReusableActivationPool[0].latestActivationId, '222333');
+  assert.equal(currentState.phoneReusableActivationPool[0].phoneNumber, '66959916439');
+  assert.equal(currentState.phoneReusableActivationPool[0].provider, 'hero-sms');
+  assert.equal(currentState.phoneReusableActivationPool[0].serviceCode, 'dr');
+  assert.equal(currentState.phoneReusableActivationPool[0].countryId, 52);
+  assert.equal(currentState.phoneReusableActivationPool[0].successfulUses, 2);
+  assert.equal(currentState.phoneReusableActivationPool[0].maxUses, 3);
+  assert.equal(currentState.phoneReusableActivationPool[0].costOutcome, 'consumed');
+  assert.ok(currentState.phoneReusableActivationPool[0].costSettledAt);
 });
 
 test('phone verification helper keeps maxUses behavior for reused V2 activations', async () => {

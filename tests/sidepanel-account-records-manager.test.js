@@ -464,6 +464,71 @@ test('account records manager keeps per-record cost lines but no longer renders 
   assert.match(list.innerHTML, /手机 0\.0500/);
 });
 
+test('account records manager shows signup method text and failed cost snapshot without extra sections', () => {
+  const source = fs.readFileSync('sidepanel/account-records-manager.js', 'utf8');
+  const windowObject = {};
+  const api = new Function('window', `${source}; return window.SidepanelAccountRecordsManager;`)(windowObject);
+
+  const list = createNode();
+  const meta = createNode();
+  const stats = createNode();
+  const manager = api.createAccountRecordsManager({
+    state: {
+      getLatestState: () => ({
+        accountRunHistory: [
+          {
+            recordId: 'failed-cost@example.com',
+            email: 'failed-cost@example.com',
+            password: 'secret',
+            finalStatus: 'failed',
+            finishedAt: '2026-05-06T07:00:00.000Z',
+            retryCount: 1,
+            failureLabel: '手机号码验证失败',
+            signupMethod: 'email',
+            costs: {
+              mail: { provider: 'hotmail007', amount: 0.02, currency: 'USD', status: 'exact' },
+              total: { amount: 0.02, currency: 'USD', status: 'exact' },
+            },
+          },
+        ],
+      }),
+      syncLatestState() {},
+    },
+    dom: {
+      accountRecordsList: list,
+      accountRecordsMeta: meta,
+      accountRecordsOverlay: createNode(),
+      accountRecordsPageLabel: createNode(),
+      accountRecordsStats: stats,
+      btnAccountRecordsNext: createNode(),
+      btnAccountRecordsPrev: createNode(),
+      btnClearAccountRecords: createNode(),
+      btnClearAccountCostLedger: createNode(),
+      btnCloseAccountRecords: createNode(),
+      btnDeleteSelectedAccountRecords: createNode(),
+      btnOpenAccountRecords: createNode(),
+      btnToggleAccountRecordsSelection: createNode(),
+    },
+    helpers: {
+      escapeHtml: (value) => String(value || ''),
+    },
+    runtime: {
+      sendMessage: async () => ({}),
+    },
+    constants: {
+      displayTimeZone: 'Asia/Shanghai',
+      pageSize: 10,
+    },
+  });
+
+  manager.render();
+
+  assert.match(list.innerHTML, /邮箱注册/);
+  assert.match(list.innerHTML, /总成本/);
+  assert.match(list.innerHTML, /邮箱 0\.0200 USD/);
+  assert.doesNotMatch(list.innerHTML, /account-record-item-signup-method/);
+});
+
 test('account records manager displays phone-only records with account identifier fallback', () => {
   const source = fs.readFileSync('sidepanel/account-records-manager.js', 'utf8');
   const windowObject = {};

@@ -163,6 +163,12 @@
         : primaryIdentifier;
     }
 
+    function getSignupMethodLabel(record = {}) {
+      return String(record?.signupMethod || '').trim().toLowerCase() === 'phone'
+        ? '手机号注册'
+        : '邮箱注册';
+    }
+
     function getAccountRunRecords(currentState = state.getLatestState()) {
       return (Array.isArray(currentState?.accountRunHistory) ? currentState.accountRunHistory : [])
         .filter((item) => item && typeof item === 'object')
@@ -467,6 +473,16 @@
 
     function getFilterConfig(filterKey = activeFilter) {
       return FILTER_CONFIG[filterKey] || FILTER_CONFIG.all;
+    }
+
+    function getRecordSummaryText(record = {}) {
+      const signupMethodLabel = getSignupMethodLabel(record);
+      const failureLabel = String(record.failureLabel || '').trim();
+      if (record.finalStatus === 'success') {
+        return `${signupMethodLabel} · 流程完成`;
+      }
+
+      return `${signupMethodLabel} · ${failureLabel || '流程失败'}`;
     }
 
     function getFilteredRecords(records = []) {

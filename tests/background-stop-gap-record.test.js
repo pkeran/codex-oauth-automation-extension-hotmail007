@@ -55,11 +55,14 @@ test('generic stopped record resolves to next unfinished step during execution g
     extractFunction('resolveAccountRunRecordStatusForStop'),
     extractFunction('extractStoppedStepFromRecordStatus'),
     extractFunction('resolveAccountRunRecordReasonForStop'),
+    extractFunction('buildRunCostSnapshotFromState'),
     extractFunction('appendAndBroadcastAccountRunRecord'),
   ].join('\n');
 
 const api = new Function(`
 const STEP_IDS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+const HOTMAIL_PROVIDER = 'hotmail';
+const LUCKMAIL_PROVIDER = 'luckmail-api';
 const STOP_ERROR_MESSAGE = '流程已被用户停止。';
 const DEFAULT_STATE = {
   stepStatuses: Object.fromEntries(STEP_IDS.map((step) => [step, 'pending'])),
@@ -74,6 +77,18 @@ const accountRunHistoryHelpers = {
 async function broadcastAccountRunHistoryUpdate() {}
 async function getState() {
   return {};
+}
+function isHotmailProvider(state) {
+  return String(state?.mailProvider || '').trim() === HOTMAIL_PROVIDER;
+}
+function isLuckmailProvider(state) {
+  return String(state?.mailProvider || '').trim() === LUCKMAIL_PROVIDER;
+}
+function findHotmailAccount(accounts, accountId) {
+  return (Array.isArray(accounts) ? accounts : []).find((account) => account?.id === accountId) || null;
+}
+function getCurrentLuckmailPurchase(state = {}) {
+  return state.currentLuckmailPurchase || null;
 }
 ${bundle}
 return {
@@ -115,7 +130,10 @@ return {
   await api.appendAndBroadcastAccountRunRecord('stopped', state, '流程已被用户停止。');
   assert.deepStrictEqual(api.getCaptured(), {
     status: 'step7_stopped',
-    state,
+    state: {
+      ...state,
+      runCosts: null,
+    },
     reason: '步骤 7 已被用户停止。',
   });
 });

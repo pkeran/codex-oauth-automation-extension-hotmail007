@@ -15,6 +15,7 @@
       sendToContentScript,
       sendToContentScriptResilient,
       setState,
+      settlePersistedPhoneActivationCostLedger = async () => [],
       broadcastDataUpdate = null,
       sleepWithStop,
       throwIfStopped,
@@ -248,6 +249,11 @@
         return PHONE_SMS_PROVIDER_NEXSMS;
       }
       return PHONE_SMS_PROVIDER_HERO;
+    }
+
+    function isPhoneActivationRefundableProvider(value = '') {
+      const normalized = normalizePhoneSmsProvider(value);
+      return normalized === PHONE_SMS_PROVIDER_HERO || normalized === PHONE_SMS_PROVIDER_5SIM;
     }
 
     function isFiveSimProvider(state = {}) {
@@ -1164,6 +1170,7 @@
       const rawCountryId = record.countryId ?? record.country;
       const fallbackCountryId = provider === PHONE_SMS_PROVIDER_FIVE_SIM ? 'england' : HERO_SMS_COUNTRY_ID;
       const expiresAt = normalizeTimestampMs(record.expiresAt);
+      const acquiredAt = normalizeTimestampMs(record.acquiredAt);
       const serviceCode = String(
         record.serviceCode
         || (
@@ -1190,6 +1197,15 @@
         ...(countryLabel ? { countryLabel } : {}),
         successfulUses: normalizeUseCount(record.successfulUses),
         maxUses: Math.max(1, Math.floor(Number(record.maxUses) || DEFAULT_PHONE_NUMBER_MAX_USES)),
+        ...(Number.isFinite(Number(record.price)) ? { price: Number(record.price) } : {}),
+        ...(record?.priceCurrency !== undefined ? { priceCurrency: String(record.priceCurrency || '').trim() } : {}),
+        ...(record?.priceStatus !== undefined ? { priceStatus: String(record.priceStatus || '').trim() } : {}),
+        ...(acquiredAt > 0 ? { acquiredAt } : {}),
+        ...(String(record?.costOutcome || '').trim() ? { costOutcome: String(record.costOutcome || '').trim().toLowerCase() } : {}),
+        ...(String(record?.costLedgerEntryKey || record?.latestCostLedgerEntryKey || '').trim()
+          ? { costLedgerEntryKey: String(record.costLedgerEntryKey || record.latestCostLedgerEntryKey || '').trim() }
+          : {}),
+        ...(String(record?.costSettledAt || '').trim() ? { costSettledAt: String(record.costSettledAt || '').trim() } : {}),
         ...(expiresAt > 0 ? { expiresAt } : {}),
         ...(statusAction ? { statusAction } : {}),
       };
@@ -1331,6 +1347,26 @@
         trackedActivation.acquiredAt = acquiredAt;
       }
 
+      const costOutcome = String(activation?.costOutcome || options.costOutcome || '').trim().toLowerCase();
+      if (costOutcome) {
+        trackedActivation.costOutcome = costOutcome;
+      }
+
+      const costLedgerEntryKey = String(
+        activation?.costLedgerEntryKey
+        || activation?.latestCostLedgerEntryKey
+        || options.costLedgerEntryKey
+        || ''
+      ).trim();
+      if (costLedgerEntryKey) {
+        trackedActivation.costLedgerEntryKey = costLedgerEntryKey;
+      }
+
+      const costSettledAt = String(activation?.costSettledAt || options.costSettledAt || '').trim();
+      if (costSettledAt) {
+        trackedActivation.costSettledAt = costSettledAt;
+      }
+
       return trackedActivation;
     }
 
@@ -1346,6 +1382,73 @@
       await setState(updates);
       if (typeof broadcastDataUpdate === 'function') {
         broadcastDataUpdate(updates);
+      }
+    }
+
+    function applyActivationCostRuntimeMetadata(target, source = {}) {
+      if (!target || typeof target !== 'object' || Array.isArray(target)) {
+        return target;
+      }
+
+      const tracked = buildTrackedActivationSnapshot(source, {
+        fallbackPrice: source?.price,
+        fallbackPriceCurrency: source?.priceCurrency,
+        fallbackPriceStatus: source?.priceStatus,
+        acquiredAt: source?.acquiredAt,
+        costOutcome: source?.costOutcome,
+        costLedgerEntryKey: source?.costLedgerEntryKey,
+        costSettledAt: source?.costSettledAt,
+      });
+      if (!tracked) {
+        return target;
+      }
+
+      if (tracked.price !== undefined) {
+        target.price = tracked.price;
+      }
+      if (tracked.priceCurrency !== undefined) {
+        target.priceCurrency = tracked.priceCurrency;
+      }
+      if (tracked.priceStatus !== undefined) {
+        target.priceStatus = tracked.priceStatus;
+      }
+      if (tracked.acquiredAt !== undefined) {
+        target.acquiredAt = tracked.acquiredAt;
+      }
+      if (tracked.costOutcome) {
+        target.costOutcome = tracked.costOutcome;
+      }
+      if (tracked.costLedgerEntryKey) {
+        target.costLedgerEntryKey = tracked.costLedgerEntryKey;
+      }
+      if (tracked.costSettledAt) {
+        target.costSettledAt = tracked.costSettledAt;
+      }
+      return target;
+    }
+
+    async function syncActivationCostStateToRuntime(activation) {
+      const trackedActivation = buildTrackedActivationSnapshot(activation);
+      if (!trackedActivation) {
+        return;
+      }
+
+      const latestState = await getState().catch(() => ({}));
+      const updates = {};
+      const stateKeys = [
+        PHONE_ACTIVATION_STATE_KEY,
+        'signupPhoneActivation',
+      ];
+
+      stateKeys.forEach((stateKey) => {
+        const candidate = buildTrackedActivationSnapshot(latestState?.[stateKey]);
+        if (candidate && isSameActivation(candidate, trackedActivation)) {
+          updates[stateKey] = trackedActivation;
+        }
+      });
+
+      if (Object.keys(updates).length) {
+        await setPhoneRuntimeState(updates);
       }
     }
 
@@ -1365,7 +1468,33 @@
       if (!ledgerEntry) {
         return [];
       }
-      return appendAccountCostLedgerEntries([ledgerEntry]);
+      trackedActivation.costLedgerEntryKey = ledgerEntry.entryKey;
+      trackedActivation.costOutcome = String(ledgerEntry.outcome || '').trim().toLowerCase() || 'consumed';
+      if (ledgerEntry.settledAt) {
+        trackedActivation.costSettledAt = String(ledgerEntry.settledAt || '').trim();
+      }
+      applyActivationCostRuntimeMetadata(activation, trackedActivation);
+      const ledger = await appendAccountCostLedgerEntries([ledgerEntry]);
+      await syncActivationCostStateToRuntime(trackedActivation).catch(() => {});
+      return ledger;
+    }
+
+    async function settlePhoneActivationSpend(activation, options = {}) {
+      const trackedActivation = buildTrackedActivationSnapshot(activation, options);
+      if (!trackedActivation) {
+        return [];
+      }
+
+      trackedActivation.costOutcome = String(options.outcome || 'consumed').trim().toLowerCase() || 'consumed';
+      trackedActivation.costSettledAt = String(options.settledAt || new Date().toISOString()).trim();
+      applyActivationCostRuntimeMetadata(activation, trackedActivation);
+      const ledger = await settlePersistedPhoneActivationCostLedger(trackedActivation, {
+        ...options,
+        outcome: trackedActivation.costOutcome,
+        settledAt: trackedActivation.costSettledAt,
+      });
+      await syncActivationCostStateToRuntime(trackedActivation).catch(() => {});
+      return ledger;
     }
 
     function normalizeActivationFallback(record) {
@@ -3765,10 +3894,12 @@
         const provider = getFiveSimProviderForState(state);
         if (provider) {
           await provider.finishActivation(state, activation);
+          await settlePhoneActivationSpend(activation, { outcome: 'consumed' }).catch(() => []);
           return;
         }
       }
       await setPhoneActivationStatus(state, activation, 6, 'HeroSMS setStatus(6)');
+      await settlePhoneActivationSpend(activation, { outcome: 'consumed' }).catch(() => []);
     }
 
     async function cancelPhoneActivation(state = {}, activation) {
@@ -3777,10 +3908,14 @@
           const provider = getFiveSimProviderForState(state);
           if (provider) {
             await provider.cancelActivation(state, activation);
+            await settlePhoneActivationSpend(activation, { outcome: 'refunded' }).catch(() => []);
             return;
           }
         }
         await setPhoneActivationStatus(state, activation, 8, 'HeroSMS setStatus(8)');
+        if (isPhoneActivationRefundableProvider(normalizePhoneSmsProvider(activation?.provider || state?.phoneSmsProvider))) {
+          await settlePhoneActivationSpend(activation, { outcome: 'refunded' }).catch(() => []);
+        }
       } catch (_) {
         // Best-effort cleanup.
       }
@@ -3792,10 +3927,14 @@
           const provider = getFiveSimProviderForState(state);
           if (provider) {
             await provider.banActivation(state, activation);
+            await settlePhoneActivationSpend(activation, { outcome: 'refunded' }).catch(() => []);
             return;
           }
         }
         await setPhoneActivationStatus(state, activation, 8, 'HeroSMS setStatus(8)');
+        if (isPhoneActivationRefundableProvider(normalizePhoneSmsProvider(activation?.provider || state?.phoneSmsProvider))) {
+          await settlePhoneActivationSpend(activation, { outcome: 'refunded' }).catch(() => []);
+        }
       } catch (_) {
         // Best-effort cleanup.
       }
@@ -3926,6 +4065,7 @@
             .map((smsItem) => extractVerificationCode(smsItem?.code || smsItem?.text || smsItem?.message || ''))
             .find(Boolean);
           if (smsCode) {
+            await settlePhoneActivationSpend(normalizedActivation, { outcome: 'consumed' }).catch(() => []);
             return smsCode;
           }
 
@@ -3944,7 +4084,12 @@
             continue;
           }
 
-          if (/^(CANCELED|CANCELLED|BANNED|FINISHED|EXPIRED|TIMEOUT)$/i.test(statusText)) {
+          if (/^(CANCELED|CANCELLED|BANNED|EXPIRED|TIMEOUT)$/i.test(statusText)) {
+            await settlePhoneActivationSpend(normalizedActivation, { outcome: 'refunded' }).catch(() => []);
+            throw new Error(`5sim activation ended before receiving SMS: ${statusText}`);
+          }
+          if (/^FINISHED$/i.test(statusText)) {
+            await settlePhoneActivationSpend(normalizedActivation, { outcome: 'consumed' }).catch(() => []);
             throw new Error(`5sim activation ended before receiving SMS: ${statusText}`);
           }
 
@@ -3997,6 +4142,7 @@
           if (isNexSmsSuccessPayload(payload)) {
             const directCode = extractVerificationCode(payload?.data?.code || payload?.data?.text || '');
             if (directCode) {
+              await settlePhoneActivationSpend(normalizedActivation, { outcome: 'consumed' }).catch(() => []);
               return directCode;
             }
             await sleepWithStop(intervalMs);
@@ -4058,6 +4204,7 @@
           )
         );
         if (v2Code) {
+          await settlePhoneActivationSpend(normalizedActivation, { outcome: 'consumed' }).catch(() => []);
           return v2Code;
         }
 
@@ -4065,6 +4212,7 @@
         if (okMatch) {
           const extractedCode = extractVerificationCode(okMatch[1] || '');
           if (extractedCode) {
+            await settlePhoneActivationSpend(normalizedActivation, { outcome: 'consumed' }).catch(() => []);
             return extractedCode;
           }
           await sleepWithStop(intervalMs);
@@ -4082,6 +4230,7 @@
         }
 
         if (/^STATUS_CANCEL$/i.test(text)) {
+          await settlePhoneActivationSpend(normalizedActivation, { outcome: 'refunded' }).catch(() => []);
           throw new Error('HeroSMS activation was cancelled before the SMS arrived.');
         }
 

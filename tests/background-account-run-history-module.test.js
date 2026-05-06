@@ -75,6 +75,7 @@ test('account run history helper upgrades old records, keeps stopped items and s
     recordId: 'latest@example.com',
     accountIdentifierType: 'email',
     accountIdentifier: 'latest@example.com',
+    signupMethod: 'email',
     email: 'latest@example.com',
     phoneNumber: '',
     password: 'secret',
@@ -165,6 +166,7 @@ test('account run history helper accepts phone-only records without forcing emai
     recordId: 'phone:+6612345',
     accountIdentifierType: 'phone',
     accountIdentifier: '+6612345',
+    signupMethod: 'phone',
     email: '',
     phoneNumber: '+6612345',
     password: '',
@@ -281,6 +283,87 @@ test('account run history helper keeps success cost snapshot for panel statistic
     total: {
       amount: 0.07,
       currency: '',
+      status: 'exact',
+    },
+  });
+});
+
+test('account run history helper preserves signup method and failed cost snapshot', () => {
+  const source = fs.readFileSync('background/account-run-history.js', 'utf8');
+  const globalScope = {};
+  const api = new Function('self', `${source}; return self.MultiPageBackgroundAccountRunHistory;`)(globalScope);
+
+  const helpers = api.createAccountRunHistoryHelpers({
+    chrome: { storage: { local: { get: async () => ({}), set: async () => {} } } },
+    getState: async () => ({}),
+    normalizeAccountRunHistoryHelperBaseUrl: () => '',
+  });
+
+  const record = helpers.buildAccountRunHistoryRecord({
+    email: 'failed-cost@example.com',
+    password: 'secret',
+    signupMethod: 'email',
+    runCosts: {
+      mail: {
+        provider: 'hotmail007',
+        amount: 0.02,
+        currency: 'USD',
+        status: 'exact',
+      },
+      total: {
+        amount: 0.02,
+        currency: 'USD',
+        status: 'exact',
+      },
+    },
+  }, 'step9_failed', 'Step 9: phone verification failed.');
+
+  assert.equal(record.signupMethod, 'email');
+  assert.deepStrictEqual(record.costs, {
+    mail: {
+      provider: 'hotmail007',
+      amount: 0.02,
+      currency: 'USD',
+      status: 'exact',
+    },
+    total: {
+      amount: 0.02,
+      currency: 'USD',
+      status: 'exact',
+    },
+  });
+
+  const normalized = helpers.normalizeAccountRunHistoryRecord({
+    ...record,
+    signupMethod: 'phone',
+    costs: {
+      phone: {
+        provider: 'hero-sms',
+        countryId: 52,
+        amount: '0.05',
+        currency: 'USD',
+        status: 'exact',
+      },
+      total: {
+        amount: '0.05',
+        currency: 'USD',
+        status: 'exact',
+      },
+    },
+  });
+
+  assert.equal(normalized.signupMethod, 'phone');
+  assert.deepStrictEqual(normalized.costs, {
+    phone: {
+      provider: 'hero-sms',
+      countryId: 52,
+      amount: 0.05,
+      currency: 'USD',
+      status: 'exact',
+    },
+    total: {
+      amount: 0.05,
+      currency: 'USD',
       status: 'exact',
     },
   });

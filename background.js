@@ -3518,6 +3518,11 @@ function buildRunCostSnapshotFromState(state = {}) {
       return null;
     }
 
+    const costOutcome = String(activation?.costOutcome || '').trim().toLowerCase();
+    if (costOutcome && costOutcome !== 'consumed') {
+      return null;
+    }
+
     const amount = normalizeAmount(activation.price);
     if (amount === null) {
       return null;
@@ -3559,6 +3564,30 @@ function buildRunCostSnapshotFromState(state = {}) {
   };
 }
 
+function normalizeCostOutcome(value = '', fallback = 'consumed') {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'pending' || normalized === 'consumed' || normalized === 'refunded') {
+    return normalized;
+  }
+  return String(fallback || 'consumed').trim().toLowerCase() === 'pending'
+    ? 'pending'
+    : (String(fallback || 'consumed').trim().toLowerCase() === 'refunded' ? 'refunded' : 'consumed');
+}
+
+function isPhoneActivationRefundableProvider(provider = '') {
+  const normalized = String(provider || '').trim().toLowerCase();
+  return normalized === 'hero-sms' || normalized === '5sim';
+}
+
+function resolvePhoneActivationInitialLedgerOutcome(activation = {}, options = {}) {
+  const provider = String(activation?.provider || '').trim().toLowerCase();
+  const eventType = String(options?.eventType || 'acquire').trim().toLowerCase() || 'acquire';
+  if ((eventType === 'acquire' || eventType === 'reactivate') && isPhoneActivationRefundableProvider(provider)) {
+    return 'pending';
+  }
+  return 'consumed';
+}
+
 function normalizeCostLedgerEntry(entry = {}) {
   function normalizeAmount(value) {
     const numeric = Number(value);
@@ -3577,8 +3606,9 @@ function normalizeCostLedgerEntry(entry = {}) {
   const status = String(entry?.status || '').trim().toLowerCase() === 'estimated'
     ? 'estimated'
     : 'exact';
-  const outcome = String(entry?.outcome || '').trim().toLowerCase() || 'consumed';
+  const outcome = normalizeCostOutcome(entry?.outcome, 'consumed');
   const createdAt = String(entry?.createdAt || '').trim();
+  const settledAt = String(entry?.settledAt || '').trim();
   const normalized = {
     entryKey,
     amount,
@@ -3586,6 +3616,7 @@ function normalizeCostLedgerEntry(entry = {}) {
     status,
     outcome,
     createdAt: createdAt || new Date().toISOString(),
+    ...(settledAt ? { settledAt } : {}),
   };
 
   const passthroughKeys = [
@@ -3600,6 +3631,7 @@ function normalizeCostLedgerEntry(entry = {}) {
     'latestActivationId',
     'phoneNumber',
     'countryId',
+    'eventType',
     'recordId',
     'accountIdentifierType',
     'accountIdentifier',
@@ -3758,12 +3790,80 @@ function buildPhoneActivationCostLedgerEntry(activation = {}, options = {}) {
     amount,
     currency: String(activation?.priceCurrency || '').trim(),
     status: String(activation?.priceStatus || '').trim() || 'exact',
-    outcome: 'consumed',
+    outcome: resolvePhoneActivationInitialLedgerOutcome(activation, options),
     createdAt: new Date(acquiredAt).toISOString(),
+    eventType,
     accountIdentifierType: String(options.accountIdentifierType || '').trim(),
     accountIdentifier: String(options.accountIdentifier || '').trim(),
     email: String(options.email || '').trim(),
   });
+}
+
+function settlePhoneActivationCostLedgerEntries(entries = [], activation = {}, options = {}) {
+  const normalizedEntries = normalizeAccountCostLedger(entries);
+  if (!normalizedEntries.length) {
+    return normalizedEntries;
+  }
+
+  const preferredEntryKey = String(
+    options?.entryKey
+    || activation?.costLedgerEntryKey
+    || activation?.latestCostLedgerEntryKey
+    || ''
+  ).trim();
+  const latestActivationId = String(
+    activation?.latestActivationId
+    || activation?.activationId
+    || ''
+  ).trim();
+  const activationId = String(activation?.activationId || '').trim();
+  const provider = String(activation?.provider || '').trim().toLowerCase();
+  const phoneNumber = String(activation?.phoneNumber || '').trim();
+  const normalizedPhone = phoneNumber.replace(/[^\d]/g, '') || phoneNumber;
+  const nextOutcome = normalizeCostOutcome(options?.outcome, 'consumed');
+  const settledAt = String(options?.settledAt || new Date().toISOString()).trim();
+
+  const preferredIndex = preferredEntryKey
+    ? normalizedEntries.findIndex((entry) => String(entry.entryKey || '').trim() === preferredEntryKey)
+    : -1;
+  let matchIndex = preferredIndex;
+
+  if (matchIndex < 0) {
+    matchIndex = normalizedEntries.findIndex((entry) => {
+      if (normalizeCostOutcome(entry?.outcome, 'consumed') !== 'pending') {
+        return false;
+      }
+      const entryProvider = String(entry?.provider || '').trim().toLowerCase();
+      const entryLatestActivationId = String(entry?.latestActivationId || entry?.activationId || '').trim();
+      const entryActivationId = String(entry?.activationId || '').trim();
+      const entryPhone = String(entry?.phoneNumber || '').trim();
+      const entryNormalizedPhone = entryPhone.replace(/[^\d]/g, '') || entryPhone;
+      return entryProvider === provider
+        && entryNormalizedPhone === normalizedPhone
+        && (
+          (latestActivationId && entryLatestActivationId === latestActivationId)
+          || (activationId && entryActivationId === activationId)
+        );
+    });
+  }
+
+  if (matchIndex < 0) {
+    return normalizedEntries;
+  }
+
+  const matchedEntry = normalizedEntries[matchIndex];
+  const updatedEntry = normalizeCostLedgerEntry({
+    ...matchedEntry,
+    outcome: nextOutcome,
+    settledAt,
+  });
+  if (!updatedEntry) {
+    return normalizedEntries;
+  }
+
+  const nextEntries = [...normalizedEntries];
+  nextEntries[matchIndex] = updatedEntry;
+  return normalizeAccountCostLedger(nextEntries);
 }
 
 async function getPersistedAccountCostLedger() {
@@ -3801,6 +3901,17 @@ async function appendAccountCostLedgerEntries(entries = []) {
     ...currentLedger,
     ...normalizedEntries,
   ]);
+  await setPersistedAccountCostLedger(nextLedger);
+  broadcastDataUpdate({ accountCostLedger: nextLedger });
+  return nextLedger;
+}
+
+async function settlePersistedPhoneActivationCostLedger(activation = {}, options = {}) {
+  const currentLedger = await getPersistedAccountCostLedger();
+  const nextLedger = settlePhoneActivationCostLedgerEntries(currentLedger, activation, options);
+  if (JSON.stringify(nextLedger) === JSON.stringify(currentLedger)) {
+    return currentLedger;
+  }
   await setPersistedAccountCostLedger(nextLedger);
   broadcastDataUpdate({ accountCostLedger: nextLedger });
   return nextLedger;
@@ -10343,12 +10454,10 @@ async function appendAndBroadcastAccountRunRecord(status, stateOverride = null, 
     : latestState;
   const resolvedStatus = resolveAccountRunRecordStatusForStop(status, state);
   const resolvedReason = resolveAccountRunRecordReasonForStop(resolvedStatus, reason);
-  const recordState = resolvedStatus === 'success'
-    ? {
-      ...state,
-      runCosts: buildRunCostSnapshotFromState(state),
-    }
-    : state;
+  const recordState = {
+    ...state,
+    runCosts: buildRunCostSnapshotFromState(state),
+  };
   const record = await accountRunHistoryHelpers.appendAccountRunRecord(resolvedStatus, recordState, resolvedReason);
   if (!record) {
     return null;
@@ -11432,6 +11541,7 @@ const phoneVerificationHelpers = self.MultiPageBackgroundPhoneVerification?.crea
   sendToContentScript,
   sendToContentScriptResilient,
   setState,
+  settlePersistedPhoneActivationCostLedger,
   sleepWithStop,
   throwIfStopped,
   createFiveSimProvider: self.PhoneSmsFiveSimProvider?.createProvider,
