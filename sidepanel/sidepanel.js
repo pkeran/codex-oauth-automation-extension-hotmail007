@@ -385,6 +385,18 @@ const inputVerificationResendCount = document.getElementById('input-verification
 const rowPhoneVerificationEnabled = document.getElementById('row-phone-verification-enabled');
 const btnTogglePhoneVerificationSection = document.getElementById('btn-toggle-phone-verification-section');
 const rowPhoneVerificationFold = document.getElementById('row-phone-verification-fold');
+const phoneVerificationGlobalPanel = document.getElementById('phone-verification-global-panel');
+const phoneVerificationProviderPanel = document.getElementById('phone-verification-provider-panel');
+const phoneVerificationFlowPanel = document.getElementById('phone-verification-flow-panel');
+const phoneVerificationRecoveryPanel = document.getElementById('phone-verification-recovery-panel');
+const phoneVerificationRuntimePanel = document.getElementById('phone-verification-runtime-panel');
+const btnTogglePhoneFlowPanel = document.getElementById('btn-toggle-phone-flow-panel');
+const btnTogglePhoneRecoveryPanel = document.getElementById('btn-toggle-phone-recovery-panel');
+const btnTogglePhoneRuntimePanel = document.getElementById('btn-toggle-phone-runtime-panel');
+const rowPhoneFlowFold = document.getElementById('row-phone-flow-fold');
+const rowPhoneRecoveryFold = document.getElementById('row-phone-recovery-fold');
+const rowPhoneRuntimeFold = document.getElementById('row-phone-runtime-fold');
+const displayPhoneSmsStrategySummary = document.getElementById('display-phone-sms-strategy-summary');
 const inputPhoneVerificationEnabled = document.getElementById('input-phone-verification-enabled');
 const rowSignupMethod = document.getElementById('row-signup-method');
 const rowSignupPhone = document.getElementById('row-signup-phone');
@@ -758,6 +770,9 @@ const AUTO_RUN_PLUS_RISK_PROMPT_DISMISSED_STORAGE_KEY = 'multipage-auto-run-plus
 const PLUS_CONTRIBUTION_PROMPT_LEDGER_STORAGE_KEY = 'multipage-plus-contribution-prompt-ledger';
 const PHONE_VERIFICATION_SECTION_EXPANDED_STORAGE_KEY = 'multipage-phone-verification-section-expanded';
 let phoneVerificationSectionExpanded = false;
+let phoneVerificationFlowExpanded = false;
+let phoneVerificationRecoveryExpanded = false;
+let phoneVerificationRuntimeExpanded = false;
 
 function readPhoneVerificationSectionExpanded() {
   try {
@@ -796,6 +811,39 @@ function initPhoneVerificationSectionExpandedState() {
   if (typeof updatePhoneVerificationSettingsUI === 'function') {
     updatePhoneVerificationSettingsUI();
   }
+}
+
+function setPhoneVerificationFlowExpanded(expanded) {
+  phoneVerificationFlowExpanded = Boolean(expanded);
+  if (typeof updatePhoneVerificationSettingsUI === 'function') {
+    updatePhoneVerificationSettingsUI();
+  }
+}
+
+function togglePhoneVerificationFlowExpanded() {
+  setPhoneVerificationFlowExpanded(!phoneVerificationFlowExpanded);
+}
+
+function setPhoneVerificationRecoveryExpanded(expanded) {
+  phoneVerificationRecoveryExpanded = Boolean(expanded);
+  if (typeof updatePhoneVerificationSettingsUI === 'function') {
+    updatePhoneVerificationSettingsUI();
+  }
+}
+
+function togglePhoneVerificationRecoveryExpanded() {
+  setPhoneVerificationRecoveryExpanded(!phoneVerificationRecoveryExpanded);
+}
+
+function setPhoneVerificationRuntimeExpanded(expanded) {
+  phoneVerificationRuntimeExpanded = Boolean(expanded);
+  if (typeof updatePhoneVerificationSettingsUI === 'function') {
+    updatePhoneVerificationSettingsUI();
+  }
+}
+
+function togglePhoneVerificationRuntimeExpanded() {
+  setPhoneVerificationRuntimeExpanded(!phoneVerificationRuntimeExpanded);
 }
 
 function getStepDefinitionsForMode(plusModeEnabled = false, options = {}) {
@@ -3853,6 +3901,51 @@ function updatePhoneSmsProviderOrderSummary(order = []) {
       ? `${normalized.map((provider) => getPhoneSmsProviderLabel(provider)).join(' / ')} (${normalized.length}/3)`
       : `未选择 (0/3)`;
   }
+}
+
+function buildPhoneSmsStrategySummaryText(options = {}) {
+  const state = options?.state || latestState || {};
+  const providerOrder = normalizePhoneSmsProviderOrderValue(
+    Array.isArray(options?.providerOrder) ? options.providerOrder : resolveNormalizedProviderOrderForRuntime(state),
+    []
+  );
+  const providerSummary = providerOrder.length
+    ? providerOrder.map((provider) => getPhoneSmsProviderLabel(provider)).join(' -> ')
+    : '未设置';
+  const provider = normalizePhoneSmsProviderValue(options?.provider || getSelectedPhoneSmsProvider());
+  let countrySummary = '';
+
+  if (provider === PHONE_SMS_PROVIDER_FIVE_SIM) {
+    const selectedCountries = typeof getSelectedFiveSimCountries === 'function'
+      ? getSelectedFiveSimCountries()
+      : [];
+    countrySummary = selectedCountries
+      .map((entry) => String(entry?.label || entry?.code || entry?.id || '').trim())
+      .filter(Boolean)
+      .join(' -> ');
+  } else if (provider === PHONE_SMS_PROVIDER_NEXSMS) {
+    const selectedCountries = typeof getSelectedNexSmsCountries === 'function'
+      ? getSelectedNexSmsCountries()
+      : [];
+    countrySummary = selectedCountries
+      .map((entry) => String(entry?.label || entry?.id || '').trim())
+      .filter(Boolean)
+      .join(' -> ');
+  } else {
+    const selectedCountries = typeof syncHeroSmsFallbackSelectionOrderFromSelect === 'function'
+      ? syncHeroSmsFallbackSelectionOrderFromSelect({
+        enforceMax: true,
+        ensureDefault: false,
+        showLimitToast: false,
+      })
+      : [];
+    countrySummary = selectedCountries
+      .map((entry) => String(entry?.label || entry?.id || '').trim())
+      .filter(Boolean)
+      .join(' -> ');
+  }
+
+  return countrySummary ? `${providerSummary} | ${countrySummary}` : providerSummary;
 }
 
 function resolveNormalizedProviderOrderForRuntime(state = {}) {
@@ -7137,7 +7230,7 @@ function updateSignupMethodUI(options = {}) {
   }
 }
 
-function updatePhoneVerificationSettingsUI() {
+function updatePhoneVerificationSettingsUILegacy() {
   const enabled = Boolean(inputPhoneVerificationEnabled?.checked);
   const showSettings = enabled && phoneVerificationSectionExpanded;
   const normalizeProvider = typeof normalizePhoneSmsProviderValue === 'function'
@@ -7243,6 +7336,158 @@ function updatePhoneVerificationSettingsUI() {
   if (typeof syncSignupPhoneInputFromState === 'function') {
     syncSignupPhoneInputFromState(latestState);
   }
+  if (!showSettings && typeof rowHeroSmsPriceTiers !== 'undefined' && rowHeroSmsPriceTiers) {
+    rowHeroSmsPriceTiers.style.display = 'none';
+  }
+  if (
+    typeof inputPhonePageRateLimitCooldownSeconds !== 'undefined' && inputPhonePageRateLimitCooldownSeconds
+    && typeof selectPhonePageRateLimitAction !== 'undefined' && selectPhonePageRateLimitAction
+  ) {
+    const isRestartAfterCooldown = normalizePhonePageRateLimitActionValue(selectPhonePageRateLimitAction.value)
+      === PHONE_PAGE_RATE_LIMIT_ACTION_RESTART_STEP7_AFTER_COOLDOWN;
+    inputPhonePageRateLimitCooldownSeconds.title = isRestartAfterCooldown
+      ? '遇到页面级限流后，先冷却再重开步骤 7'
+      : '遇到页面级限流后，先冷却再切换号码';
+  }
+  updateHeroSmsPlatformDisplay();
+}
+
+function updatePhoneVerificationSettingsUI() {
+  const enabled = Boolean(inputPhoneVerificationEnabled?.checked);
+  const showSettings = enabled && phoneVerificationSectionExpanded;
+  const normalizeProvider = typeof normalizePhoneSmsProviderValue === 'function'
+    ? normalizePhoneSmsProviderValue
+    : ((value = '') => {
+      const normalized = String(value || '').trim().toLowerCase();
+      if (normalized === '5sim') return '5sim';
+      if (normalized === 'nexsms') return 'nexsms';
+      return 'hero-sms';
+    });
+  const heroProviderValue = typeof PHONE_SMS_PROVIDER_HERO !== 'undefined' ? PHONE_SMS_PROVIDER_HERO : 'hero-sms';
+  const fiveSimProviderValue = typeof PHONE_SMS_PROVIDER_FIVE_SIM !== 'undefined' ? PHONE_SMS_PROVIDER_FIVE_SIM : '5sim';
+  const nexSmsProviderValue = typeof PHONE_SMS_PROVIDER_NEXSMS !== 'undefined' ? PHONE_SMS_PROVIDER_NEXSMS : 'nexsms';
+  const providerOrderForDisplay = resolveNormalizedProviderOrderForRuntime(latestState || {});
+  const provider = typeof getSelectedPhoneSmsProvider === 'function'
+    ? getSelectedPhoneSmsProvider()
+    : normalizeProvider(selectPhoneSmsProvider?.value || latestState?.phoneSmsProvider || heroProviderValue);
+  const heroProvider = provider === heroProviderValue;
+  const fiveSimProvider = provider === fiveSimProviderValue;
+  const nexSmsProvider = provider === nexSmsProviderValue;
+  const flowExpanded = enabled && (typeof phoneVerificationFlowExpanded !== 'undefined' ? phoneVerificationFlowExpanded : false);
+  const recoveryExpanded = enabled && (typeof phoneVerificationRecoveryExpanded !== 'undefined' ? phoneVerificationRecoveryExpanded : false);
+  const runtimeExpanded = enabled && (typeof phoneVerificationRuntimeExpanded !== 'undefined' ? phoneVerificationRuntimeExpanded : false);
+  const runtimePanelVisible = enabled;
+
+  if (rowPhoneVerificationEnabled) {
+    rowPhoneVerificationEnabled.style.display = '';
+  }
+  if (btnTogglePhoneVerificationSection) {
+    btnTogglePhoneVerificationSection.disabled = !enabled;
+    btnTogglePhoneVerificationSection.textContent = showSettings ? '收起设置' : '展开设置';
+    btnTogglePhoneVerificationSection.title = enabled
+      ? (showSettings ? '收起接码设置' : '展开接码设置')
+      : '开启接码后可展开设置';
+    btnTogglePhoneVerificationSection.setAttribute('aria-expanded', String(showSettings));
+  }
+  if (rowPhoneVerificationFold) {
+    rowPhoneVerificationFold.style.display = showSettings ? '' : 'none';
+  }
+
+  if (typeof phoneVerificationGlobalPanel !== 'undefined' && phoneVerificationGlobalPanel) phoneVerificationGlobalPanel.style.display = showSettings ? '' : 'none';
+  if (typeof phoneVerificationProviderPanel !== 'undefined' && phoneVerificationProviderPanel) phoneVerificationProviderPanel.style.display = showSettings ? '' : 'none';
+  if (typeof phoneVerificationFlowPanel !== 'undefined' && phoneVerificationFlowPanel) phoneVerificationFlowPanel.style.display = showSettings ? '' : 'none';
+  if (typeof phoneVerificationRecoveryPanel !== 'undefined' && phoneVerificationRecoveryPanel) phoneVerificationRecoveryPanel.style.display = showSettings ? '' : 'none';
+  if (typeof phoneVerificationRuntimePanel !== 'undefined' && phoneVerificationRuntimePanel) phoneVerificationRuntimePanel.style.display = runtimePanelVisible ? '' : 'none';
+
+  if (typeof btnTogglePhoneFlowPanel !== 'undefined' && btnTogglePhoneFlowPanel) {
+    btnTogglePhoneFlowPanel.textContent = flowExpanded ? '收起' : '展开';
+    btnTogglePhoneFlowPanel.title = flowExpanded ? '收起验证流程参数' : '展开验证流程参数';
+    btnTogglePhoneFlowPanel.setAttribute('aria-expanded', String(flowExpanded));
+  }
+  if (typeof btnTogglePhoneRecoveryPanel !== 'undefined' && btnTogglePhoneRecoveryPanel) {
+    btnTogglePhoneRecoveryPanel.textContent = recoveryExpanded ? '收起' : '展开';
+    btnTogglePhoneRecoveryPanel.title = recoveryExpanded ? '收起换号恢复' : '展开换号恢复';
+    btnTogglePhoneRecoveryPanel.setAttribute('aria-expanded', String(recoveryExpanded));
+  }
+  if (typeof btnTogglePhoneRuntimePanel !== 'undefined' && btnTogglePhoneRuntimePanel) {
+    btnTogglePhoneRuntimePanel.textContent = runtimeExpanded ? '收起' : '展开';
+    btnTogglePhoneRuntimePanel.title = runtimeExpanded ? '收起运行状态详情' : '展开运行状态详情';
+    btnTogglePhoneRuntimePanel.setAttribute('aria-expanded', String(runtimeExpanded));
+  }
+  if (typeof rowPhoneFlowFold !== 'undefined' && rowPhoneFlowFold) {
+    rowPhoneFlowFold.style.display = showSettings && flowExpanded ? '' : 'none';
+  }
+  if (typeof rowPhoneRecoveryFold !== 'undefined' && rowPhoneRecoveryFold) {
+    rowPhoneRecoveryFold.style.display = showSettings && recoveryExpanded ? '' : 'none';
+  }
+  if (typeof rowPhoneRuntimeFold !== 'undefined' && rowPhoneRuntimeFold) {
+    rowPhoneRuntimeFold.style.display = runtimePanelVisible && runtimeExpanded ? '' : 'none';
+  }
+
+  if (typeof displayPhoneSmsStrategySummary !== 'undefined' && displayPhoneSmsStrategySummary) {
+    displayPhoneSmsStrategySummary.textContent = enabled && typeof buildPhoneSmsStrategySummaryText === 'function'
+      ? buildPhoneSmsStrategySummaryText({
+        state: latestState || {},
+        providerOrder: providerOrderForDisplay,
+        provider,
+      })
+      : '未启用';
+  }
+
+  updateSignupMethodUI();
+  if (rowSignupMethod) rowSignupMethod.style.display = showSettings ? '' : 'none';
+  if (rowPhoneSmsProvider) rowPhoneSmsProvider.style.display = showSettings ? '' : 'none';
+  if (rowPhoneSmsProviderOrder) rowPhoneSmsProviderOrder.style.display = showSettings ? '' : 'none';
+  if (rowPhoneSmsProviderOrderActions) rowPhoneSmsProviderOrderActions.style.display = showSettings ? '' : 'none';
+  if (rowHeroSmsPlatform) rowHeroSmsPlatform.style.display = showSettings ? '' : 'none';
+
+  if (rowHeroSmsCountry) rowHeroSmsCountry.style.display = showSettings && heroProvider ? '' : 'none';
+  if (rowHeroSmsCountryFallback) rowHeroSmsCountryFallback.style.display = showSettings && heroProvider ? '' : 'none';
+  if (rowHeroSmsAcquirePriority) rowHeroSmsAcquirePriority.style.display = showSettings && heroProvider ? '' : 'none';
+  if (rowHeroSmsApiKey) rowHeroSmsApiKey.style.display = showSettings && heroProvider ? '' : 'none';
+  if (rowHeroSmsMaxPrice) rowHeroSmsMaxPrice.style.display = showSettings && heroProvider ? '' : 'none';
+
+  if (rowFiveSimApiKey) rowFiveSimApiKey.style.display = showSettings && fiveSimProvider ? '' : 'none';
+  if (rowFiveSimCountry) rowFiveSimCountry.style.display = showSettings && fiveSimProvider ? '' : 'none';
+  if (rowFiveSimCountryFallback) rowFiveSimCountryFallback.style.display = showSettings && fiveSimProvider ? '' : 'none';
+  if (rowFiveSimOperator) rowFiveSimOperator.style.display = showSettings && fiveSimProvider ? '' : 'none';
+  if (rowFiveSimProduct) rowFiveSimProduct.style.display = showSettings && fiveSimProvider ? '' : 'none';
+
+  if (rowNexSmsApiKey) rowNexSmsApiKey.style.display = showSettings && nexSmsProvider ? '' : 'none';
+  if (rowNexSmsCountry) rowNexSmsCountry.style.display = showSettings && nexSmsProvider ? '' : 'none';
+  if (rowNexSmsCountryFallback) rowNexSmsCountryFallback.style.display = showSettings && nexSmsProvider ? '' : 'none';
+  if (rowNexSmsServiceCode) rowNexSmsServiceCode.style.display = showSettings && nexSmsProvider ? '' : 'none';
+
+  if (typeof rowPhoneCodeSettingsGroup !== 'undefined' && rowPhoneCodeSettingsGroup) {
+    rowPhoneCodeSettingsGroup.style.display = showSettings && flowExpanded ? '' : 'none';
+  }
+  if (rowPhoneVerificationResendCount) rowPhoneVerificationResendCount.style.display = showSettings && flowExpanded ? '' : 'none';
+  if (rowPhoneReplacementLimit) rowPhoneReplacementLimit.style.display = showSettings && flowExpanded ? '' : 'none';
+  if (rowPhoneCodeWaitSeconds) rowPhoneCodeWaitSeconds.style.display = showSettings && flowExpanded ? '' : 'none';
+  if (rowPhoneCodeTimeoutWindows) rowPhoneCodeTimeoutWindows.style.display = showSettings && flowExpanded ? '' : 'none';
+  if (rowPhoneCodePollIntervalSeconds) rowPhoneCodePollIntervalSeconds.style.display = showSettings && flowExpanded ? '' : 'none';
+  if (rowPhoneCodePollMaxRounds) rowPhoneCodePollMaxRounds.style.display = showSettings && flowExpanded ? '' : 'none';
+
+  if (typeof rowPhoneRecoveryStrategyGroup !== 'undefined' && rowPhoneRecoveryStrategyGroup) {
+    rowPhoneRecoveryStrategyGroup.style.display = showSettings && recoveryExpanded ? '' : 'none';
+  }
+  if (typeof rowPhoneProviderFallbackStrategyGroup !== 'undefined' && rowPhoneProviderFallbackStrategyGroup) {
+    rowPhoneProviderFallbackStrategyGroup.style.display = showSettings && recoveryExpanded ? '' : 'none';
+  }
+
+  if (rowHeroSmsRuntimePair) rowHeroSmsRuntimePair.style.display = runtimePanelVisible ? '' : 'none';
+  if (rowHeroSmsCurrentNumber) rowHeroSmsCurrentNumber.style.display = runtimePanelVisible ? '' : 'none';
+  if (rowHeroSmsCurrentCountdown) rowHeroSmsCurrentCountdown.style.display = runtimePanelVisible ? '' : 'none';
+  if (rowHeroSmsCurrentCode) rowHeroSmsCurrentCode.style.display = runtimePanelVisible ? '' : 'none';
+  if (rowHeroSmsPreferredActivation) rowHeroSmsPreferredActivation.style.display = runtimePanelVisible && runtimeExpanded ? '' : 'none';
+
+  if (typeof syncSignupPhoneInputFromState === 'function') {
+    syncSignupPhoneInputFromState(latestState);
+  }
+  if (rowSignupPhone) {
+    rowSignupPhone.style.display = runtimePanelVisible && runtimeExpanded && rowSignupPhone.style.display !== 'none' ? '' : 'none';
+  }
+
   if (!showSettings && typeof rowHeroSmsPriceTiers !== 'undefined' && rowHeroSmsPriceTiers) {
     rowHeroSmsPriceTiers.style.display = 'none';
   }
@@ -11116,6 +11361,18 @@ btnToggleIpProxySection?.addEventListener('click', () => {
 
 btnTogglePhoneVerificationSection?.addEventListener('click', () => {
   togglePhoneVerificationSectionExpanded();
+});
+
+btnTogglePhoneFlowPanel?.addEventListener('click', () => {
+  togglePhoneVerificationFlowExpanded();
+});
+
+btnTogglePhoneRecoveryPanel?.addEventListener('click', () => {
+  togglePhoneVerificationRecoveryExpanded();
+});
+
+btnTogglePhoneRuntimePanel?.addEventListener('click', () => {
+  togglePhoneVerificationRuntimeExpanded();
 });
 
 btnMailLogin?.addEventListener('click', async () => {

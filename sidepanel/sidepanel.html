@@ -1241,6 +1241,14 @@
       <div class="data-row phone-verification-fold-row" id="row-phone-verification-fold" style="display:none;">
         <div id="phone-verification-fold" class="phone-verification-fold">
           <div class="phone-verification-fold-body">
+            <div id="phone-verification-global-panel" class="phone-verification-panel">
+              <div class="phone-verification-panel-header">
+                <div class="phone-verification-panel-copy">
+                  <span class="phone-verification-panel-title">基础策略</span>
+                  <span id="display-phone-sms-strategy-summary" class="data-value mono phone-verification-panel-summary">未启用</span>
+                </div>
+              </div>
+              <div class="phone-verification-panel-body">
             <div class="data-row" id="row-signup-method" style="display:none;">
               <span class="data-label">注册方式</span>
               <div id="signup-method-group" class="choice-group" role="group" aria-label="注册方式">
@@ -1254,7 +1262,7 @@
                 placeholder="http://127.0.0.1:17373" />
             </div>
             <div class="data-row" id="row-phone-sms-provider" style="display:none;">
-              <span class="data-label">接码服务商</span>
+              <span class="data-label">当前编辑</span>
               <select id="select-phone-sms-provider" class="data-select mono">
                 <option value="hero-sms">HeroSMS</option>
                 <option value="5sim">5sim</option>
@@ -1262,7 +1270,7 @@
               </select>
             </div>
             <div class="data-row" id="row-phone-sms-provider-order" style="display:none;">
-              <span class="data-label">服务商顺序</span>
+              <span class="data-label">服务商回退链</span>
               <div class="data-inline hero-sms-country-stack">
                 <select id="select-phone-sms-provider-order" class="data-input mono" multiple size="3" style="display:none;">
                   <option value="hero-sms" selected>HeroSMS</option>
@@ -1279,14 +1287,21 @@
                 </div>
                 <span class="data-value hero-sms-country-note">第一位为主服务商，后续按顺序自动回退。</span>
               </div>
-            </div>
-            <div class="data-row" id="row-phone-sms-provider-order-actions" style="display:none;">
-              <span class="data-label">顺序管理</span>
-              <div class="data-inline data-value-actions">
+              <div id="row-phone-sms-provider-order-actions" class="data-inline data-value-actions phone-verification-inline-actions" style="display:none;">
                 <span id="display-phone-sms-provider-order" class="data-value data-value-fill mono country-order-list">未设置</span>
                 <button id="btn-phone-sms-provider-order-reset" class="btn btn-ghost btn-xs data-inline-btn" type="button">清空</button>
               </div>
             </div>
+              </div>
+            </div>
+            <div id="phone-verification-provider-panel" class="phone-verification-panel">
+              <div class="phone-verification-panel-header">
+                <div class="phone-verification-panel-copy">
+                  <span class="phone-verification-panel-title">当前 Provider</span>
+                  <span class="data-value">只显示当前编辑服务商的字段</span>
+                </div>
+              </div>
+              <div class="phone-verification-panel-body">
             <div class="data-row" id="row-hero-sms-platform" style="display:none;">
               <span class="data-label">接码平台</span>
               <span id="display-hero-sms-platform" class="data-value mono">HeroSMS / OpenAI / Thailand</span>
@@ -1307,10 +1322,7 @@
                 </div>
                 <span class="data-value hero-sms-country-note">多选最多 3 个，按点击顺序生效。</span>
               </div>
-            </div>
-            <div class="data-row" id="row-hero-sms-country-fallback" style="display:none;">
-              <span class="data-label">生效顺序</span>
-              <div class="data-inline data-value-actions">
+              <div id="row-hero-sms-country-fallback" class="data-inline data-value-actions phone-verification-inline-actions" style="display:none;">
                 <span id="display-hero-sms-country-fallback-order" class="data-value data-value-fill mono country-order-list">未设置</span>
                 <button id="btn-hero-sms-country-clear" class="btn btn-ghost btn-xs data-inline-btn" type="button">清空</button>
               </div>
@@ -1359,10 +1371,7 @@
                 </div>
                 <span class="data-value hero-sms-country-note">多选最多 3 个，按点击顺序生效。</span>
               </div>
-            </div>
-            <div class="data-row" id="row-five-sim-country-fallback" style="display:none;">
-              <span class="data-label">生效顺序</span>
-              <div class="data-inline data-value-actions">
+              <div id="row-five-sim-country-fallback" class="data-inline data-value-actions phone-verification-inline-actions" style="display:none;">
                 <span id="display-five-sim-country-fallback-order" class="data-value data-value-fill mono country-order-list">未设置</span>
                 <button id="btn-five-sim-country-clear" class="btn btn-ghost btn-xs data-inline-btn" type="button">清空</button>
               </div>
@@ -1403,10 +1412,7 @@
                 </div>
                 <span class="data-value hero-sms-country-note">多选最多 3 个，按点击顺序生效。</span>
               </div>
-            </div>
-            <div class="data-row" id="row-nex-sms-country-fallback" style="display:none;">
-              <span class="data-label">生效顺序</span>
-              <div class="data-inline data-value-actions">
+              <div id="row-nex-sms-country-fallback" class="data-inline data-value-actions phone-verification-inline-actions" style="display:none;">
                 <span id="display-nex-sms-country-fallback-order" class="data-value data-value-fill mono country-order-list">未设置</span>
                 <button id="btn-nex-sms-country-clear" class="btn btn-ghost btn-xs data-inline-btn" type="button">清空</button>
               </div>
@@ -1454,6 +1460,17 @@
                 </div>
               </div>
             </div>
+              </div>
+            </div>
+            <div id="phone-verification-flow-panel" class="phone-verification-panel">
+              <div class="phone-verification-panel-header">
+                <div class="phone-verification-panel-copy">
+                  <span class="phone-verification-panel-title">验证流程参数</span>
+                  <span class="data-value">低频调优项，默认折叠</span>
+                </div>
+                <button id="btn-toggle-phone-flow-panel" class="btn btn-ghost btn-xs" type="button" aria-expanded="false" aria-controls="row-phone-flow-fold">展开</button>
+              </div>
+              <div id="row-phone-flow-fold" class="phone-verification-subfold-row" style="display:none;">
             <div class="data-row" id="row-phone-code-settings-group" style="display:none;">
               <span class="data-label">接码参数</span>
               <div class="data-inline hero-sms-settings-grid">
@@ -1502,6 +1519,17 @@
                 </div>
               </div>
             </div>
+              </div>
+            </div>
+            <div id="phone-verification-recovery-panel" class="phone-verification-panel">
+              <div class="phone-verification-panel-header">
+                <div class="phone-verification-panel-copy">
+                  <span class="phone-verification-panel-title">换号恢复</span>
+                  <span class="data-value">异常恢复与回退顺序</span>
+                </div>
+                <button id="btn-toggle-phone-recovery-panel" class="btn btn-ghost btn-xs" type="button" aria-expanded="false" aria-controls="row-phone-recovery-fold">展开</button>
+              </div>
+              <div id="row-phone-recovery-fold" class="phone-verification-subfold-row" style="display:none;">
             <div class="data-row" id="row-phone-recovery-strategy-group" style="display:none;">
               <span class="data-label">换号恢复</span>
               <div class="data-inline hero-sms-settings-grid">
@@ -1606,36 +1634,53 @@
                 </div>
               </div>
             </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
-      <div class="data-row" id="row-hero-sms-runtime-pair" style="display:none;">
-        <span class="data-label">运行状态</span>
-        <div class="data-inline hero-sms-runtime-grid">
-          <div id="row-hero-sms-current-number" class="hero-sms-runtime-cell" style="display:none;">
-            <span class="hero-sms-runtime-key">当前分配</span>
-            <span id="display-hero-sms-current-number" class="data-value mono hero-sms-runtime-value">未分配</span>
+      <div id="phone-verification-runtime-panel" class="phone-verification-panel" style="display:none;">
+        <div class="phone-verification-panel-header">
+          <div class="phone-verification-panel-copy">
+            <span class="phone-verification-panel-title">运行状态</span>
+            <span class="data-value">分配结果、验证码与手动优先号</span>
           </div>
-          <div id="row-hero-sms-current-countdown" class="hero-sms-runtime-cell" style="display:none;">
-            <span class="hero-sms-runtime-key">倒计时</span>
-            <span id="display-hero-sms-current-countdown" class="data-value mono hero-sms-runtime-value">未启动</span>
-          </div>
-          <div id="row-hero-sms-current-code" class="hero-sms-runtime-cell" style="display:none;">
-            <span class="hero-sms-runtime-key">验证码</span>
-            <span id="display-hero-sms-current-code" class="data-value mono hero-sms-runtime-value">未获取</span>
-          </div>
-          <div id="row-hero-sms-preferred-activation" class="hero-sms-runtime-cell hero-sms-runtime-cell-span2" style="display:none;">
-            <span class="hero-sms-runtime-key">优先号码</span>
-            <select id="select-hero-sms-preferred-activation" class="data-input mono hero-sms-runtime-select">
-              <option value="">自动（先复用已有可用号，再创建新号）</option>
-            </select>
-          </div>
+          <button id="btn-toggle-phone-runtime-panel" class="btn btn-ghost btn-xs" type="button" aria-expanded="false" aria-controls="row-phone-runtime-fold">展开</button>
         </div>
-      </div>
-      <div class="data-row" id="row-signup-phone" style="display:none;">
-        <span class="data-label">注册手机号</span>
-        <div class="data-inline signup-phone-runtime-inline">
-          <input type="text" id="input-signup-phone" class="data-input mono signup-phone-runtime-input" placeholder="完整国际号码，如 +44..." />
+        <div class="phone-verification-panel-body">
+          <div class="data-row" id="row-hero-sms-runtime-pair" style="display:none;">
+            <span class="data-label">当前状态</span>
+            <div class="data-inline hero-sms-runtime-grid">
+              <div id="row-hero-sms-current-number" class="hero-sms-runtime-cell" style="display:none;">
+                <span class="hero-sms-runtime-key">当前分配</span>
+                <span id="display-hero-sms-current-number" class="data-value mono hero-sms-runtime-value">未分配</span>
+              </div>
+              <div id="row-hero-sms-current-countdown" class="hero-sms-runtime-cell" style="display:none;">
+                <span class="hero-sms-runtime-key">倒计时</span>
+                <span id="display-hero-sms-current-countdown" class="data-value mono hero-sms-runtime-value">未启动</span>
+              </div>
+              <div id="row-hero-sms-current-code" class="hero-sms-runtime-cell" style="display:none;">
+                <span class="hero-sms-runtime-key">验证码</span>
+                <span id="display-hero-sms-current-code" class="data-value mono hero-sms-runtime-value">未获取</span>
+              </div>
+            </div>
+          </div>
+          <div id="row-phone-runtime-fold" class="phone-verification-subfold-row" style="display:none;">
+            <div class="data-row" id="row-hero-sms-preferred-activation" style="display:none;">
+              <span class="data-label">优先号码</span>
+              <div class="data-inline">
+                <select id="select-hero-sms-preferred-activation" class="data-input mono hero-sms-runtime-select">
+                  <option value="">自动（先复用已有可用号，再创建新号）</option>
+                </select>
+              </div>
+            </div>
+            <div class="data-row" id="row-signup-phone" style="display:none;">
+              <span class="data-label">注册手机号</span>
+              <div class="data-inline signup-phone-runtime-inline">
+                <input type="text" id="input-signup-phone" class="data-input mono signup-phone-runtime-input" placeholder="完整国际号码，如 +44..." />
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>

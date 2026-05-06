@@ -942,6 +942,57 @@ header {
   padding-top: 0;
 }
 
+.phone-verification-panel {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--bg-base) 86%, transparent);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.phone-verification-panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.phone-verification-panel-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.phone-verification-panel-title {
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.phone-verification-panel-summary {
+  line-height: 1.5;
+  white-space: normal;
+}
+
+.phone-verification-panel-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.phone-verification-subfold-row {
+  display: block;
+}
+
+.phone-verification-inline-actions {
+  margin-left: auto;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
 .ip-proxy-layout-row {
   display: block;
 }
