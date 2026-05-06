@@ -144,6 +144,16 @@ const LOGIN_EXTERNAL_IDP_PATTERN = /google|microsoft|apple|sso|single\s+sign[-\s
 const LOGIN_CODE_ONLY_ACTION_PATTERN = /one[-\s]*time|passcode|use\s+(?:a\s+)?code|验证码|一次性/i;
 
 const RESEND_VERIFICATION_CODE_PATTERN = /重新发送(?:验证码)?|再次发送(?:验证码)?|重发(?:验证码)?|未收到(?:验证码|邮件)|resend(?:\s+code)?|send\s+(?:a\s+)?new\s+code|send\s+(?:it\s+)?again|request\s+(?:a\s+)?new\s+code|didn'?t\s+receive/i;
+const POST_SIGNUP_ONBOARDING_TITLE_PATTERN = /what\s+brings\s+you\s+to\s+chatgpt|what\s+brought\s+you\s+to\s+chatgpt|是什么促使你使用\s*chatgpt|你为何使用\s*chatgpt|你想如何使用\s*chatgpt/i;
+const POST_SIGNUP_ONBOARDING_SKIP_PATTERN = /skip|跳过/i;
+const POST_SIGNUP_ONBOARDING_NEXT_PATTERN = /next|continue|下一步|继续/i;
+const POST_SIGNUP_ONBOARDING_OPTION_PATTERNS = [
+  /school|学校/i,
+  /work|工作/i,
+  /personal\s+tasks?|个人任务/i,
+  /fun\s+and\s+entertainment|乐趣和娱乐/i,
+  /other|其他/i,
+];
 
 function isVisibleElement(el) {
   if (!el) return false;
@@ -569,6 +579,51 @@ function getSignupPasswordDisplayedEmail() {
   return matches?.[0] ? String(matches[0]).trim().toLowerCase() : '';
 }
 
+function detectPostSignupOnboardingState() {
+  const pageText = (document.body?.innerText || document.body?.textContent || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!pageText) {
+    return null;
+  }
+
+  const optionMatchCount = POST_SIGNUP_ONBOARDING_OPTION_PATTERNS.reduce(
+    (count, pattern) => count + (pattern.test(pageText) ? 1 : 0),
+    0
+  );
+
+  const candidates = document.querySelectorAll(
+    'button, a, [role="button"], [role="link"], input[type="button"], input[type="submit"]'
+  );
+  let skipButton = null;
+  let nextButton = null;
+  for (const el of candidates) {
+    if (!isVisibleElement(el) || !isActionEnabled(el)) continue;
+    const text = getActionText(el);
+    if (!text) continue;
+    if (!skipButton && POST_SIGNUP_ONBOARDING_SKIP_PATTERN.test(text)) {
+      skipButton = el;
+      continue;
+    }
+    if (!nextButton && POST_SIGNUP_ONBOARDING_NEXT_PATTERN.test(text)) {
+      nextButton = el;
+    }
+  }
+
+  const titleMatched = POST_SIGNUP_ONBOARDING_TITLE_PATTERN.test(pageText);
+  const looksLikeOnboarding = titleMatched || optionMatchCount >= 2;
+  if (!looksLikeOnboarding || (!skipButton && !nextButton)) {
+    return null;
+  }
+
+  return {
+    state: 'post_signup_onboarding_page',
+    skipButton,
+    nextButton,
+    url: location.href,
+  };
+}
+
 function inspectSignupEntryState() {
   if (typeof isPhoneVerificationPageReady === 'function' && isPhoneVerificationPageReady()) {
     return {
@@ -595,6 +650,13 @@ function inspectSignupEntryState() {
       skipProfileStep: true,
       url: postVerificationState.url || location.href,
     };
+  }
+
+  const onboardingState = typeof detectPostSignupOnboardingState === 'function'
+    ? detectPostSignupOnboardingState()
+    : null;
+  if (onboardingState) {
+    return onboardingState;
   }
 
   if (typeof isVerificationPageStillVisible === 'function' && isVerificationPageStillVisible()) {
@@ -2372,6 +2434,7 @@ async function step3_fillEmailPassword(payload) {
     snapshot.state === 'phone_verification_page'
     || snapshot.state === 'verification_page'
     || snapshot.state === 'profile_page'
+    || snapshot.state === 'post_signup_onboarding_page'
     || snapshot.state === 'logged_in_home'
   ) {
     const completionPayload = {
@@ -2382,6 +2445,7 @@ async function step3_fillEmailPassword(payload) {
       signupVerificationRequestedAt: (
         snapshot.state === 'phone_verification_page'
         || snapshot.state === 'verification_page'
+        || snapshot.state === 'post_signup_onboarding_page'
       ) ? Date.now() : null,
       skippedPasswordPage: true,
       deferredSubmit: false,
@@ -4347,6 +4411,13 @@ function inspectSignupVerificationState() {
     };
   }
 
+  const onboardingState = typeof detectPostSignupOnboardingState === 'function'
+    ? detectPostSignupOnboardingState()
+    : null;
+  if (onboardingState) {
+    return onboardingState;
+  }
+
   if (typeof isPhoneVerificationPageReady === 'function' && isPhoneVerificationPageReady()) {
     return {
       state: 'verification',
@@ -4388,6 +4459,7 @@ async function waitForSignupVerificationTransition(timeout = 5000) {
     if (
       snapshot.state === 'step5'
       || snapshot.state === 'logged_in_home'
+      || snapshot.state === 'post_signup_onboarding_page'
       || snapshot.state === 'verification'
       || snapshot.state === 'error'
       || snapshot.state === 'email_exists'
@@ -4443,6 +4515,24 @@ async function prepareSignupVerificationFlow(payload = {}, timeout = 30000) {
 
     if (snapshot.state === 'email_exists') {
       throw new Error('当前邮箱已存在，需要重新开始新一轮。');
+    }
+
+    if (snapshot.state === 'post_signup_onboarding_page') {
+      const actionButton = snapshot.skipButton && isActionEnabled(snapshot.skipButton)
+        ? snapshot.skipButton
+        : (snapshot.nextButton && isActionEnabled(snapshot.nextButton) ? snapshot.nextButton : null);
+      if (actionButton) {
+        const actionText = getActionText(actionButton) || (actionButton === snapshot.skipButton ? '跳过' : '下一步');
+        log(`${prepareLogLabel}：检测到注册后引导页，正在点击“${actionText}”继续...`, 'warn');
+        await humanPause(350, 900);
+        simulateClick(actionButton);
+        await sleep(1200);
+        continue;
+      }
+
+      log(`${prepareLogLabel}：检测到注册后引导页，但未找到可用操作按钮，继续等待页面变化...`, 'warn');
+      await sleep(1000);
+      continue;
     }
 
     recoveryRound += 1;
