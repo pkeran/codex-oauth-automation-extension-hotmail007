@@ -941,6 +941,9 @@
       const activationId = String(
         record.activationId ?? record.id ?? record.activation ?? ''
       ).trim();
+      const explicitLatestActivationId = String(
+        record.latestActivationId ?? record.latestActivation ?? ''
+      ).trim();
       const phoneNumber = String(
         record.phoneNumber ?? record.number ?? record.phone ?? ''
       ).trim();
@@ -971,6 +974,7 @@
         );
       return {
         activationId,
+        ...(explicitLatestActivationId ? { latestActivationId: explicitLatestActivationId } : {}),
         phoneNumber,
         provider,
         serviceCode,
@@ -993,7 +997,7 @@
         if (!activation) {
           return;
         }
-        const key = buildActivationIdentityKey(activation);
+        const key = buildReusableActivationPoolKey(activation);
         if (!key || seen.has(key)) {
           return;
         }
@@ -1015,9 +1019,50 @@
       ].join('::');
     }
 
+    function buildReusableActivationPoolKey(activation) {
+      const normalized = normalizeActivation(activation);
+      if (!normalized) {
+        return '';
+      }
+      const normalizedPhone = String(normalized.phoneNumber || '').replace(/\D+/g, '').trim()
+        || String(normalized.phoneNumber || '').trim();
+      if (!normalizedPhone) {
+        return '';
+      }
+      return [
+        normalizePhoneSmsProvider(normalized.provider || ''),
+        normalizedPhone,
+      ].join('::');
+    }
+
     function isSameActivation(left, right) {
       const leftKey = buildActivationIdentityKey(left);
       const rightKey = buildActivationIdentityKey(right);
+      return Boolean(leftKey && rightKey && leftKey === rightKey);
+    }
+
+    function resolveActivationOrderId(activation) {
+      const normalized = normalizeActivation(activation);
+      if (!normalized) {
+        return '';
+      }
+      return String(normalized.latestActivationId || normalized.activationId || '').trim();
+    }
+
+    function buildReusableActivationSnapshot(activation) {
+      const normalized = normalizeActivation(activation);
+      if (!normalized) {
+        return null;
+      }
+      return {
+        ...normalized,
+        latestActivationId: resolveActivationOrderId(normalized) || normalized.activationId,
+      };
+    }
+
+    function isSameReusableActivationPoolEntry(left, right) {
+      const leftKey = buildReusableActivationPoolKey(left);
+      const rightKey = buildReusableActivationPoolKey(right);
       return Boolean(leftKey && rightKey && leftKey === rightKey);
     }
 
@@ -3169,6 +3214,7 @@
       if (!normalizedActivation) {
         throw new Error('缺少可复用的手机号接码订单。');
       }
+      const activationOrderId = resolveActivationOrderId(normalizedActivation);
       if (getActivationProviderId(normalizedActivation, state) === PHONE_SMS_PROVIDER_FIVE_SIM) {
         const provider = getFiveSimProviderForState(state);
         if (provider) {
@@ -3203,7 +3249,7 @@
       }
       const payload = await fetchHeroSmsPayload(config, {
         action: 'reactivate',
-        id: normalizedActivation.activationId,
+        id: activationOrderId,
       }, 'HeroSMS reactivate');
       const nextActivation = parseActivationPayload(payload, normalizedActivation);
       if (!nextActivation) {
@@ -3218,11 +3264,12 @@
       if (!normalizedActivation) {
         return '';
       }
+      const activationOrderId = resolveActivationOrderId(normalizedActivation);
       const config = resolvePhoneConfig(state);
       if (config.provider === PHONE_SMS_PROVIDER_5SIM) {
         const endpoint = status === 6
-          ? `/user/finish/${normalizedActivation.activationId}`
-          : `/user/cancel/${normalizedActivation.activationId}`;
+          ? `/user/finish/${activationOrderId}`
+          : `/user/cancel/${activationOrderId}`;
         const payload = await fetchFiveSimPayload(config, endpoint, actionLabel || '5sim set status');
         return describeFiveSimPayload(payload);
       }
@@ -3248,7 +3295,7 @@
       }
       const payload = await fetchHeroSmsPayload(config, {
         action: 'setStatus',
-        id: normalizedActivation.activationId,
+        id: activationOrderId,
         status,
       }, actionLabel);
       return describeHeroSmsPayload(payload);
@@ -3323,6 +3370,7 @@
         }
       }
       const statusAction = resolveActivationStatusAction(normalizedActivation);
+      const activationOrderId = resolveActivationOrderId(normalizedActivation);
 
       const config = resolvePhoneConfig(state);
       const configuredTimeoutMs = Math.max(1000, Number(options.timeoutMs) || 0);
@@ -3357,7 +3405,7 @@
           throwIfStopped();
           const payload = await fetchFiveSimPayload(
             config,
-            `/user/check/${normalizedActivation.activationId}`,
+            `/user/check/${activationOrderId}`,
             '5sim check activation'
           );
           const text = describeFiveSimPayload(payload);
@@ -3458,7 +3506,7 @@
         throwIfStopped();
         const payload = await fetchHeroSmsPayload(config, {
           action: statusAction,
-          id: normalizedActivation.activationId,
+          id: activationOrderId,
         }, `HeroSMS ${statusAction}`);
         const text = describeHeroSmsPayload(payload);
         lastResponse = text;
@@ -3769,7 +3817,7 @@
 
     async function persistReusableActivation(activation) {
       await setPhoneRuntimeState({
-        [REUSABLE_PHONE_ACTIVATION_STATE_KEY]: normalizeActivation(activation) || null,
+        [REUSABLE_PHONE_ACTIVATION_STATE_KEY]: buildReusableActivationSnapshot(activation) || normalizeActivation(activation) || null,
       });
     }
 
@@ -3784,13 +3832,13 @@
     }
 
     async function upsertReusableActivationPool(activation, options = {}) {
-      const normalized = normalizeActivation(activation);
+      const normalized = buildReusableActivationSnapshot(activation) || normalizeActivation(activation);
       if (!normalized) {
         return [];
       }
       const state = options?.state || await getState();
       const existingPool = readReusableActivationPoolFromState(state);
-      const filtered = existingPool.filter((entry) => !isSameActivation(entry, normalized));
+      const filtered = existingPool.filter((entry) => !isSameReusableActivationPoolEntry(entry, normalized));
       const nextPool = [normalized, ...filtered].slice(0, MAX_PHONE_REUSABLE_POOL);
       await persistReusableActivationPool(nextPool);
       return nextPool;
@@ -3803,7 +3851,7 @@
       }
       const state = options?.state || await getState();
       const existingPool = readReusableActivationPoolFromState(state);
-      const nextPool = existingPool.filter((entry) => !isSameActivation(entry, normalized));
+      const nextPool = existingPool.filter((entry) => !isSameReusableActivationPoolEntry(entry, normalized));
       if (nextPool.length === existingPool.length) {
         return existingPool;
       }
@@ -3954,7 +4002,7 @@
         if (!normalizedCandidate) {
           return;
         }
-        const candidateKey = buildActivationIdentityKey(normalizedCandidate);
+        const candidateKey = buildReusableActivationPoolKey(normalizedCandidate);
         if (!candidateKey || seenReusableKeys.has(candidateKey)) {
           return;
         }
@@ -4116,10 +4164,14 @@
       }
 
       const successfulUses = normalizedActivation.successfulUses + 1;
-      const nextReusableActivation = {
+      const nextReusableActivation = buildReusableActivationSnapshot({
         ...normalizedActivation,
         successfulUses,
-      };
+      });
+      if (!nextReusableActivation) {
+        await clearReusableActivation();
+        return;
+      }
       await upsertReusableActivationPool(nextReusableActivation, { state });
       if (!normalizeHeroSmsReuseEnabled(state?.heroSmsReuseEnabled)) {
         await clearReusableActivation();
