@@ -2994,6 +2994,18 @@ header {
   border-color: color-mix(in srgb, var(--amber) 16%, var(--border));
 }
 
+.account-records-stat.is-info {
+  cursor: default;
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--bg-base) 76%, var(--bg-elevated));
+}
+
+.account-records-stat.is-info:hover {
+  transform: none;
+  border-color: var(--border-subtle);
+  color: var(--text-primary);
+}
+
 .account-records-toolbar-actions .btn.is-active {
   background: var(--blue-soft);
   border-color: color-mix(in srgb, var(--blue) 22%, var(--border));
@@ -3166,6 +3178,26 @@ header {
   font-size: 11px;
   font-weight: 700;
   flex-shrink: 0;
+}
+
+.account-record-item-costs {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: 2px;
+  border-top: 1px dashed color-mix(in srgb, var(--border-subtle) 85%, transparent);
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.account-record-item-cost-total {
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+.account-record-item-cost-breakdown {
+  color: var(--text-muted);
+  font-size: 10px;
 }
 
 .account-record-item.is-success {

@@ -198,6 +198,94 @@ test('account run history helper accepts phone-only records without forcing emai
   assert.equal(normalized.finalStatus, 'failed');
 });
 
+test('account run history helper keeps success cost snapshot for panel statistics', () => {
+  const source = fs.readFileSync('background/account-run-history.js', 'utf8');
+  const globalScope = {};
+  const api = new Function('self', `${source}; return self.MultiPageBackgroundAccountRunHistory;`)(globalScope);
+
+  const helpers = api.createAccountRunHistoryHelpers({
+    chrome: { storage: { local: { get: async () => ({}), set: async () => {} } } },
+    getState: async () => ({}),
+    normalizeAccountRunHistoryHelperBaseUrl: () => '',
+  });
+
+  const record = helpers.buildAccountRunHistoryRecord({
+    email: 'cost@example.com',
+    password: 'secret',
+    runCosts: {
+      mail: {
+        provider: 'hotmail007',
+        amount: 0.02,
+        currency: '',
+        status: 'exact',
+      },
+      phone: {
+        provider: 'hero-sms',
+        countryId: 52,
+        amount: 0.05,
+        currency: '',
+        status: 'exact',
+      },
+      total: {
+        amount: 0.07,
+        currency: '',
+        status: 'exact',
+      },
+    },
+  }, 'success');
+
+  assert.deepStrictEqual(record.costs, {
+    mail: {
+      provider: 'hotmail007',
+      amount: 0.02,
+      currency: '',
+      status: 'exact',
+    },
+    phone: {
+      provider: 'hero-sms',
+      countryId: 52,
+      amount: 0.05,
+      currency: '',
+      status: 'exact',
+    },
+    total: {
+      amount: 0.07,
+      currency: '',
+      status: 'exact',
+    },
+  });
+
+  const normalized = helpers.normalizeAccountRunHistoryRecord({
+    ...record,
+    costs: {
+      mail: { provider: 'hotmail007', amount: '0.02', currency: '', status: 'exact' },
+      phone: { provider: 'hero-sms', countryId: 52, amount: '0.05', currency: '', status: 'exact' },
+      total: { amount: '0.07', currency: '', status: 'exact' },
+    },
+  });
+
+  assert.deepStrictEqual(normalized.costs, {
+    mail: {
+      provider: 'hotmail007',
+      amount: 0.02,
+      currency: '',
+      status: 'exact',
+    },
+    phone: {
+      provider: 'hero-sms',
+      countryId: 52,
+      amount: 0.05,
+      currency: '',
+      status: 'exact',
+    },
+    total: {
+      amount: 0.07,
+      currency: '',
+      status: 'exact',
+    },
+  });
+});
+
 test('account run history merges email and phone identities from the same run', async () => {
   const source = fs.readFileSync('background/account-run-history.js', 'utf8');
   const globalScope = {};

@@ -421,6 +421,7 @@ const PERSISTENT_ALIAS_STATE_KEYS = [
   'icloudAliasCacheAt',
 ];
 const ACCOUNT_RUN_HISTORY_STORAGE_KEY = 'accountRunHistory';
+const ACCOUNT_COST_LEDGER_STORAGE_KEY = 'accountCostLedger';
 const SIGNUP_METHOD_EMAIL = 'email';
 const SIGNUP_METHOD_PHONE = 'phone';
 const DEFAULT_SIGNUP_METHOD = SIGNUP_METHOD_EMAIL;
@@ -774,6 +775,7 @@ const DEFAULT_STATE = {
   password: null, // 运行时实际密码，由 customPassword 或程序自动生成后写入。
   accounts: [], // 已生成账号记录：{ email, password, createdAt }。
   accountRunHistory: [], // 账号运行历史快照，实际持久化在 chrome.storage.local。
+  accountCostLedger: [], // 账号/接码成本账本，持久化在 chrome.storage.local。
   manualAliasUsage: {},
   preservedAliases: {},
   icloudAliasCache: [],
@@ -842,6 +844,7 @@ const DEFAULT_STATE = {
   currentLuckmailPurchase: null,
   currentLuckmailMailCursor: null,
   currentPhoneActivation: null,
+  completedPhoneActivation: null,
   phoneNumber: '',
   currentPhoneVerificationCode: '',
   currentPhoneVerificationCountdownEndsAt: 0,
@@ -2684,13 +2687,21 @@ async function getPersistedAliasState() {
 }
 
 async function getState() {
-  const [state, persistedSettings, persistedAliasState, accountRunHistory] = await Promise.all([
+  const [state, persistedSettings, persistedAliasState, accountRunHistory, accountCostLedger] = await Promise.all([
     chrome.storage.session.get(null),
     getPersistedSettings(),
     getPersistedAliasState(),
     accountRunHistoryHelpers?.getPersistedAccountRunHistory?.() || [],
+    getPersistedAccountCostLedger(),
   ]);
-  return { ...DEFAULT_STATE, ...persistedSettings, ...persistedAliasState, ...state, accountRunHistory };
+  return {
+    ...DEFAULT_STATE,
+    ...persistedSettings,
+    ...persistedAliasState,
+    ...state,
+    accountRunHistory,
+    accountCostLedger,
+  };
 }
 
 async function initializeSessionStorageAccess() {
@@ -2852,6 +2863,7 @@ async function setEmailStateSilently(email) {
     updates.accountIdentifierType = 'email';
     updates.accountIdentifier = normalizedEmail;
     updates.phoneNumber = '';
+    updates.completedPhoneActivation = null;
     updates.signupPhoneNumber = '';
     updates.signupPhoneActivation = null;
     updates.signupPhoneCompletedActivation = null;
@@ -2885,6 +2897,7 @@ async function setSignupPhoneStateSilently(phoneNumber) {
     updates.accountIdentifierType = 'phone';
     updates.accountIdentifier = normalizedPhoneNumber;
     updates.phoneNumber = '';
+    updates.completedPhoneActivation = null;
     if (!isPhoneActivationForNumber(currentState?.signupPhoneActivation, normalizedPhoneNumber)) {
       updates.signupPhoneActivation = null;
       updates.signupPhoneVerificationRequestedAt = null;
@@ -2896,6 +2909,7 @@ async function setSignupPhoneStateSilently(phoneNumber) {
   } else if (String(currentState?.accountIdentifierType || '').trim().toLowerCase() === 'phone') {
     updates.accountIdentifierType = null;
     updates.accountIdentifier = '';
+    updates.completedPhoneActivation = null;
     updates.signupPhoneActivation = null;
     updates.signupPhoneCompletedActivation = null;
     updates.signupPhoneVerificationRequestedAt = null;
@@ -3340,6 +3354,8 @@ function normalizeHotmailAccount(account = {}) {
     account.status
     || (normalizedLastAuthAt > 0 ? 'authorized' : 'pending')
   );
+  const purchasePrice = Number(account.purchasePrice);
+  const purchasedAt = Number.isFinite(Number(account.purchasedAt)) ? Number(account.purchasedAt) : 0;
   return {
     id: String(account.id || crypto.randomUUID()),
     email: String(account.email || '').trim(),
@@ -3354,6 +3370,15 @@ function normalizeHotmailAccount(account = {}) {
     lastUsedAt: Number.isFinite(Number(account.lastUsedAt)) ? Number(account.lastUsedAt) : 0,
     lastAuthAt: normalizedLastAuthAt,
     lastError: String(account.lastError || ''),
+    ...(Number.isFinite(purchasePrice) && purchasePrice >= 0
+      ? { purchasePrice: Math.round(purchasePrice * 10000) / 10000 }
+      : {}),
+    purchaseCurrency: String(account.purchaseCurrency || '').trim(),
+    purchaseCostStatus: String(account.purchaseCostStatus || '').trim().toLowerCase() === 'estimated'
+      ? 'estimated'
+      : (Number.isFinite(purchasePrice) && purchasePrice >= 0 ? 'exact' : ''),
+    ...(purchasedAt > 0 ? { purchasedAt } : {}),
+    purchaseBatchId: String(account.purchaseBatchId || '').trim(),
   };
 }
 
@@ -3385,6 +3410,390 @@ function isLuckmailProvider(stateOrProvider) {
     ? stateOrProvider
     : stateOrProvider?.mailProvider;
   return provider === LUCKMAIL_PROVIDER;
+}
+
+function buildRunCostSnapshotFromState(state = {}) {
+  function normalizeAmount(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric) || numeric < 0) {
+      return null;
+    }
+    return Math.round(numeric * 10000) / 10000;
+  }
+
+  function normalizeStatus(value = '', hasAmount = false) {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (normalized === 'estimated') {
+      return 'estimated';
+    }
+    return hasAmount ? 'exact' : '';
+  }
+
+  function resolveHotmailMailCost() {
+    if (!isHotmailProvider(state)) {
+      return null;
+    }
+
+    const accounts = Array.isArray(state?.hotmailAccounts) ? state.hotmailAccounts : [];
+    const preferredAccountId = String(state?.currentHotmailAccountId || '').trim();
+    const stateEmail = String(state?.email || '').trim().toLowerCase();
+    const selectedAccount = (
+      preferredAccountId && typeof findHotmailAccount === 'function'
+        ? findHotmailAccount(accounts, preferredAccountId)
+        : null
+    ) || accounts.find((account) => String(account?.id || '').trim() === preferredAccountId)
+      || accounts.find((account) => String(account?.email || '').trim().toLowerCase() === stateEmail)
+      || null;
+
+    if (!selectedAccount) {
+      return null;
+    }
+
+    const amount = normalizeAmount(selectedAccount.purchasePrice);
+    if (amount === null) {
+      return null;
+    }
+
+    return {
+      provider: String(selectedAccount.source || HOTMAIL_PROVIDER || 'hotmail').trim() || 'hotmail',
+      ...(String(selectedAccount.purchaseType || '').trim()
+        ? { sourceType: String(selectedAccount.purchaseType || '').trim() }
+        : {}),
+      amount,
+      currency: String(selectedAccount.purchaseCurrency || '').trim(),
+      status: normalizeStatus(selectedAccount.purchaseCostStatus, true),
+    };
+  }
+
+  function resolveLuckmailMailCost() {
+    if (!isLuckmailProvider(state)) {
+      return null;
+    }
+
+    const purchase = typeof getCurrentLuckmailPurchase === 'function'
+      ? getCurrentLuckmailPurchase(state)
+      : state?.currentLuckmailPurchase;
+    if (!purchase) {
+      return null;
+    }
+
+    const amount = normalizeAmount(purchase.price);
+    if (amount === null) {
+      return null;
+    }
+
+    return {
+      provider: String(LUCKMAIL_PROVIDER || 'luckmail-api').trim() || 'luckmail-api',
+      ...(String(state?.luckmailEmailType || purchase?.project_code || purchase?.project_name || '').trim()
+        ? { sourceType: String(state?.luckmailEmailType || purchase?.project_code || purchase?.project_name || '').trim() }
+        : {}),
+      amount,
+      currency: String(purchase.currency || '').trim(),
+      status: normalizeStatus(purchase.costStatus, true),
+    };
+  }
+
+  function resolvePhoneCost() {
+    const activation = state?.completedPhoneActivation
+      || state?.signupPhoneCompletedActivation
+      || state?.currentPhoneActivation
+      || null;
+    if (!activation || typeof activation !== 'object') {
+      return null;
+    }
+
+    const amount = normalizeAmount(activation.price);
+    if (amount === null) {
+      return null;
+    }
+
+    return {
+      ...(String(activation.provider || '').trim()
+        ? { provider: String(activation.provider || '').trim() }
+        : {}),
+      ...(Number.isFinite(Number(activation.countryId))
+        ? { countryId: Number(activation.countryId) }
+        : {}),
+      amount,
+      currency: String(activation.priceCurrency || '').trim(),
+      status: normalizeStatus(activation.priceStatus, true),
+    };
+  }
+
+  const mail = resolveHotmailMailCost() || resolveLuckmailMailCost();
+  const phone = resolvePhoneCost();
+  if (!mail && !phone) {
+    return null;
+  }
+
+  const defaultCurrency = String(mail?.currency || phone?.currency || '').trim();
+  const totalAmount = Math.round(((Number(mail?.amount || 0) + Number(phone?.amount || 0)) * 10000)) / 10000;
+  const totalStatus = [mail, phone].some((item) => String(item?.status || '').trim().toLowerCase() === 'estimated')
+    ? 'estimated'
+    : 'exact';
+
+  return {
+    ...(mail ? { mail } : {}),
+    ...(phone ? { phone } : {}),
+    total: {
+      amount: totalAmount,
+      currency: defaultCurrency,
+      status: totalStatus,
+    },
+  };
+}
+
+function normalizeCostLedgerEntry(entry = {}) {
+  function normalizeAmount(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric) || numeric < 0) {
+      return null;
+    }
+    return Math.round(numeric * 10000) / 10000;
+  }
+
+  const entryKey = String(entry?.entryKey || '').trim();
+  const amount = normalizeAmount(entry?.amount);
+  if (!entryKey || amount === null) {
+    return null;
+  }
+
+  const status = String(entry?.status || '').trim().toLowerCase() === 'estimated'
+    ? 'estimated'
+    : 'exact';
+  const outcome = String(entry?.outcome || '').trim().toLowerCase() || 'consumed';
+  const createdAt = String(entry?.createdAt || '').trim();
+  const normalized = {
+    entryKey,
+    amount,
+    currency: String(entry?.currency || '').trim(),
+    status,
+    outcome,
+    createdAt: createdAt || new Date().toISOString(),
+  };
+
+  const passthroughKeys = [
+    'kind',
+    'provider',
+    'sourceType',
+    'mailType',
+    'purchaseId',
+    'purchaseBatchId',
+    'accountId',
+    'activationId',
+    'latestActivationId',
+    'phoneNumber',
+    'countryId',
+    'recordId',
+    'accountIdentifierType',
+    'accountIdentifier',
+    'email',
+  ];
+  for (const key of passthroughKeys) {
+    const value = entry?.[key];
+    if (value === undefined || value === null || value === '') {
+      continue;
+    }
+    normalized[key] = key === 'countryId' ? Number(value) : value;
+  }
+
+  return normalized;
+}
+
+function normalizeAccountCostLedger(entries) {
+  if (!Array.isArray(entries)) {
+    return [];
+  }
+
+  const deduped = new Map();
+  for (const entry of entries) {
+    const normalized = normalizeCostLedgerEntry(entry);
+    if (!normalized) {
+      continue;
+    }
+    deduped.set(normalized.entryKey, normalized);
+  }
+
+  return [...deduped.values()].sort((left, right) => Date.parse(String(right.createdAt || '')) - Date.parse(String(left.createdAt || '')));
+}
+
+function summarizeCostLedger(entries = [], options = {}) {
+  const deduped = new Map();
+  for (const entry of Array.isArray(entries) ? entries : []) {
+    const normalized = normalizeCostLedgerEntry(entry);
+    if (!normalized) {
+      continue;
+    }
+    deduped.set(normalized.entryKey, normalized);
+  }
+
+  const normalizedEntries = [...deduped.values()]
+    .filter((entry) => String(entry.outcome || 'consumed').trim().toLowerCase() === 'consumed');
+  const successCount = Math.max(0, Math.floor(Number(options?.successCount) || 0));
+  const totalsByCurrency = new Map();
+
+  for (const entry of normalizedEntries) {
+    const currency = String(entry.currency || '').trim();
+    const currentAmount = totalsByCurrency.get(currency) || 0;
+    totalsByCurrency.set(currency, Math.round((currentAmount + Number(entry.amount || 0)) * 10000) / 10000);
+  }
+
+  const totalByCurrency = [...totalsByCurrency.entries()]
+    .map(([currency, amount]) => ({ currency, amount }))
+    .sort((left, right) => String(left.currency).localeCompare(String(right.currency)));
+  const averageByCurrency = totalByCurrency.map((entry) => ({
+    currency: entry.currency,
+    amount: successCount > 0
+      ? Math.round((entry.amount / successCount) * 10000) / 10000
+      : 0,
+  }));
+
+  return {
+    trackedEntryCount: normalizedEntries.length,
+    totalByCurrency,
+    averageByCurrency,
+  };
+}
+
+function buildHotmailAccountCostLedgerEntry(account = {}) {
+  const normalizedAccount = normalizeHotmailAccount(account);
+  const amount = Number(normalizedAccount.purchasePrice);
+  if (!Number.isFinite(amount) || amount < 0) {
+    return null;
+  }
+
+  const purchasedAt = Number(normalizedAccount.purchasedAt) || Date.now();
+  const purchaseBatchId = String(normalizedAccount.purchaseBatchId || '').trim();
+  const entryKey = [
+    'mail',
+    String(normalizedAccount.source || HOTMAIL_PROVIDER || 'hotmail').trim() || 'hotmail',
+    purchaseBatchId || normalizedAccount.id,
+    normalizedAccount.id,
+  ].join(':');
+
+  return normalizeCostLedgerEntry({
+    entryKey,
+    kind: 'mail_account',
+    provider: String(normalizedAccount.source || HOTMAIL_PROVIDER || 'hotmail').trim() || 'hotmail',
+    sourceType: String(normalizedAccount.purchaseType || '').trim(),
+    purchaseBatchId,
+    accountId: normalizedAccount.id,
+    email: normalizedAccount.email,
+    amount,
+    currency: String(normalizedAccount.purchaseCurrency || '').trim(),
+    status: String(normalizedAccount.purchaseCostStatus || '').trim() || 'exact',
+    outcome: 'consumed',
+    createdAt: new Date(purchasedAt).toISOString(),
+  });
+}
+
+function buildLuckmailPurchaseCostLedgerEntry(purchase = {}, state = {}) {
+  const normalizedPurchase = normalizeLuckmailPurchase(purchase);
+  const amount = Number(normalizedPurchase.price);
+  if (!Number.isFinite(amount) || amount < 0 || !normalizedPurchase.id) {
+    return null;
+  }
+
+  return normalizeCostLedgerEntry({
+    entryKey: `mail:${LUCKMAIL_PROVIDER}:${normalizedPurchase.id}`,
+    kind: 'mail_account',
+    provider: LUCKMAIL_PROVIDER,
+    sourceType: String(state?.luckmailEmailType || normalizedPurchase.project_code || normalizedPurchase.project_name || '').trim(),
+    purchaseId: normalizedPurchase.id,
+    email: normalizedPurchase.email_address,
+    amount,
+    currency: String(normalizedPurchase.currency || '').trim(),
+    status: String(normalizedPurchase.costStatus || '').trim() || 'exact',
+    outcome: 'consumed',
+    createdAt: String(normalizedPurchase.created_at || '').trim() || new Date().toISOString(),
+  });
+}
+
+function buildPhoneActivationCostLedgerEntry(activation = {}, options = {}) {
+  const amount = Number(activation?.price);
+  if (!Number.isFinite(amount) || amount < 0) {
+    return null;
+  }
+
+  const provider = String(activation?.provider || '').trim();
+  const activationId = String(activation?.latestActivationId || activation?.activationId || '').trim();
+  const phoneNumber = String(activation?.phoneNumber || '').trim();
+  if (!provider || !activationId || !phoneNumber) {
+    return null;
+  }
+
+  const eventType = String(options.eventType || 'acquire').trim() || 'acquire';
+  const acquiredAt = Number(activation?.acquiredAt) || Date.now();
+  return normalizeCostLedgerEntry({
+    entryKey: [
+      'phone',
+      provider,
+      activationId,
+      phoneNumber.replace(/[^\d]/g, '') || phoneNumber,
+      eventType,
+      acquiredAt,
+    ].join(':'),
+    kind: 'phone_activation',
+    provider,
+    activationId: String(activation?.activationId || '').trim(),
+    latestActivationId: activationId,
+    phoneNumber,
+    countryId: Number.isFinite(Number(activation?.countryId)) ? Number(activation.countryId) : undefined,
+    amount,
+    currency: String(activation?.priceCurrency || '').trim(),
+    status: String(activation?.priceStatus || '').trim() || 'exact',
+    outcome: 'consumed',
+    createdAt: new Date(acquiredAt).toISOString(),
+    accountIdentifierType: String(options.accountIdentifierType || '').trim(),
+    accountIdentifier: String(options.accountIdentifier || '').trim(),
+    email: String(options.email || '').trim(),
+  });
+}
+
+async function getPersistedAccountCostLedger() {
+  try {
+    const stored = await chrome.storage.local.get(ACCOUNT_COST_LEDGER_STORAGE_KEY);
+    return normalizeAccountCostLedger(stored[ACCOUNT_COST_LEDGER_STORAGE_KEY]);
+  } catch (err) {
+    console.warn('[MultiPage:account-cost-ledger] Failed to read account cost ledger:', err?.message || err);
+    return [];
+  }
+}
+
+async function setPersistedAccountCostLedger(entries) {
+  const normalizedLedger = normalizeAccountCostLedger(entries);
+  await chrome.storage.local.set({
+    [ACCOUNT_COST_LEDGER_STORAGE_KEY]: normalizedLedger,
+  });
+  return normalizedLedger;
+}
+
+async function broadcastAccountCostLedgerUpdate() {
+  const ledger = await getPersistedAccountCostLedger();
+  broadcastDataUpdate({ accountCostLedger: ledger });
+  return ledger;
+}
+
+async function appendAccountCostLedgerEntries(entries = []) {
+  const normalizedEntries = normalizeAccountCostLedger(entries);
+  if (!normalizedEntries.length) {
+    return getPersistedAccountCostLedger();
+  }
+
+  const currentLedger = await getPersistedAccountCostLedger();
+  const nextLedger = normalizeAccountCostLedger([
+    ...currentLedger,
+    ...normalizedEntries,
+  ]);
+  await setPersistedAccountCostLedger(nextLedger);
+  broadcastDataUpdate({ accountCostLedger: nextLedger });
+  return nextLedger;
+}
+
+async function clearPersistedAccountCostLedger() {
+  await setPersistedAccountCostLedger([]);
+  broadcastDataUpdate({ accountCostLedger: [] });
+  return [];
 }
 
 function isCustomMailProvider(stateOrProvider) {
@@ -3712,8 +4121,76 @@ async function requestHotmail007PurchasePayload(options = {}) {
     payload,
   };
 }
+
+async function resolveHotmail007PurchaseUnitCost(options = {}) {
+  const quantity = Math.max(1, Math.floor(Number(options.quantity) || 1));
+  let balanceBefore = null;
+  let balanceAfter = null;
+
+  if (options.clientKey) {
+    try {
+      balanceBefore = (await fetchHotmail007Balance({
+        clientKey: options.clientKey,
+        timeoutMs: options.timeoutMs,
+      })).balance;
+    } catch (err) {
+      console.warn(LOG_PREFIX, '[Hotmail007 cost] failed to fetch balance before purchase:', err?.message || err);
+    }
+  }
+
+  const purchaseResult = await requestHotmail007PurchasePayload(options);
+
+  if (options.clientKey) {
+    try {
+      balanceAfter = (await fetchHotmail007Balance({
+        clientKey: options.clientKey,
+        timeoutMs: options.timeoutMs,
+      })).balance;
+    } catch (err) {
+      console.warn(LOG_PREFIX, '[Hotmail007 cost] failed to fetch balance after purchase:', err?.message || err);
+    }
+  }
+
+  let unitPrice = null;
+  let exactTotalSpent = null;
+  let costStatus = '';
+  if (Number.isFinite(balanceBefore) && Number.isFinite(balanceAfter) && balanceBefore >= balanceAfter) {
+    const totalSpent = Math.round((Number(balanceBefore) - Number(balanceAfter)) * 10000) / 10000;
+    if (Number.isFinite(totalSpent) && totalSpent >= 0) {
+      exactTotalSpent = totalSpent;
+      unitPrice = Math.round((totalSpent / quantity) * 10000) / 10000;
+      costStatus = 'exact';
+    }
+  }
+
+  if (unitPrice === null) {
+    try {
+      const priceList = await fetchHotmail007MailPriceList({
+        timeoutMs: options.timeoutMs,
+      });
+      const matchedEntry = (Array.isArray(priceList?.entries) ? priceList.entries : [])
+        .find((entry) => String(entry?.type || '').trim() === String(purchaseResult.mailType || '').trim());
+      const fallbackPrice = Number(matchedEntry?.price);
+      if (Number.isFinite(fallbackPrice) && fallbackPrice >= 0) {
+        unitPrice = Math.round(fallbackPrice * 10000) / 10000;
+        costStatus = 'estimated';
+      }
+    } catch (err) {
+      console.warn(LOG_PREFIX, '[Hotmail007 cost] failed to resolve catalog price:', err?.message || err);
+    }
+  }
+
+  return {
+    ...purchaseResult,
+    exactTotalSpent,
+    unitPrice,
+    costStatus,
+    currency: '',
+  };
+}
+
 async function purchaseHotmailAccountsFromHotmail007(options = {}) {
-  const result = await requestHotmail007PurchasePayload(options);
+  const result = await resolveHotmail007PurchaseUnitCost(options);
   const rawAccounts = Array.isArray(result?.payload?.data) ? result.payload.data.filter(Boolean) : [];
   const parsedAccounts = rawAccounts
     .map((rawAccount) => parseHotmail007AccountString(rawAccount))
@@ -3723,6 +4200,11 @@ async function purchaseHotmailAccountsFromHotmail007(options = {}) {
     throw new Error('Hotmail007 返回账号格式异常。');
   }
 
+  const resolvedUnitPrice = Number.isFinite(result.exactTotalSpent)
+    ? Math.round((Number(result.exactTotalSpent) / parsedAccounts.length) * 10000) / 10000
+    : result.unitPrice;
+  const purchaseBatchId = crypto.randomUUID();
+  const purchasedAt = Date.now();
   const savedAccounts = await upsertHotmailAccounts(parsedAccounts.map((parsedAccount) => ({
     ...parsedAccount,
     source: HOTMAIL_ACCOUNT_SOURCE_HOTMAIL007,
@@ -3730,7 +4212,23 @@ async function purchaseHotmailAccountsFromHotmail007(options = {}) {
     status: 'pending',
     used: false,
     lastError: '',
+    ...(Number.isFinite(resolvedUnitPrice) ? { purchasePrice: resolvedUnitPrice } : {}),
+    purchaseCurrency: String(result.currency || '').trim(),
+    purchaseCostStatus: String(result.costStatus || '').trim(),
+    purchasedAt,
+    purchaseBatchId,
   })));
+
+  const ledgerEntries = typeof buildHotmailAccountCostLedgerEntry === 'function'
+    ? savedAccounts
+      .map((account) => buildHotmailAccountCostLedgerEntry(account))
+      .filter(Boolean)
+    : [];
+  if (ledgerEntries.length && typeof appendAccountCostLedgerEntries === 'function') {
+    await appendAccountCostLedgerEntries(ledgerEntries).catch((err) => {
+      console.warn(LOG_PREFIX, '[Hotmail007 cost] failed to append ledger entries:', err?.message || err);
+    });
+  }
 
   return {
     account: savedAccounts[0] || null,
@@ -5437,6 +5935,15 @@ async function ensureLuckmailPurchaseForFlow(options = {}) {
   const purchase = purchases[0] || null;
   if (!purchase?.email_address || !purchase?.token) {
     throw new Error('LuckMail 购邮成功，但未返回可用邮箱或 token。');
+  }
+
+  const ledgerEntry = typeof buildLuckmailPurchaseCostLedgerEntry === 'function'
+    ? buildLuckmailPurchaseCostLedgerEntry(purchase, state)
+    : null;
+  if (ledgerEntry && typeof appendAccountCostLedgerEntries === 'function') {
+    await appendAccountCostLedgerEntries([ledgerEntry]).catch((err) => {
+      console.warn(LOG_PREFIX, '[LuckMail cost] failed to append ledger entry:', err?.message || err);
+    });
   }
 
   return activateLuckmailPurchaseForFlow(state, client, purchase, {
@@ -9814,10 +10321,19 @@ async function appendAndBroadcastAccountRunRecord(status, stateOverride = null, 
     return null;
   }
 
-  const state = stateOverride || await getState();
+  const latestState = await getState();
+  const state = stateOverride
+    ? { ...latestState, ...stateOverride }
+    : latestState;
   const resolvedStatus = resolveAccountRunRecordStatusForStop(status, state);
   const resolvedReason = resolveAccountRunRecordReasonForStop(resolvedStatus, reason);
-  const record = await accountRunHistoryHelpers.appendAccountRunRecord(resolvedStatus, state, resolvedReason);
+  const recordState = resolvedStatus === 'success'
+    ? {
+      ...state,
+      runCosts: buildRunCostSnapshotFromState(state),
+    }
+    : state;
+  const record = await accountRunHistoryHelpers.appendAccountRunRecord(resolvedStatus, recordState, resolvedReason);
   if (!record) {
     return null;
   }
@@ -9832,6 +10348,7 @@ async function clearAndBroadcastAccountRunHistory(stateOverride = null) {
   }
 
   const result = await accountRunHistoryHelpers.clearAccountRunHistory(stateOverride);
+  await clearPersistedAccountCostLedger();
   await broadcastAccountRunHistoryUpdate();
   return result;
 }
@@ -10864,7 +11381,9 @@ const verificationFlowHelpers = self.MultiPageBackgroundVerificationFlow?.create
 });
 const phoneVerificationHelpers = self.MultiPageBackgroundPhoneVerification?.createPhoneVerificationHelpers({
   addLog,
+  appendAccountCostLedgerEntries,
   broadcastDataUpdate,
+  buildPhoneActivationCostLedgerEntry,
   DEFAULT_FIVE_SIM_BASE_URL,
   DEFAULT_FIVE_SIM_COUNTRY_ORDER,
   DEFAULT_FIVE_SIM_OPERATOR,

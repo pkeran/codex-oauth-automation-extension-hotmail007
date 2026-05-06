@@ -196,6 +196,100 @@
       });
     }
 
+    function normalizeCostAmount(value) {
+      const numeric = Number(value);
+      if (!Number.isFinite(numeric) || numeric < 0) {
+        return null;
+      }
+      return Math.round(numeric * 10000) / 10000;
+    }
+
+    function formatCostAmount(value, currency = '') {
+      const amount = normalizeCostAmount(value);
+      if (amount === null) {
+        return '--';
+      }
+      const formatted = amount.toFixed(4);
+      const normalizedCurrency = String(currency || '').trim();
+      return normalizedCurrency ? `${formatted} ${normalizedCurrency}` : formatted;
+    }
+
+    function getAccountCostLedger(currentState = state.getLatestState()) {
+      return Array.isArray(currentState?.accountCostLedger)
+        ? currentState.accountCostLedger.filter((item) => item && typeof item === 'object')
+        : [];
+    }
+
+    function summarizeSuccessCosts(records = []) {
+      return records.reduce((summary, record) => {
+        if (record?.finalStatus !== 'success') {
+          return summary;
+        }
+
+        const totalCost = record?.costs?.total;
+        const amount = normalizeCostAmount(totalCost?.amount);
+        if (amount === null) {
+          return summary;
+        }
+
+        const currency = String(totalCost?.currency || '').trim();
+        summary.successCount += 1;
+        summary.totalByCurrency.set(
+          currency,
+          Math.round(((summary.totalByCurrency.get(currency) || 0) + amount) * 10000) / 10000
+        );
+        return summary;
+      }, {
+        successCount: 0,
+        totalByCurrency: new Map(),
+      });
+    }
+
+    function summarizeLedgerCosts(entries = [], successCount = 0) {
+      const totalsByCurrency = new Map();
+      let trackedEntryCount = 0;
+
+      entries.forEach((entry) => {
+        const outcome = String(entry?.outcome || 'consumed').trim().toLowerCase();
+        if (outcome !== 'consumed') {
+          return;
+        }
+        const amount = normalizeCostAmount(entry?.amount);
+        if (amount === null) {
+          return;
+        }
+        const currency = String(entry?.currency || '').trim();
+        totalsByCurrency.set(
+          currency,
+          Math.round(((totalsByCurrency.get(currency) || 0) + amount) * 10000) / 10000
+        );
+        trackedEntryCount += 1;
+      });
+
+      const totalByCurrency = [...totalsByCurrency.entries()]
+        .map(([currency, amount]) => ({ currency, amount }))
+        .sort((left, right) => String(left.currency).localeCompare(String(right.currency)));
+      const averageByCurrency = totalByCurrency.map((entry) => ({
+        currency: entry.currency,
+        amount: successCount > 0
+          ? Math.round((entry.amount / successCount) * 10000) / 10000
+          : 0,
+      }));
+
+      return {
+        trackedEntryCount,
+        totalByCurrency,
+        averageByCurrency,
+      };
+    }
+
+    function formatCurrencySummary(entries = []) {
+      if (!Array.isArray(entries) || !entries.length) {
+        return '0.0000';
+      }
+      return entries.map((entry) => formatCostAmount(entry.amount, entry.currency)).join(' / ');
+    }
+
     function formatAccountRecordTime(value) {
       const date = new Date(value);
       if (Number.isNaN(date.getTime())) {
@@ -346,6 +440,20 @@
       `;
     }
 
+    function createInfoStatChip(label, value, className = '') {
+      const classNames = [
+        'account-records-stat',
+        'is-info',
+        className,
+      ].filter(Boolean).join(' ');
+
+      return `
+        <div class="${classNames}">
+          <strong>${escapeHtml(String(value))}</strong>${escapeHtml(label)}
+        </div>
+      `;
+    }
+
     function updateHeader(allRecords, filteredRecords) {
       if (!dom.accountRecordsMeta) {
         return;
@@ -370,18 +478,36 @@
       dom.accountRecordsMeta.textContent = metaText;
     }
 
-    function updateStats(allRecords) {
+    function updateStats(allRecords, currentState = state.getLatestState()) {
       if (!dom.accountRecordsStats) {
         return;
       }
 
       const summary = summarizeAccountRunHistory(allRecords);
+      const successCostSummary = summarizeSuccessCosts(allRecords);
+      const successTotals = [...successCostSummary.totalByCurrency.entries()]
+        .map(([currency, amount]) => ({ currency, amount }))
+        .sort((left, right) => String(left.currency).localeCompare(String(right.currency)));
+      const successAverages = successTotals.map((entry) => ({
+        currency: entry.currency,
+        amount: successCostSummary.successCount > 0
+          ? Math.round((entry.amount / successCostSummary.successCount) * 10000) / 10000
+          : 0,
+      }));
+      const ledgerSummary = summarizeLedgerCosts(
+        getAccountCostLedger(currentState),
+        successCostSummary.successCount
+      );
       dom.accountRecordsStats.innerHTML = [
         createStatChip('all', summary.total),
         createStatChip('success', summary.success),
         createStatChip('failed', summary.failed),
         createStatChip('stopped', summary.stopped),
         createStatChip('retry', summary.retryTotal),
+        createInfoStatChip('成功总成本', formatCurrencySummary(successTotals), 'is-cost-success-total'),
+        createInfoStatChip('成功平均成本', formatCurrencySummary(successAverages), 'is-cost-success-average'),
+        createInfoStatChip('全部消耗总成本', formatCurrencySummary(ledgerSummary.totalByCurrency), 'is-cost-ledger-total'),
+        createInfoStatChip('成功摊销平均成本', formatCurrencySummary(ledgerSummary.averageByCurrency), 'is-cost-ledger-average'),
       ].join('');
     }
 
@@ -453,6 +579,11 @@
         const statusMeta = getStatusMeta(record);
         const summaryText = getRecordSummaryText(record);
         const retryCount = normalizeRetryCount(record.retryCount);
+        const costSummary = record?.costs?.total ? formatCostAmount(record.costs.total.amount, record.costs.total.currency) : '';
+        const costDetails = record?.costs ? [
+          record.costs.mail ? `邮箱 ${formatCostAmount(record.costs.mail.amount, record.costs.mail.currency)}` : '',
+          record.costs.phone ? `手机 ${formatCostAmount(record.costs.phone.amount, record.costs.phone.currency)}` : '',
+        ].filter(Boolean).join(' | ') : '';
         const isSelected = selectedRecordIds.has(recordId);
         const itemClassNames = [
           'account-record-item',
@@ -495,6 +626,12 @@
               <div class="account-record-item-summary">${escapeHtml(summaryText)}</div>
               <span class="account-record-item-retry mono">重试 ${escapeHtml(String(retryCount))}</span>
             </div>
+            ${costSummary ? `
+              <div class="account-record-item-costs mono">
+                <div class="account-record-item-cost-total">总成本 ${escapeHtml(costSummary)}</div>
+                ${costDetails ? `<div class="account-record-item-cost-breakdown">${escapeHtml(costDetails)}</div>` : ''}
+              </div>
+            ` : ''}
           </div>
         `;
       }).join('');
@@ -514,7 +651,7 @@
 
       const filteredRecords = getFilteredRecords(allRecords);
       updateHeader(allRecords, filteredRecords);
-      updateStats(allRecords);
+      updateStats(allRecords, currentState);
       updateToolbarState(allRecords);
       renderRecordList(allRecords, filteredRecords);
     }

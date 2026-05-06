@@ -4,6 +4,8 @@
   function createPhoneVerificationHelpers(deps = {}) {
     const {
       addLog: rawAddLog = async () => {},
+      appendAccountCostLedgerEntries = async () => [],
+      buildPhoneActivationCostLedgerEntry = () => null,
       ensureStep8SignupPageReady,
       fetchImpl = (...args) => fetch(...args),
       generateRandomBirthday,
@@ -1128,6 +1130,17 @@
       return candidates;
     }
 
+    function normalizeActivationPrice(value) {
+      if (value === undefined || value === null || String(value).trim() === '') {
+        return null;
+      }
+      const numeric = Number(value);
+      if (!Number.isFinite(numeric) || numeric < 0) {
+        return null;
+      }
+      return Math.round(numeric * 10000) / 10000;
+    }
+
     function normalizeActivation(record) {
       if (!record || typeof record !== 'object' || Array.isArray(record)) {
         return null;
@@ -1262,12 +1275,11 @@
 
     function rememberActivationAcquiredPrice(activation, price) {
       const key = buildActivationIdentityKey(activation);
-      const normalizedPrice = normalizeHeroSmsPrice(price);
+      const normalizedPrice = normalizeActivationPrice(price);
       if (!key || normalizedPrice === null || normalizedPrice <= 0) {
         return;
       }
-      const roundedPrice = Math.round(normalizedPrice * 10000) / 10000;
-      activationPriceHintsByKey.set(key, roundedPrice);
+      activationPriceHintsByKey.set(key, normalizedPrice);
       while (activationPriceHintsByKey.size > MAX_ACTIVATION_PRICE_HINTS) {
         const oldest = activationPriceHintsByKey.keys().next();
         if (oldest?.done) {
@@ -1283,10 +1295,43 @@
         return null;
       }
       const raw = activationPriceHintsByKey.get(key);
-      const normalizedPrice = normalizeHeroSmsPrice(raw);
-      return normalizedPrice === null || normalizedPrice <= 0
-        ? null
-        : Math.round(normalizedPrice * 10000) / 10000;
+      const normalizedPrice = normalizeActivationPrice(raw);
+      return normalizedPrice === null || normalizedPrice <= 0 ? null : normalizedPrice;
+    }
+
+    function buildTrackedActivationSnapshot(activation, options = {}) {
+      const normalizedActivation = normalizeActivation(activation);
+      if (!normalizedActivation) {
+        return null;
+      }
+
+      const fallbackPrice = options.fallbackPrice !== undefined
+        ? options.fallbackPrice
+        : getActivationAcquiredPriceHint(activation);
+      const price = normalizeActivationPrice(
+        activation?.price !== undefined ? activation.price : fallbackPrice
+      );
+      const trackedActivation = { ...normalizedActivation };
+
+      if (price !== null) {
+        trackedActivation.price = price;
+        trackedActivation.priceCurrency = String(
+          activation?.priceCurrency ?? options.fallbackPriceCurrency ?? ''
+        ).trim();
+        trackedActivation.priceStatus = String(
+          activation?.priceStatus || options.fallbackPriceStatus || 'exact'
+        ).trim().toLowerCase() === 'estimated'
+          ? 'estimated'
+          : 'exact';
+      }
+
+      const rawAcquiredAt = activation?.acquiredAt ?? options.acquiredAt;
+      const acquiredAt = normalizeTimestampMs(rawAcquiredAt);
+      if (acquiredAt > 0 && (price !== null || rawAcquiredAt !== undefined && rawAcquiredAt !== null && String(rawAcquiredAt).trim() !== '')) {
+        trackedActivation.acquiredAt = acquiredAt;
+      }
+
+      return trackedActivation;
     }
 
     function forgetActivationAcquiredPriceHint(activation) {
@@ -1302,6 +1347,25 @@
       if (typeof broadcastDataUpdate === 'function') {
         broadcastDataUpdate(updates);
       }
+    }
+
+    async function trackPhoneActivationSpend(activation, options = {}) {
+      const trackedActivation = buildTrackedActivationSnapshot(activation, options);
+      if (!trackedActivation) {
+        return [];
+      }
+
+      const latestState = await getState();
+      const ledgerEntry = buildPhoneActivationCostLedgerEntry(trackedActivation, {
+        eventType: options.eventType || 'acquire',
+        accountIdentifierType: latestState?.accountIdentifierType,
+        accountIdentifier: latestState?.accountIdentifier,
+        email: latestState?.email,
+      });
+      if (!ledgerEntry) {
+        return [];
+      }
+      return appendAccountCostLedgerEntries([ledgerEntry]);
     }
 
     function normalizeActivationFallback(record) {
@@ -2752,6 +2816,7 @@
             }
 
             if (acquiredActivation) {
+              await trackPhoneActivationSpend(acquiredActivation, { eventType: 'acquire' }).catch(() => []);
               return acquiredActivation;
             }
 
@@ -3190,6 +3255,7 @@
               }
               const numericPrice = Number(price);
               rememberActivationAcquiredPrice(activation, numericPrice);
+              await trackPhoneActivationSpend(activation, { eventType: 'acquire' }).catch(() => []);
               return activation;
             } catch (error) {
               if (isNexSmsTerminalError(error?.payload || error?.message, error?.status)) {
@@ -3479,6 +3545,10 @@
                 if (activation) {
                   const numericPrice = Number(maxPrice);
                   rememberActivationAcquiredPrice(activation, numericPrice);
+                  await trackPhoneActivationSpend({
+                    ...activation,
+                    countryId: countryConfig.id,
+                  }, { eventType: 'acquire' }).catch(() => []);
                   return {
                     ...activation,
                     countryId: countryConfig.id,
@@ -3587,11 +3657,27 @@
       if (!normalizedActivation) {
         throw new Error('缺少可复用的手机号接码订单。');
       }
+      async function finalizeReactivatedActivation(nextActivation) {
+        const normalizedNext = normalizeActivation(nextActivation);
+        if (!normalizedNext) {
+          return nextActivation;
+        }
+        const fallbackPrice = normalizeActivationPrice(
+          activation?.price ?? normalizedActivation?.price ?? getActivationAcquiredPriceHint(activation || normalizedActivation)
+        );
+        await trackPhoneActivationSpend(normalizedNext, {
+          eventType: 'reactivate',
+          fallbackPrice,
+          fallbackPriceCurrency: activation?.priceCurrency ?? normalizedActivation?.priceCurrency ?? '',
+          fallbackPriceStatus: fallbackPrice !== null ? 'estimated' : '',
+        }).catch(() => []);
+        return normalizedNext;
+      }
       const activationOrderId = resolveActivationOrderId(normalizedActivation);
       if (getActivationProviderId(normalizedActivation, state) === PHONE_SMS_PROVIDER_FIVE_SIM) {
         const provider = getFiveSimProviderForState(state);
         if (provider) {
-          return provider.reuseActivation(state, normalizedActivation);
+          return finalizeReactivatedActivation(await provider.reuseActivation(state, normalizedActivation));
         }
       }
 
@@ -3615,7 +3701,7 @@
           const text = describeFiveSimPayload(payload);
           throw new Error(`5sim reuse activation failed: ${text || 'empty response'}`);
         }
-        return nextActivation;
+        return finalizeReactivatedActivation(nextActivation);
       }
       if (config.provider === PHONE_SMS_PROVIDER_NEXSMS) {
         throw new Error('NexSMS does not support activation reuse for this flow.');
@@ -3629,7 +3715,7 @@
         const text = describeHeroSmsPayload(payload);
         throw new Error(`HeroSMS 复用手机号失败：${text || '空响应'}`);
       }
-      return nextActivation;
+      return finalizeReactivatedActivation(nextActivation);
     }
 
     async function setPhoneActivationStatus(state = {}, activation, status, actionLabel) {
@@ -4908,13 +4994,13 @@
     }
 
     function buildCompletedActivationSnapshot(activation) {
-      const normalizedActivation = normalizeActivation(activation);
-      if (!normalizedActivation) {
+      const trackedActivation = buildTrackedActivationSnapshot(activation);
+      if (!trackedActivation) {
         return null;
       }
       return {
-        ...normalizedActivation,
-        successfulUses: normalizedActivation.successfulUses + 1,
+        ...trackedActivation,
+        successfulUses: trackedActivation.successfulUses + 1,
       };
     }
 
@@ -6156,6 +6242,7 @@
             shouldCancelActivation = false;
             await clearCurrentActivation();
             await setPhoneRuntimeState({
+              completedPhoneActivation: buildCompletedActivationSnapshot(activation),
               phoneNumber: activation.phoneNumber,
             });
             addPhoneReentryWithSameActivation = 0;

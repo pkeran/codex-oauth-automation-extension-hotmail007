@@ -348,6 +348,105 @@ test('account records manager supports filter chips and partial multi-select del
   });
 });
 
+test('account records manager renders success cost totals, amortized cost, and per-record cost lines', () => {
+  const source = fs.readFileSync('sidepanel/account-records-manager.js', 'utf8');
+  const windowObject = {};
+  const api = new Function('window', `${source}; return window.SidepanelAccountRecordsManager;`)(windowObject);
+
+  const list = createNode();
+  const meta = createNode();
+  const stats = createNode();
+  const manager = api.createAccountRecordsManager({
+    state: {
+      getLatestState: () => ({
+        accountRunHistory: [
+          {
+            recordId: 'cost-success@example.com',
+            email: 'cost-success@example.com',
+            password: 'secret',
+            finalStatus: 'success',
+            finishedAt: '2026-05-06T08:00:00.000Z',
+            retryCount: 0,
+            failureLabel: '流程完成',
+            costs: {
+              mail: { provider: 'hotmail007', amount: 0.02, currency: '', status: 'exact' },
+              phone: { provider: 'hero-sms', amount: 0.05, currency: '', status: 'exact', countryId: 52 },
+              total: { amount: 0.07, currency: '', status: 'exact' },
+            },
+          },
+          {
+            recordId: 'cost-failed@example.com',
+            email: 'cost-failed@example.com',
+            password: 'secret',
+            finalStatus: 'failed',
+            finishedAt: '2026-05-06T07:00:00.000Z',
+            retryCount: 1,
+            failureLabel: '手机号验证失败',
+          },
+        ],
+        accountCostLedger: [
+          {
+            entryKey: 'mail:hotmail007:hm-1',
+            amount: 0.02,
+            currency: '',
+            status: 'exact',
+            outcome: 'consumed',
+          },
+          {
+            entryKey: 'phone:hero-sms:act-success',
+            amount: 0.05,
+            currency: '',
+            status: 'exact',
+            outcome: 'consumed',
+          },
+          {
+            entryKey: 'phone:hero-sms:act-failed',
+            amount: 0.05,
+            currency: '',
+            status: 'exact',
+            outcome: 'consumed',
+          },
+        ],
+      }),
+      syncLatestState() {},
+    },
+    dom: {
+      accountRecordsList: list,
+      accountRecordsMeta: meta,
+      accountRecordsOverlay: createNode(),
+      accountRecordsPageLabel: createNode(),
+      accountRecordsStats: stats,
+      btnAccountRecordsNext: createNode(),
+      btnAccountRecordsPrev: createNode(),
+      btnClearAccountRecords: createNode(),
+      btnCloseAccountRecords: createNode(),
+      btnDeleteSelectedAccountRecords: createNode(),
+      btnOpenAccountRecords: createNode(),
+      btnToggleAccountRecordsSelection: createNode(),
+    },
+    helpers: {
+      escapeHtml: (value) => String(value || ''),
+    },
+    runtime: {
+      sendMessage: async () => ({}),
+    },
+    constants: {
+      displayTimeZone: 'Asia/Shanghai',
+      pageSize: 10,
+    },
+  });
+
+  manager.render();
+
+  assert.match(stats.innerHTML, /成功总成本/);
+  assert.match(stats.innerHTML, /成功平均成本/);
+  assert.match(stats.innerHTML, /全部消耗总成本/);
+  assert.match(stats.innerHTML, /成功摊销平均成本/);
+  assert.match(list.innerHTML, /总成本/);
+  assert.match(list.innerHTML, /邮箱 0\.0200/);
+  assert.match(list.innerHTML, /手机 0\.0500/);
+});
+
 test('account records manager displays phone-only records with account identifier fallback', () => {
   const source = fs.readFileSync('sidepanel/account-records-manager.js', 'utf8');
   const windowObject = {};

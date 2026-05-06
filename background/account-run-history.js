@@ -189,6 +189,78 @@
       return String(value || '').trim().toLowerCase() === 'auto' ? 'auto' : 'manual';
     }
 
+    function normalizeCostAmount(value) {
+      const numeric = Number(value);
+      if (!Number.isFinite(numeric) || numeric < 0) {
+        return null;
+      }
+      return Math.round(numeric * 10000) / 10000;
+    }
+
+    function normalizeCostStatus(value = '', hasAmount = false) {
+      const normalized = String(value || '').trim().toLowerCase();
+      if (normalized === 'estimated') {
+        return 'estimated';
+      }
+      if (normalized === 'untracked') {
+        return 'untracked';
+      }
+      if (normalized === 'zero') {
+        return 'zero';
+      }
+      return hasAmount ? 'exact' : '';
+    }
+
+    function normalizeCostPart(part, type) {
+      if (!part || typeof part !== 'object' || Array.isArray(part)) {
+        return null;
+      }
+
+      const amount = normalizeCostAmount(part.amount);
+      const provider = String(part.provider || '').trim();
+      const currency = String(part.currency || '').trim();
+      const status = normalizeCostStatus(part.status, amount !== null);
+
+      if (amount === null && !provider && !currency && !status) {
+        return null;
+      }
+
+      const normalized = {
+        ...(provider ? { provider } : {}),
+        ...(type === 'mail' && String(part.sourceType || '').trim()
+          ? { sourceType: String(part.sourceType || '').trim() }
+          : {}),
+        ...(type === 'phone' && Number.isFinite(Number(part.countryId))
+          ? { countryId: Number(part.countryId) }
+          : {}),
+        ...(amount !== null ? { amount } : {}),
+        currency,
+        ...(status ? { status } : {}),
+      };
+
+      return normalized;
+    }
+
+    function normalizeAccountRunCosts(costs) {
+      if (!costs || typeof costs !== 'object' || Array.isArray(costs)) {
+        return null;
+      }
+
+      const mail = normalizeCostPart(costs.mail, 'mail');
+      const phone = normalizeCostPart(costs.phone, 'phone');
+      const total = normalizeCostPart(costs.total, 'total');
+
+      if (!mail && !phone && !total) {
+        return null;
+      }
+
+      return {
+        ...(mail ? { mail } : {}),
+        ...(phone ? { phone } : {}),
+        ...(total ? { total } : {}),
+      };
+    }
+
     function normalizeAutoRunContext(context) {
       if (!context || typeof context !== 'object') {
         return null;
@@ -260,6 +332,9 @@
       const source = normalizeSource(record.source || (autoRunContext ? 'auto' : 'manual'));
       const computedFailureLabel = buildFailureLabel(finalStatus, failedStep, failureDetail);
       const rawFailureLabel = String(record.failureLabel || '').trim();
+      const normalizedCosts = finalStatus === 'success'
+        ? normalizeAccountRunCosts(record.costs || record.runCosts)
+        : null;
 
       return {
         recordId: String(record.recordId || '').trim() || buildRecordId(accountIdentifier, accountIdentifierType),
@@ -280,6 +355,7 @@
         autoRunContext: source === 'auto' ? autoRunContext : null,
         plusModeEnabled: Boolean(record.plusModeEnabled),
         contributionMode: Boolean(record.contributionMode),
+        ...(normalizedCosts ? { costs: normalizedCosts } : {}),
       };
     }
 
@@ -338,6 +414,9 @@
       const autoRunContext = source === 'auto' ? buildAutoRunContextFromState(state) : null;
       const retryCount = source === 'auto' ? getRetryCountFromState(state) : 0;
       const finishedAt = new Date().toISOString();
+      const normalizedCosts = finalStatus === 'success'
+        ? normalizeAccountRunCosts(state.runCosts)
+        : null;
 
       return {
         recordId: buildRecordId(accountIdentifier, accountIdentifierType),
@@ -356,6 +435,7 @@
         autoRunContext,
         plusModeEnabled: Boolean(state.plusModeEnabled),
         contributionMode: Boolean(state.contributionMode),
+        ...(normalizedCosts ? { costs: normalizedCosts } : {}),
       };
     }
 
