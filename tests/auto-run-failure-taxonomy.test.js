@@ -10,6 +10,7 @@ function createHarness(options = {}) {
   const {
     totalRuns = 2,
     autoRunSkipFailures = true,
+    autoRunNeverStop = false,
     ensureHotmailMailboxReadyForAutoRunRound,
     runImpl = async () => {},
     extraDeps = {},
@@ -31,6 +32,7 @@ function createHarness(options = {}) {
     vpsPassword: 'secret',
     customPassword: '',
     autoRunSkipFailures,
+    autoRunNeverStop,
     autoRunFallbackThreadIntervalMinutes: 0,
     autoRunDelayEnabled: false,
     autoRunDelayMinutes: 30,
@@ -333,5 +335,66 @@ test('auto-run controller retries STEP3_PHONE_CREDENTIAL_INVALID in the same rou
   assert.equal(attempts, 2);
   assert.deepEqual(events.runTargets, [1, 1]);
   assert.equal(events.broadcasts.some(({ phase }) => phase === 'retrying'), true);
+  assert.equal(events.accountRecords.some(({ status }) => status === 'failed'), false);
+});
+
+test('auto-run controller does not let STEP3_PHONE_CREDENTIAL_INVALID fall into add-phone fatal handling', async () => {
+  let attempts = 0;
+  const { controller, events } = createHarness({
+    totalRuns: 1,
+    autoRunSkipFailures: false,
+    runImpl: async () => {
+      attempts += 1;
+      if (attempts === 1) {
+        const error = new Error('Incorrect phone number or password');
+        error.code = 'STEP3_PHONE_CREDENTIAL_INVALID';
+        throw error;
+      }
+      return {};
+    },
+    extraDeps: {
+      isAddPhoneAuthFailure: (error) => /phone number/i.test(String(error?.message || error || '')),
+    },
+  });
+
+  await controller.autoRunLoop(1, {
+    autoRunSkipFailures: false,
+    mode: 'restart',
+  });
+
+  assert.equal(attempts, 2);
+  assert.deepEqual(events.runTargets, [1, 1]);
+  assert.equal(
+    events.logs.some(({ message }) => /触发 add-phone\/手机号页/.test(String(message || ''))),
+    false,
+    'step3 invalid phone/password should not be routed into add-phone stop handling'
+  );
+  assert.equal(events.broadcasts.some(({ phase }) => phase === 'retrying'), true);
+});
+
+test('auto-run controller restarts the current round on generic failure when never-stop mode is enabled', async () => {
+  let attempts = 0;
+  const { controller, events } = createHarness({
+    totalRuns: 1,
+    autoRunSkipFailures: false,
+    autoRunNeverStop: true,
+    runImpl: async () => {
+      attempts += 1;
+      if (attempts < 3) {
+        throw new Error(`generic failure #${attempts}`);
+      }
+      return {};
+    },
+  });
+
+  await controller.autoRunLoop(1, {
+    autoRunSkipFailures: false,
+    autoRunNeverStop: true,
+    mode: 'restart',
+  });
+
+  assert.equal(attempts, 3);
+  assert.deepEqual(events.runTargets, [1, 1, 1]);
+  assert.equal(events.broadcasts.some(({ phase }) => phase === 'stopped'), false);
   assert.equal(events.accountRecords.some(({ status }) => status === 'failed'), false);
 });

@@ -376,6 +376,7 @@ const inputCfDomain = document.getElementById('input-cf-domain');
 const btnCfDomainMode = document.getElementById('btn-cf-domain-mode');
 const inputRunCount = document.getElementById('input-run-count');
 const inputAutoSkipFailures = document.getElementById('input-auto-skip-failures');
+const inputAutoNeverStop = document.getElementById('input-auto-never-stop');
 const inputAutoSkipFailuresThreadIntervalMinutes = document.getElementById('input-auto-skip-failures-thread-interval-minutes');
 const inputAutoDelayEnabled = document.getElementById('input-auto-delay-enabled');
 const inputAutoDelayMinutes = document.getElementById('input-auto-delay-minutes');
@@ -3542,6 +3543,9 @@ function collectSettingsPayload() {
     cloudflareTempEmailDomain: selectedCloudflareTempEmailDomain,
     cloudflareTempEmailDomains: tempEmailDomains,
     autoRunSkipFailures: inputAutoSkipFailures.checked,
+    autoRunNeverStop: typeof inputAutoNeverStop !== 'undefined' && inputAutoNeverStop
+      ? Boolean(inputAutoNeverStop.checked)
+      : false,
     autoRunFallbackThreadIntervalMinutes: normalizeAutoRunThreadIntervalMinutes(inputAutoSkipFailuresThreadIntervalMinutes.value),
     autoRunDelayEnabled: inputAutoDelayEnabled.checked,
     autoRunDelayMinutes: normalizeAutoDelayMinutes(inputAutoDelayMinutes.value),
@@ -7958,6 +7962,9 @@ function applyAutoRunStatus(payload = currentAutoRun) {
     inputSignupPhone.disabled = locked;
   }
   inputAutoSkipFailures.disabled = scheduled;
+  if (typeof inputAutoNeverStop !== 'undefined' && inputAutoNeverStop) {
+    inputAutoNeverStop.disabled = scheduled;
+  }
 
   const lockedRunCount = typeof getLockedRunCountFromEmailPool === 'function'
     ? getLockedRunCountFromEmailPool()
@@ -8435,6 +8442,9 @@ function applySettingsState(state) {
   renderCloudflareDomainOptions(state?.cloudflareDomain || '');
   setCloudflareDomainEditMode(false, { clearInput: true });
   inputAutoSkipFailures.checked = Boolean(state?.autoRunSkipFailures);
+  if (typeof inputAutoNeverStop !== 'undefined' && inputAutoNeverStop) {
+    inputAutoNeverStop.checked = Boolean(state?.autoRunNeverStop);
+  }
   inputAutoSkipFailuresThreadIntervalMinutes.value = String(normalizeAutoRunThreadIntervalMinutes(state?.autoRunFallbackThreadIntervalMinutes));
   inputAutoDelayEnabled.checked = Boolean(state?.autoRunDelayEnabled);
   inputAutoDelayMinutes.value = String(normalizeAutoDelayMinutes(state?.autoRunDelayMinutes));
@@ -11426,6 +11436,9 @@ async function startAutoRunFromCurrentSettings() {
     : Boolean(currentPlusModeEnabled || latestState?.plusModeEnabled);
   let mode = 'restart';
   const autoRunSkipFailures = inputAutoSkipFailures.checked;
+  const autoRunNeverStop = typeof inputAutoNeverStop !== 'undefined' && inputAutoNeverStop
+    ? Boolean(inputAutoNeverStop.checked)
+    : false;
   const contributionNickname = String(inputContributionNickname?.value || '').trim();
   const contributionQq = String(inputContributionQq?.value || '').trim();
   const fallbackThreadIntervalMinutes = normalizeAutoRunThreadIntervalMinutes(
@@ -11489,6 +11502,7 @@ async function startAutoRunFromCurrentSettings() {
       totalRuns,
       delayMinutes,
       autoRunSkipFailures,
+      autoRunNeverStop,
       contributionMode: Boolean(latestState?.contributionMode),
       contributionNickname,
       contributionQq,
@@ -12617,6 +12631,13 @@ inputAutoSkipFailures.addEventListener('change', async () => {
   markSettingsDirty(true);
   saveSettings({ silent: true }).catch(() => { });
 });
+
+if (typeof inputAutoNeverStop !== 'undefined' && inputAutoNeverStop) {
+  inputAutoNeverStop.addEventListener('change', () => {
+    markSettingsDirty(true);
+    saveSettings({ silent: true }).catch(() => { });
+  });
+}
 
 inputTempEmailBaseUrl.addEventListener('input', () => {
   markSettingsDirty(true);
@@ -13779,6 +13800,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       if (message.payload.autoRunSkipFailures !== undefined) {
         inputAutoSkipFailures.checked = Boolean(message.payload.autoRunSkipFailures);
         updateFallbackThreadIntervalInputState();
+      }
+      if (
+        message.payload.autoRunNeverStop !== undefined
+        && typeof inputAutoNeverStop !== 'undefined'
+        && inputAutoNeverStop
+      ) {
+        inputAutoNeverStop.checked = Boolean(message.payload.autoRunNeverStop);
       }
       if (message.payload.autoRunDelayEnabled !== undefined) {
         inputAutoDelayEnabled.checked = Boolean(message.payload.autoRunDelayEnabled);

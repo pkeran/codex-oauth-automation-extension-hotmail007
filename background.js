@@ -650,6 +650,7 @@ const PERSISTED_SETTING_DEFAULTS = {
   gopayHelperBalanceUpdatedAt: 0,
   gopayHelperBalanceError: '',
   autoRunSkipFailures: false,
+  autoRunNeverStop: false,
   autoRunFallbackThreadIntervalMinutes: 0,
   oauthFlowTimeoutEnabled: true,
   autoRunDelayEnabled: false,
@@ -1619,11 +1620,15 @@ function normalizeAutoRunTimerPlan(plan) {
 
   const totalRuns = normalizeRunCount(plan.totalRuns);
   const autoRunSkipFailures = Boolean(plan.autoRunSkipFailures);
+  const autoRunNeverStop = Boolean(plan.autoRunNeverStop);
   const mode = plan.mode === 'continue' ? 'continue' : 'restart';
   const currentRun = Math.max(0, Math.min(totalRuns, Math.floor(Number(plan.currentRun) || 0)));
   const attemptRun = Math.max(
     0,
-    Math.min(AUTO_RUN_MAX_RETRIES_PER_ROUND + 1, Math.floor(Number(plan.attemptRun) || 0))
+    Math.min(
+      autoRunNeverStop ? Number.MAX_SAFE_INTEGER : AUTO_RUN_MAX_RETRIES_PER_ROUND + 1,
+      Math.floor(Number(plan.attemptRun) || 0)
+    )
   );
   const autoRunSessionId = normalizeAutoRunSessionId(plan.autoRunSessionId ?? plan.sessionId);
   const roundSummaries = serializeAutoRunRoundSummaries(totalRuns, plan.roundSummaries);
@@ -1636,6 +1641,7 @@ function normalizeAutoRunTimerPlan(plan) {
       fireAt,
       totalRuns,
       autoRunSkipFailures,
+      autoRunNeverStop,
       mode,
       currentRun: 0,
       attemptRun: 0,
@@ -1654,6 +1660,7 @@ function normalizeAutoRunTimerPlan(plan) {
       fireAt,
       totalRuns,
       autoRunSkipFailures,
+      autoRunNeverStop,
       mode: 'restart',
       currentRun: normalizedCurrentRun,
       attemptRun: normalizedAttemptRun,
@@ -1671,6 +1678,7 @@ function normalizeAutoRunTimerPlan(plan) {
     fireAt,
     totalRuns,
     autoRunSkipFailures,
+    autoRunNeverStop,
     mode: 'restart',
     currentRun: normalizedCurrentRun,
     attemptRun: normalizedAttemptRun,
@@ -1701,6 +1709,7 @@ function normalizeAutoRunTimerPlanFromState(state = {}) {
     fireAt: legacyScheduledAt,
     totalRuns: state.scheduledAutoRunPlan?.totalRuns ?? state.autoRunTotalRuns,
     autoRunSkipFailures: state.scheduledAutoRunPlan?.autoRunSkipFailures ?? state.autoRunSkipFailures,
+    autoRunNeverStop: state.scheduledAutoRunPlan?.autoRunNeverStop ?? state.autoRunNeverStop,
     autoRunSessionId: state.autoRunSessionId,
     mode: state.scheduledAutoRunPlan?.mode,
   });
@@ -2367,6 +2376,7 @@ function normalizePersistentSettingValue(key, value) {
     case 'gopayHelperBalanceUpdatedAt':
       return Math.max(0, Number(value) || 0);
     case 'autoRunSkipFailures':
+    case 'autoRunNeverStop':
     case 'oauthFlowTimeoutEnabled':
     case 'autoRunDelayEnabled':
     case 'phoneVerificationEnabled':
@@ -8458,6 +8468,9 @@ function isVerificationMailPollingError(error) {
 }
 
 function isAddPhoneAuthFailure(error) {
+  if (String(error?.code || '').trim() === 'STEP3_PHONE_CREDENTIAL_INVALID') {
+    return false;
+  }
   if (typeof loggingStatus !== 'undefined' && loggingStatus?.isAddPhoneAuthFailure) {
     return loggingStatus.isAddPhoneAuthFailure(error);
   }
@@ -9018,6 +9031,7 @@ function getAutoRunTimerResumeOptions(plan) {
       loopOptions: {
         autoRunSessionId: normalizedPlan.autoRunSessionId,
         autoRunSkipFailures: normalizedPlan.autoRunSkipFailures,
+        autoRunNeverStop: normalizedPlan.autoRunNeverStop,
         mode: normalizedPlan.mode,
       },
       statusPayload: {
@@ -9035,6 +9049,7 @@ function getAutoRunTimerResumeOptions(plan) {
       loopOptions: {
         autoRunSessionId: normalizedPlan.autoRunSessionId,
         autoRunSkipFailures: normalizedPlan.autoRunSkipFailures,
+        autoRunNeverStop: normalizedPlan.autoRunNeverStop,
         mode: 'restart',
         resumeCurrentRun: nextRun,
         resumeAttemptRun: 1,
@@ -9053,6 +9068,7 @@ function getAutoRunTimerResumeOptions(plan) {
     loopOptions: {
       autoRunSessionId: normalizedPlan.autoRunSessionId,
       autoRunSkipFailures: normalizedPlan.autoRunSkipFailures,
+      autoRunNeverStop: normalizedPlan.autoRunNeverStop,
       mode: 'restart',
       resumeCurrentRun: normalizedPlan.currentRun,
       resumeAttemptRun: normalizedPlan.attemptRun,
@@ -9123,6 +9139,7 @@ async function launchAutoRunTimerPlan(trigger = 'alarm', options = {}) {
       resumeOptions.statusPayload,
       {
         autoRunSkipFailures: plan.autoRunSkipFailures,
+        autoRunNeverStop: plan.autoRunNeverStop,
         autoRunRoundSummaries: serializeAutoRunRoundSummaries(plan.totalRuns, plan.roundSummaries),
         autoRunTimerPlan: null,
         scheduledAutoRunPlan: null,
@@ -9173,6 +9190,7 @@ async function scheduleAutoRun(totalRuns, options = {}) {
     fireAt: Date.now() + delayMinutes * 60 * 1000,
     totalRuns,
     autoRunSkipFailures: options.autoRunSkipFailures,
+    autoRunNeverStop: options.autoRunNeverStop,
     autoRunSessionId: sessionId,
     mode: options.mode,
   });
@@ -9184,6 +9202,7 @@ async function scheduleAutoRun(totalRuns, options = {}) {
 
   await persistAutoRunTimerPlan(timerPlan, {
     autoRunSkipFailures: timerPlan.autoRunSkipFailures,
+    autoRunNeverStop: timerPlan.autoRunNeverStop,
     autoRunRoundSummaries: serializeAutoRunRoundSummaries(timerPlan.totalRuns, []),
   });
   await addLog(
@@ -9255,6 +9274,7 @@ async function restoreAutoRunTimerIfNeeded() {
       autoRunSessionId: restoredSessionId,
     }, {
       autoRunSkipFailures: plan.autoRunSkipFailures,
+      autoRunNeverStop: plan.autoRunNeverStop,
       autoRunRoundSummaries: serializeAutoRunRoundSummaries(plan.totalRuns, plan.roundSummaries),
     });
   } else {
@@ -9273,6 +9293,7 @@ async function restoreAutoRunTimerIfNeeded() {
     {
       autoRunSessionId: plan.autoRunSessionId,
       autoRunSkipFailures: plan.autoRunSkipFailures,
+      autoRunNeverStop: plan.autoRunNeverStop,
       autoRunRoundSummaries: serializeAutoRunRoundSummaries(plan.totalRuns, plan.roundSummaries),
       autoRunTimerPlan: plan,
       scheduledAutoRunPlan: null,
@@ -11430,6 +11451,7 @@ async function resumeAutoRun() {
   startAutoRunLoop(totalRuns, {
     autoRunSessionId: normalizeAutoRunSessionId(state.autoRunSessionId),
     autoRunSkipFailures: Boolean(state.autoRunSkipFailures),
+    autoRunNeverStop: Boolean(state.autoRunNeverStop),
     mode: 'continue',
     resumeCurrentRun: currentRun,
     resumeAttemptRun: attemptRun,

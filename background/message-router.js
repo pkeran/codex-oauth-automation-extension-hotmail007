@@ -832,9 +832,10 @@
           }
           const totalRuns = normalizeRunCount(message.payload?.totalRuns || 1);
           const autoRunSkipFailures = Boolean(message.payload?.autoRunSkipFailures);
+          const autoRunNeverStop = Boolean(message.payload?.autoRunNeverStop);
           const mode = message.payload?.mode === 'continue' ? 'continue' : 'restart';
-          await setState({ autoRunSkipFailures });
-          startAutoRunLoop(totalRuns, { autoRunSkipFailures, mode });
+          await setState({ autoRunSkipFailures, autoRunNeverStop });
+          startAutoRunLoop(totalRuns, { autoRunSkipFailures, autoRunNeverStop, mode });
           return { ok: true };
         }
 
@@ -855,6 +856,7 @@
           return await scheduleAutoRun(totalRuns, {
             delayMinutes: message.payload?.delayMinutes,
             autoRunSkipFailures: Boolean(message.payload?.autoRunSkipFailures),
+            autoRunNeverStop: Boolean(message.payload?.autoRunNeverStop),
             mode: message.payload?.mode,
           });
         }

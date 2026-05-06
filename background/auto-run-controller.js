@@ -214,7 +214,7 @@
     }
 
     async function waitBetweenAutoRunRounds(targetRun, totalRuns, roundSummary, options = {}) {
-      const { autoRunSkipFailures = false, roundSummaries = [] } = options;
+      const { autoRunSkipFailures = false, autoRunNeverStop = false, roundSummaries = [] } = options;
       if (totalRuns <= 1 || targetRun >= totalRuns) {
         return false;
       }
@@ -240,11 +240,13 @@
         attemptRun: currentRuntime.autoRunAttemptRun,
         autoRunSessionId: currentRuntime.autoRunSessionId,
         autoRunSkipFailures,
+        autoRunNeverStop,
         roundSummaries,
         countdownTitle: '线程间隔中',
         countdownNote: `第 ${Math.min(targetRun + 1, totalRuns)}/${totalRuns} 轮即将开始`,
       }, {
         autoRunSkipFailures,
+        autoRunNeverStop,
         autoRunRoundSummaries: serializeAutoRunRoundSummaries(totalRuns, roundSummaries),
       });
       runtime.set({ autoRunActive: false });
@@ -252,7 +254,7 @@
     }
 
     async function waitBeforeAutoRunRetry(targetRun, totalRuns, nextAttemptRun, options = {}) {
-      const { autoRunSkipFailures = false, roundSummaries = [] } = options;
+      const { autoRunSkipFailures = false, autoRunNeverStop = false, roundSummaries = [] } = options;
       const fallbackThreadIntervalMinutes = normalizeAutoRunFallbackThreadIntervalMinutes(
         (await getState()).autoRunFallbackThreadIntervalMinutes
       );
@@ -272,11 +274,13 @@
         attemptRun: nextAttemptRun,
         autoRunSessionId: runtime.get().autoRunSessionId,
         autoRunSkipFailures,
+        autoRunNeverStop,
         roundSummaries,
         countdownTitle: '线程间隔中',
         countdownNote: `第 ${targetRun}/${totalRuns} 轮第 ${nextAttemptRun} 次尝试即将开始`,
       }, {
         autoRunSkipFailures,
+        autoRunNeverStop,
         autoRunRoundSummaries: serializeAutoRunRoundSummaries(totalRuns, roundSummaries),
       });
       runtime.set({ autoRunActive: false });
@@ -337,6 +341,7 @@
       currentRuntime = runtime.get();
 
       const autoRunSkipFailures = Boolean(options.autoRunSkipFailures);
+      const autoRunNeverStop = Boolean(options.autoRunNeverStop);
       const initialMode = options.mode === 'continue' ? 'continue' : 'restart';
       const resumeCurrentRun = Number.isInteger(options.resumeCurrentRun) && options.resumeCurrentRun > 0
         ? Math.min(totalRuns, options.resumeCurrentRun)
@@ -372,6 +377,7 @@
       await setState({
         autoRunSessionId: sessionId,
         autoRunSkipFailures,
+        autoRunNeverStop,
         autoRunRoundSummaries: serializeAutoRunRoundSummaries(totalRuns, roundSummaries),
         ...getAutoRunStatusPayload(initialPhase, {
           currentRun: showResumePosition ? resumeCurrentRun : 0,
@@ -389,9 +395,13 @@
         let reuseExistingProgress = resumingCurrentRound;
         const currentRoundState = await getState();
         const keepSameEmailUntilAddPhone = autoRunSkipFailures && shouldKeepCustomMailProviderPoolEmail(currentRoundState);
-        const maxAttemptsForRound = autoRunSkipFailures
-          ? (keepSameEmailUntilAddPhone ? Number.MAX_SAFE_INTEGER : AUTO_RUN_MAX_RETRIES_PER_ROUND + 1)
-          : (AUTO_RUN_MAX_RETRIES_PER_ROUND + 1);
+        const maxAttemptsForRound = autoRunNeverStop
+          ? Number.MAX_SAFE_INTEGER
+          : (
+            autoRunSkipFailures
+              ? (keepSameEmailUntilAddPhone ? Number.MAX_SAFE_INTEGER : AUTO_RUN_MAX_RETRIES_PER_ROUND + 1)
+              : (AUTO_RUN_MAX_RETRIES_PER_ROUND + 1)
+          );
 
         while (attemptRun <= maxAttemptsForRound) {
           runtime.set({
@@ -430,6 +440,7 @@
               paypalEmail: prevState.paypalEmail,
               paypalPassword: prevState.paypalPassword,
               autoRunSkipFailures: prevState.autoRunSkipFailures,
+              autoRunNeverStop: prevState.autoRunNeverStop,
               autoRunFallbackThreadIntervalMinutes: prevState.autoRunFallbackThreadIntervalMinutes,
               autoRunDelayEnabled: prevState.autoRunDelayEnabled,
               autoRunDelayMinutes: prevState.autoRunDelayMinutes,
@@ -460,6 +471,7 @@
             await setState({
               autoRunSessionId: sessionId,
               autoRunSkipFailures,
+              autoRunNeverStop,
               autoRunRoundSummaries: serializeAutoRunRoundSummaries(totalRuns, roundSummaries),
               ...getAutoRunStatusPayload('running', { currentRun: targetRun, totalRuns, attemptRun, sessionId }),
             });
@@ -552,18 +564,21 @@
               && !blockedByBrowserSwitch
               && typeof isConfigurationFatalFailure === 'function'
               && isConfigurationFatalFailure(err);
+            const structuredErrorCode = getStructuredErrorCode(err);
             const blockedByPhoneSmsRateLimit = typeof isPhoneSmsPlatformRateLimitFailure === 'function'
               && isPhoneSmsPlatformRateLimitFailure(err);
             const blockedByPhoneNoSupply = !blockedByPhoneSmsRateLimit
               && isPhoneNumberSupplyExhaustedFailure(err);
             const blockedByHotmailNoStock = !blockedByPhoneSmsRateLimit
-              && getStructuredErrorCode(err) === 'HOTMAIL007_NO_STOCK';
+              && structuredErrorCode === 'HOTMAIL007_NO_STOCK';
             const blockedByHotmailAccountInvalid = !blockedByPhoneSmsRateLimit
-              && getStructuredErrorCode(err) === 'HOTMAIL_ACCOUNT_INVALID';
+              && structuredErrorCode === 'HOTMAIL_ACCOUNT_INVALID';
+            const blockedByStep3PhoneCredentialInvalid = structuredErrorCode === 'STEP3_PHONE_CREDENTIAL_INVALID';
             const blockedByAddPhone = !blockedByPhoneSmsRateLimit
               && !blockedByPhoneNoSupply
               && !blockedByHotmailNoStock
               && !blockedByHotmailAccountInvalid
+              && !blockedByStep3PhoneCredentialInvalid
               && typeof isAddPhoneAuthFailure === 'function'
               && isAddPhoneAuthFailure(err);
             const blockedByPlusNonFreeTrial = typeof isPlusCheckoutNonFreeTrialFailure === 'function'
@@ -573,14 +588,18 @@
               && isSignupUserAlreadyExistsFailure(err);
             const blockedByStep4Route405 = typeof isStep4Route405RecoveryLimitFailure === 'function'
               && isStep4Route405RecoveryLimitFailure(err);
-            const blockedByStep3PhoneCredentialInvalid = getStructuredErrorCode(err) === 'STEP3_PHONE_CREDENTIAL_INVALID';
             const mailboxProviderTransient = typeof isMailboxProviderTransientFailure === 'function'
               && isMailboxProviderTransientFailure(err);
+            const forceCurrentRoundRetry = autoRunNeverStop
+              && !blockedBySecurity
+              && !blockedByBrowserSwitch
+              && !blockedByConfigurationFatal;
             const canRetry = !blockedBySecurity
               && !blockedByBrowserSwitch
               && !blockedByConfigurationFatal
               && (
-                (blockedByStep3PhoneCredentialInvalid && attemptRun < maxAttemptsForRound)
+                (forceCurrentRoundRetry && attemptRun < maxAttemptsForRound)
+                || (blockedByStep3PhoneCredentialInvalid && attemptRun < maxAttemptsForRound)
                 || (
                   (
                     mailboxProviderTransient
@@ -595,7 +614,7 @@
                       && !blockedByStep3PhoneCredentialInvalid
                     )
                   )
-                  && autoRunSkipFailures
+                  && (autoRunSkipFailures || autoRunNeverStop)
                   && attemptRun < maxAttemptsForRound
                 )
               );
@@ -623,7 +642,7 @@
               break;
             }
 
-            if (blockedByHotmailNoStock || blockedByHotmailAccountInvalid) {
+            if ((blockedByHotmailNoStock || blockedByHotmailAccountInvalid) && !autoRunNeverStop) {
               roundSummary.status = 'failed';
               roundSummary.finalFailureReason = reason;
               await setState({
@@ -646,7 +665,7 @@
               break;
             }
 
-            if (blockedByAddPhone) {
+            if (blockedByAddPhone && !autoRunNeverStop) {
               roundSummary.status = 'failed';
               roundSummary.finalFailureReason = reason;
               await setState({
@@ -681,7 +700,7 @@
               break;
             }
 
-            if (blockedByPhoneNoSupply) {
+            if (blockedByPhoneNoSupply && !autoRunNeverStop) {
               roundSummary.status = 'failed';
               roundSummary.finalFailureReason = reason;
               await setState({
@@ -716,7 +735,7 @@
               break;
             }
 
-            if (blockedByPlusNonFreeTrial) {
+            if (blockedByPlusNonFreeTrial && !autoRunNeverStop) {
               roundSummary.status = 'failed';
               roundSummary.finalFailureReason = reason;
               await setState({
@@ -751,7 +770,7 @@
               break;
             }
 
-            if (blockedBySignupUserAlreadyExists) {
+            if (blockedBySignupUserAlreadyExists && !autoRunNeverStop) {
               roundSummary.status = 'failed';
               roundSummary.finalFailureReason = reason;
               await setState({
@@ -786,7 +805,7 @@
               break;
             }
 
-            if (blockedByStep4Route405) {
+            if (blockedByStep4Route405 && !autoRunNeverStop) {
               roundSummary.status = 'failed';
               roundSummary.finalFailureReason = reason;
               await setState({
@@ -838,9 +857,13 @@
               });
               forceFreshTabsNextRun = true;
               await addLog(
-                keepSameEmailUntilAddPhone
+                autoRunNeverStop
+                  ? `不停止模式：${Math.round(AUTO_RUN_RETRY_DELAY_MS / 1000)} 秒后重新开始第 ${targetRun}/${totalRuns} 轮第 ${attemptRun + 1} 次尝试。`
+                  : (
+                    keepSameEmailUntilAddPhone
                   ? `自动重试：${Math.round(AUTO_RUN_RETRY_DELAY_MS / 1000)} 秒后继续使用当前邮箱，开始第 ${targetRun}/${totalRuns} 轮第 ${attemptRun + 1} 次尝试。`
-                  : `自动重试：${Math.round(AUTO_RUN_RETRY_DELAY_MS / 1000)} 秒后开始第 ${targetRun}/${totalRuns} 轮第 ${attemptRun + 1} 次尝试（第 ${retryIndex}/${AUTO_RUN_MAX_RETRIES_PER_ROUND} 次重试）。`,
+                  : `自动重试：${Math.round(AUTO_RUN_RETRY_DELAY_MS / 1000)} 秒后开始第 ${targetRun}/${totalRuns} 轮第 ${attemptRun + 1} 次尝试（第 ${retryIndex}/${AUTO_RUN_MAX_RETRIES_PER_ROUND} 次重试）。`
+                  ),
                 'warn'
               );
               try {
@@ -863,6 +886,7 @@
               try {
                 const parkedForRetry = await waitBeforeAutoRunRetry(targetRun, totalRuns, attemptRun + 1, {
                   autoRunSkipFailures,
+                  autoRunNeverStop,
                   roundSummaries,
                 });
                 if (parkedForRetry) {
@@ -895,7 +919,7 @@
               autoRunRoundSummaries: serializeAutoRunRoundSummaries(totalRuns, roundSummaries),
             });
             await appendRoundRecordIfNeeded('failed', reason);
-            if (!autoRunSkipFailures) {
+            if (!autoRunSkipFailures && !autoRunNeverStop) {
               cancelPendingCommands('当前轮执行失败。');
               await broadcastStopToContentScripts();
               await addLog('自动重试未开启，自动运行将在当前失败后停止。', 'warn');
@@ -932,6 +956,7 @@
         try {
           const parkedForNextRound = await waitBetweenAutoRunRounds(targetRun, totalRuns, roundSummary, {
             autoRunSkipFailures,
+            autoRunNeverStop,
             roundSummaries,
           });
           if (parkedForNextRound) {
