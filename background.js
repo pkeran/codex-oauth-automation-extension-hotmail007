@@ -2754,12 +2754,18 @@ function buildSettingsExportFilename(date = new Date()) {
 }
 
 async function exportSettingsBundle() {
-  const settings = await getPersistedSettings();
+  const [settings, accountRunHistory, accountCostLedger] = await Promise.all([
+    getPersistedSettings(),
+    accountRunHistoryHelpers?.getPersistedAccountRunHistory?.() || [],
+    getPersistedAccountCostLedger(),
+  ]);
   const bundle = {
     schemaVersion: SETTINGS_EXPORT_SCHEMA_VERSION,
     exportedAt: new Date().toISOString(),
     extensionVersion: chrome.runtime.getManifest().version,
     settings,
+    accountRunHistory,
+    accountCostLedger,
   };
 
   return {
@@ -2789,6 +2795,12 @@ async function importSettingsBundle(configBundle) {
     fillDefaults: true,
     requireKnownKeys: true,
   });
+  const importedAccountRunHistory = Array.isArray(configBundle.accountRunHistory)
+    ? await accountRunHistoryHelpers?.setPersistedAccountRunHistory?.(configBundle.accountRunHistory) || []
+    : await accountRunHistoryHelpers?.getPersistedAccountRunHistory?.() || [];
+  const importedAccountCostLedger = Array.isArray(configBundle.accountCostLedger)
+    ? await setPersistedAccountCostLedger(configBundle.accountCostLedger)
+    : await getPersistedAccountCostLedger();
 
   await setPersistentSettings(importedSettings);
 
@@ -2796,6 +2808,8 @@ async function importSettingsBundle(configBundle) {
     ...importedSettings,
     currentHotmailAccountId: null,
     email: null,
+    accountRunHistory: importedAccountRunHistory,
+    accountCostLedger: importedAccountCostLedger,
   };
 
   await setState(sessionUpdates);
@@ -2803,6 +2817,8 @@ async function importSettingsBundle(configBundle) {
     ...importedSettings,
     currentHotmailAccountId: null,
     ...(sessionUpdates.email !== undefined ? { email: sessionUpdates.email } : {}),
+    accountRunHistory: importedAccountRunHistory,
+    accountCostLedger: importedAccountCostLedger,
   });
 
   return getState();
@@ -10348,9 +10364,15 @@ async function clearAndBroadcastAccountRunHistory(stateOverride = null) {
   }
 
   const result = await accountRunHistoryHelpers.clearAccountRunHistory(stateOverride);
-  await clearPersistedAccountCostLedger();
   await broadcastAccountRunHistoryUpdate();
   return result;
+}
+
+async function clearAndBroadcastAccountCostLedger() {
+  const ledger = await getPersistedAccountCostLedger();
+  await clearPersistedAccountCostLedger();
+  await broadcastAccountCostLedgerUpdate();
+  return { clearedCount: ledger.length };
 }
 
 async function deleteAndBroadcastAccountRunHistoryRecords(recordIds = [], stateOverride = null) {
@@ -11680,6 +11702,7 @@ const messageRouter = self.MultiPageBackgroundMessageRouter?.createMessageRouter
   applyIpProxySettingsFromState,
   cancelScheduledAutoRun,
   checkIcloudSession,
+  clearAccountCostLedger: (...args) => clearAndBroadcastAccountCostLedger(...args),
   clearAccountRunHistory: (...args) => clearAndBroadcastAccountRunHistory(...args),
   deleteAccountRunHistoryRecords: (...args) => deleteAndBroadcastAccountRunHistoryRecords(...args),
   clearAutoRunTimerAlarm,

@@ -13,6 +13,7 @@
       applyIpProxySettingsFromState,
       cancelScheduledAutoRun,
       checkIcloudSession,
+      clearAccountCostLedger,
       clearAccountRunHistory,
       deleteAccountRunHistoryRecords,
       clearAutoRunTimerAlarm,
@@ -756,6 +757,18 @@
             return { ok: true, clearedCount: 0 };
           }
           const result = await clearAccountRunHistory(state);
+          return { ok: true, ...result };
+        }
+
+        case 'CLEAR_ACCOUNT_COST_LEDGER': {
+          const state = await getState();
+          if (isAutoRunLockedState(state)) {
+            throw new Error('Auto-run is active; cannot clear the cost ledger right now.');
+          }
+          if (typeof clearAccountCostLedger !== 'function') {
+            return { ok: true, clearedCount: 0 };
+          }
+          const result = await clearAccountCostLedger(state);
           return { ok: true, ...result };
         }
 

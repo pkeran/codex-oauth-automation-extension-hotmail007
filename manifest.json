@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "codex-oauth-automation-extension-hotmail007",
-  "version": "4.3",
-  "version_name": "Ultra6.3 Hotmail007",
+  "version": "4.4",
+  "version_name": "Ultra6.4 Hotmail007",
   "description": "用于自动执行多步骤 OAuth 注册流程",
   "permissions": [
     "sidePanel",

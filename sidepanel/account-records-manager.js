@@ -290,6 +290,133 @@
       return entries.map((entry) => formatCostAmount(entry.amount, entry.currency)).join(' / ');
     }
 
+    function getDayKey(value) {
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) {
+        return '';
+      }
+      return new Intl.DateTimeFormat('sv-SE', {
+        timeZone: displayTimeZone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).format(date);
+    }
+
+    function summarizeDailyCosts(records = [], ledgerEntries = []) {
+      const dailyMap = new Map();
+
+      function ensureDayEntry(dayKey) {
+        if (!dayKey) {
+          return null;
+        }
+        if (!dailyMap.has(dayKey)) {
+          dailyMap.set(dayKey, {
+            dayKey,
+            successCount: 0,
+            successTotalByCurrency: new Map(),
+            ledgerTotalByCurrency: new Map(),
+          });
+        }
+        return dailyMap.get(dayKey);
+      }
+
+      records.forEach((record) => {
+        if (record?.finalStatus !== 'success') {
+          return;
+        }
+        const dayKey = getDayKey(record.finishedAt);
+        const dayEntry = ensureDayEntry(dayKey);
+        if (!dayEntry) {
+          return;
+        }
+        dayEntry.successCount += 1;
+        const amount = normalizeCostAmount(record?.costs?.total?.amount);
+        if (amount === null) {
+          return;
+        }
+        const currency = String(record?.costs?.total?.currency || '').trim();
+        dayEntry.successTotalByCurrency.set(
+          currency,
+          Math.round(((dayEntry.successTotalByCurrency.get(currency) || 0) + amount) * 10000) / 10000
+        );
+      });
+
+      ledgerEntries.forEach((entry) => {
+        const dayKey = getDayKey(entry?.createdAt);
+        const dayEntry = ensureDayEntry(dayKey);
+        if (!dayEntry) {
+          return;
+        }
+        const outcome = String(entry?.outcome || 'consumed').trim().toLowerCase();
+        if (outcome !== 'consumed') {
+          return;
+        }
+        const amount = normalizeCostAmount(entry?.amount);
+        if (amount === null) {
+          return;
+        }
+        const currency = String(entry?.currency || '').trim();
+        dayEntry.ledgerTotalByCurrency.set(
+          currency,
+          Math.round(((dayEntry.ledgerTotalByCurrency.get(currency) || 0) + amount) * 10000) / 10000
+        );
+      });
+
+      return [...dailyMap.values()]
+        .map((entry) => {
+          const successTotals = [...entry.successTotalByCurrency.entries()]
+            .map(([currency, amount]) => ({ currency, amount }))
+            .sort((left, right) => String(left.currency).localeCompare(String(right.currency)));
+          const ledgerTotals = [...entry.ledgerTotalByCurrency.entries()]
+            .map(([currency, amount]) => ({ currency, amount }))
+            .sort((left, right) => String(left.currency).localeCompare(String(right.currency)));
+          const amortizedTotals = ledgerTotals.map((item) => ({
+            currency: item.currency,
+            amount: entry.successCount > 0
+              ? Math.round((item.amount / entry.successCount) * 10000) / 10000
+              : 0,
+          }));
+          return {
+            dayKey: entry.dayKey,
+            successCount: entry.successCount,
+            successTotals,
+            ledgerTotals,
+            amortizedTotals,
+          };
+        })
+        .sort((left, right) => String(right.dayKey).localeCompare(String(left.dayKey)));
+    }
+
+    function renderDailyCostGroups(currentState = state.getLatestState()) {
+      if (!dom.accountRecordsDailyCosts) {
+        return;
+      }
+
+      const dailyEntries = summarizeDailyCosts(
+        getAccountRunRecords(currentState),
+        getAccountCostLedger(currentState)
+      );
+      if (!dailyEntries.length) {
+        dom.accountRecordsDailyCosts.innerHTML = `
+          <div class="account-records-daily-empty">暂无按天成本记录</div>
+        `;
+        return;
+      }
+
+      dom.accountRecordsDailyCosts.innerHTML = dailyEntries.map((entry) => `
+        <div class="account-records-daily-item">
+          <div class="account-records-daily-top">
+            <span class="account-records-daily-date mono">${escapeHtml(entry.dayKey)}</span>
+            <span class="account-records-daily-success">成功 ${escapeHtml(String(entry.successCount))}</span>
+          </div>
+          <div class="account-records-daily-line">成功总成本 ${escapeHtml(formatCurrencySummary(entry.successTotals))}</div>
+          <div class="account-records-daily-line">全部消耗总成本 ${escapeHtml(formatCurrencySummary(entry.ledgerTotals))}</div>
+          <div class="account-records-daily-line">成功摊销平均成本 ${escapeHtml(formatCurrencySummary(entry.amortizedTotals))}</div>
+        </div>
+      `).join('');
+    }
+
     function formatAccountRecordTime(value) {
       const date = new Date(value);
       if (Number.isNaN(date.getTime())) {
@@ -513,9 +640,12 @@
 
     function updateToolbarState(allRecords) {
       const totalRecords = allRecords.length;
+      const ledgerEntryCount = getAccountCostLedger().length;
       setNodeDisabled(dom.btnClearAccountRecords, totalRecords === 0);
+      setNodeDisabled(dom.btnClearAccountCostLedger, ledgerEntryCount === 0);
       setNodeDisabled(dom.btnToggleAccountRecordsSelection, totalRecords === 0);
       setNodeHidden(dom.btnClearAccountRecords, selectionMode);
+      setNodeHidden(dom.btnClearAccountCostLedger, selectionMode);
       toggleNodeClass(dom.btnToggleAccountRecordsSelection, 'is-active', selectionMode);
       setNodeAttr(dom.btnToggleAccountRecordsSelection, 'aria-pressed', selectionMode ? 'true' : 'false');
       setNodeText(dom.btnToggleAccountRecordsSelection, selectionMode ? '取消多选' : '多选');
@@ -653,6 +783,7 @@
       updateHeader(allRecords, filteredRecords);
       updateStats(allRecords, currentState);
       updateToolbarState(allRecords);
+      renderDailyCostGroups(currentState);
       renderRecordList(allRecords, filteredRecords);
     }
 
@@ -731,6 +862,35 @@
       resetSelection();
       state.syncLatestState({ accountRunHistory: [] });
       helpers.showToast?.(`已清理 ${Math.max(0, Number(response?.clearedCount) || 0)} 条账号记录。`, 'success', 2200);
+    }
+
+    async function clearCostLedger() {
+      const ledgerEntries = getAccountCostLedger();
+      if (!ledgerEntries.length) {
+        helpers.showToast?.('No cost ledger entries to clear.', 'warn', 1800);
+        return;
+      }
+
+      const confirmed = await helpers.openConfirmModal({
+        title: 'Clear Cost Ledger',
+        message: 'Clear the current cost ledger only? Account run records will be kept.',
+        confirmLabel: 'Clear Ledger',
+        confirmVariant: 'btn-danger',
+      });
+      if (!confirmed) {
+        return;
+      }
+
+      const response = await runtime.sendMessage({
+        type: 'CLEAR_ACCOUNT_COST_LEDGER',
+        source: 'sidepanel',
+      });
+      if (response?.error) {
+        throw new Error(response.error);
+      }
+
+      state.syncLatestState({ accountCostLedger: [] });
+      helpers.showToast?.(`Cleared ${Math.max(0, Number(response?.clearedCount) || 0)} cost ledger entries.`, 'success', 2200);
     }
 
     async function deleteSelectedRecords() {
@@ -852,14 +1012,21 @@
         try {
           await deleteSelectedRecords();
         } catch (error) {
-          helpers.showToast?.(`删除账号记录失败：${error.message}`, 'error');
+          helpers.showToast?.(`Failed to delete account run records: ${error.message}`, 'error');
         }
       });
       dom.btnClearAccountRecords?.addEventListener('click', async () => {
         try {
           await clearRecords();
         } catch (error) {
-          helpers.showToast?.(`清理账号记录失败：${error.message}`, 'error');
+          helpers.showToast?.(`Failed to clear account run records: ${error.message}`, 'error');
+        }
+      });
+      dom.btnClearAccountCostLedger?.addEventListener('click', async () => {
+        try {
+          await clearCostLedger();
+        } catch (error) {
+          helpers.showToast?.(`Failed to clear cost ledger: ${error.message}`, 'error');
         }
       });
     }
@@ -875,6 +1042,7 @@
 
     return {
       bindEvents,
+      clearCostLedger,
       clearRecords,
       closePanel,
       deleteSelectedRecords,

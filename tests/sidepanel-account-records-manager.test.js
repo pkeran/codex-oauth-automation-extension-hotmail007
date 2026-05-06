@@ -137,7 +137,9 @@ test('sidepanel html contains account records overlay and manager script', () =>
   assert.match(html, /id="account-records-overlay"/);
   assert.match(html, /id="account-records-list"/);
   assert.match(html, /id="account-records-stats"/);
+  assert.match(html, /id="account-records-daily-costs"/);
   assert.match(html, /id="btn-clear-account-records"/);
+  assert.match(html, /id="btn-clear-account-cost-ledger"/);
   assert.match(html, /id="btn-toggle-account-records-selection"/);
   assert.match(html, /id="btn-delete-selected-account-records"/);
   assert.match(html, /id="input-sub2api-default-proxy"/);
@@ -222,12 +224,14 @@ test('account records manager supports filter chips and partial multi-select del
   const btnOpenAccountRecords = createNode();
   const btnCloseAccountRecords = createNode();
   const btnClearAccountRecords = createNode();
+  const btnClearAccountCostLedger = createNode();
   const btnToggleAccountRecordsSelection = createNode();
   const btnDeleteSelectedAccountRecords = createNode({ hidden: true, disabled: true });
   const btnAccountRecordsPrev = createNode();
   const btnAccountRecordsNext = createNode();
   const overlay = createNode();
   const list = createNode();
+  const daily = createNode();
   const stats = createNode();
   const meta = createNode();
   const pageLabel = createNode();
@@ -248,6 +252,7 @@ test('account records manager supports filter chips and partial multi-select del
     },
     dom: {
       accountRecordsList: list,
+      accountRecordsDailyCosts: daily,
       accountRecordsMeta: meta,
       accountRecordsOverlay: overlay,
       accountRecordsPageLabel: pageLabel,
@@ -255,6 +260,7 @@ test('account records manager supports filter chips and partial multi-select del
       btnAccountRecordsNext,
       btnAccountRecordsPrev,
       btnClearAccountRecords,
+      btnClearAccountCostLedger,
       btnCloseAccountRecords,
       btnDeleteSelectedAccountRecords,
       btnOpenAccountRecords,
@@ -354,6 +360,7 @@ test('account records manager renders success cost totals, amortized cost, and p
   const api = new Function('window', `${source}; return window.SidepanelAccountRecordsManager;`)(windowObject);
 
   const list = createNode();
+  const daily = createNode();
   const meta = createNode();
   const stats = createNode();
   const manager = api.createAccountRecordsManager({
@@ -412,6 +419,7 @@ test('account records manager renders success cost totals, amortized cost, and p
     },
     dom: {
       accountRecordsList: list,
+      accountRecordsDailyCosts: daily,
       accountRecordsMeta: meta,
       accountRecordsOverlay: createNode(),
       accountRecordsPageLabel: createNode(),
@@ -419,6 +427,7 @@ test('account records manager renders success cost totals, amortized cost, and p
       btnAccountRecordsNext: createNode(),
       btnAccountRecordsPrev: createNode(),
       btnClearAccountRecords: createNode(),
+      btnClearAccountCostLedger: createNode(),
       btnCloseAccountRecords: createNode(),
       btnDeleteSelectedAccountRecords: createNode(),
       btnOpenAccountRecords: createNode(),
