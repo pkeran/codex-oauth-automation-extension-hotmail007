@@ -1,4 +1,4 @@
-// background.js — Service Worker: orchestration, state, tab management, message routing
+﻿// background.js — Service Worker: orchestration, state, tab management, message routing
 
 importScripts(
   'managed-alias-utils.js',
@@ -3466,9 +3466,27 @@ async function resolveHotmail007PurchaseFailureMessage(detail, options = {}) {
 }
 
 async function requestHotmail007PurchasePayload(options = {}) {
-  const clientKey = String(options.clientKey || '').trim();
+  const createHotmail007Error = (code, message, extras = {}) => {
+    const error = new Error(message);
+    error.code = code;
+    if (extras && typeof extras === "object") {
+      Object.assign(error, extras);
+    }
+    return error;
+  };
+  const classifyHotmail007FailureCode = (detail, fallbackCode = "HOTMAIL007_REQUEST_FAILED") => {
+    const text = String(detail || "").trim();
+    if (/stock|out\s+of\s+stock|no\s+stock|buy error/i.test(text)) {
+      return "HOTMAIL007_NO_STOCK";
+    }
+    if (/insufficient\s+balance|balance\s+(?:not\s+enough|too\s+low)|not\s+enough\s+balance/i.test(text)) {
+      return "HOTMAIL007_BALANCE_LOW";
+    }
+    return fallbackCode;
+  };
+  const clientKey = String(options.clientKey || "").trim();
   if (!clientKey) {
-    throw new Error('Hotmail007 ClientKey 未填写。');
+    throw new Error("Hotmail007 ClientKey is required.");
   }
 
   const mailType = normalizeHotmail007MailType(options.mailType);
@@ -3479,11 +3497,20 @@ async function requestHotmail007PurchasePayload(options = {}) {
     timeoutMs: Math.min(timeoutMs, 8000),
   });
   if (stockCount !== null && stockCount < quantity) {
-    throw new Error(buildHotmail007StockUnavailableMessage(mailType, stockCount));
+    throw createHotmail007Error(
+      "HOTMAIL007_NO_STOCK",
+      buildHotmail007StockUnavailableMessage(mailType, stockCount),
+      {
+        provider: "hotmail007",
+        mailType,
+        quantity,
+        stockCount,
+      }
+    );
   }
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(new Error('timeout')), timeoutMs);
+  const timeoutId = setTimeout(() => controller.abort(new Error("timeout")), timeoutMs);
 
   let response;
   try {
@@ -3492,17 +3519,33 @@ async function requestHotmail007PurchasePayload(options = {}) {
       mailType,
       quantity,
     }), {
-      method: 'GET',
+      method: "GET",
       headers: {
-        Accept: 'application/json',
+        Accept: "application/json",
       },
       signal: controller.signal,
     });
   } catch (err) {
-    if (err?.name === 'AbortError') {
-      throw new Error(`Hotmail007 采购请求超时（>${Math.round(timeoutMs / 1000)} 秒）`);
+    if (err?.name === "AbortError") {
+      throw createHotmail007Error(
+        "HOTMAIL007_TIMEOUT",
+        "Hotmail007 purchase request timed out (" + Math.round(timeoutMs / 1000) + "s)",
+        {
+          provider: "hotmail007",
+          mailType,
+          quantity,
+        }
+      );
     }
-    throw new Error(`Hotmail007 采购请求失败：${err.message}`);
+    throw createHotmail007Error(
+      "HOTMAIL007_REQUEST_FAILED",
+      "Hotmail007 purchase request failed: " + err.message,
+      {
+        provider: "hotmail007",
+        mailType,
+        quantity,
+      }
+    );
   } finally {
     clearTimeout(timeoutId);
   }
@@ -3516,22 +3559,39 @@ async function requestHotmail007PurchasePayload(options = {}) {
   }
 
   if (!response.ok) {
-    const detail = payload?.msg || payload?.message || payload?.error || text || `HTTP ${response.status}`;
+    const detail = payload?.msg || payload?.message || payload?.error || text || ("HTTP " + response.status);
     const stockFailureMessage = await resolveHotmail007PurchaseFailureMessage(detail, {
       mailType,
       quantity,
       timeoutMs: Math.min(timeoutMs, 8000),
     });
-    throw new Error(stockFailureMessage || `Hotmail007 采购失败：${detail}`);
+    throw createHotmail007Error(
+      classifyHotmail007FailureCode(stockFailureMessage || detail),
+      stockFailureMessage || ("Hotmail007 purchase failed: " + detail),
+      {
+        provider: "hotmail007",
+        mailType,
+        quantity,
+        responseStatus: response.status,
+      }
+    );
   }
   if (payload?.success === false || (payload?.code !== undefined && Number(payload.code) !== 0)) {
-    const detail = payload?.msg || payload?.message || payload?.error || '未返回成功状态';
+    const detail = payload?.msg || payload?.message || payload?.error || "unknown status";
     const stockFailureMessage = await resolveHotmail007PurchaseFailureMessage(detail, {
       mailType,
       quantity,
       timeoutMs: Math.min(timeoutMs, 8000),
     });
-    throw new Error(stockFailureMessage || `Hotmail007 采购失败：${detail}`);
+    throw createHotmail007Error(
+      classifyHotmail007FailureCode(stockFailureMessage || detail),
+      stockFailureMessage || ("Hotmail007 purchase failed: " + detail),
+      {
+        provider: "hotmail007",
+        mailType,
+        quantity,
+      }
+    );
   }
 
   return {
@@ -3541,7 +3601,6 @@ async function requestHotmail007PurchasePayload(options = {}) {
     payload,
   };
 }
-
 async function purchaseHotmailAccountsFromHotmail007(options = {}) {
   const result = await requestHotmail007PurchasePayload(options);
   const rawAccounts = Array.isArray(result?.payload?.data) ? result.payload.data.filter(Boolean) : [];
@@ -3918,29 +3977,37 @@ async function fetchHotmailMailboxMessagesFromRemoteService(account, mailboxes =
 }
 
 async function requestHotmailLocalMessages(account, mailboxes = HOTMAIL_MAILBOXES) {
+  const createHotmailLocalError = (code, message, extras = {}) => {
+    const error = new Error(message);
+    error.code = code;
+    if (extras && typeof extras === "object") {
+      Object.assign(error, extras);
+    }
+    return error;
+  };
   if (!account?.email) {
-    throw new Error('Hotmail 账号缺少邮箱地址。');
+    throw createHotmailLocalError("HOTMAIL_ACCOUNT_INVALID", "Hotmail account email is required.");
   }
   if (!account?.clientId) {
-    throw new Error(`Hotmail 账号 ${account.email || account.id} 缺少客户端 ID。`);
+    throw createHotmailLocalError("HOTMAIL_ACCOUNT_INVALID", "Hotmail account clientId is required: " + (account.email || account.id || "unknown"));
   }
   if (!account?.refreshToken) {
-    throw new Error(`Hotmail 账号 ${account.email || account.id} 缺少刷新令牌（refresh token）。`);
+    throw createHotmailLocalError("HOTMAIL_REFRESH_TOKEN_MISSING", "Hotmail account refreshToken is required: " + (account.email || account.id || "unknown"));
   }
 
   const serviceSettings = getHotmailServiceSettings(await getState());
   const { timeoutMs } = getHotmailMailApiRequestConfig();
   const requestTimeoutMs = Math.max(timeoutMs, HOTMAIL_LOCAL_HELPER_TIMEOUT_MS);
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(new Error('timeout')), requestTimeoutMs);
+  const timeoutId = setTimeout(() => controller.abort(new Error("timeout")), requestTimeoutMs);
 
   let response;
   try {
-    response = await fetch(buildHotmailLocalEndpoint(serviceSettings.localBaseUrl, '/messages'), {
-      method: 'POST',
+    response = await fetch(buildHotmailLocalEndpoint(serviceSettings.localBaseUrl, "/messages"), {
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
+        "Content-Type": "application/json",
+        Accept: "application/json",
       },
       body: JSON.stringify({
         email: account.email,
@@ -3952,10 +4019,10 @@ async function requestHotmailLocalMessages(account, mailboxes = HOTMAIL_MAILBOXE
       signal: controller.signal,
     });
   } catch (err) {
-    if (err?.name === 'AbortError') {
-      throw new Error(`Hotmail 本地助手请求超时（>${Math.round(requestTimeoutMs / 1000)} 秒）`);
+    if (err?.name === "AbortError") {
+      throw createHotmailLocalError("HOTMAIL_LOCAL_HELPER_UNAVAILABLE", "Hotmail local helper request timed out (" + Math.round(requestTimeoutMs / 1000) + "s)");
     }
-    throw new Error(`Hotmail 本地助手请求失败：${err.message}`);
+    throw createHotmailLocalError("HOTMAIL_LOCAL_HELPER_UNAVAILABLE", "Hotmail local helper request failed: " + err.message);
   } finally {
     clearTimeout(timeoutId);
   }
@@ -3969,30 +4036,33 @@ async function requestHotmailLocalMessages(account, mailboxes = HOTMAIL_MAILBOXE
   }
 
   if (!response.ok || payload?.ok === false) {
-    const errorText = payload?.error || payload?.message || text || `HTTP ${response.status}`;
-    throw new Error(`Hotmail 本地助手返回失败：${errorText}`);
+    const errorText = payload?.error || payload?.message || text || ("HTTP " + response.status);
+    const errorCode = /refresh token invalid|invalid_grant|unauthorized|client id invalid|token expired/i.test(String(errorText || ""))
+      ? "HOTMAIL_ACCOUNT_INVALID"
+      : "HOTMAIL_LOCAL_HELPER_UNAVAILABLE";
+    throw createHotmailLocalError(errorCode, "Hotmail local helper returned failure: " + errorText);
   }
 
   const rawMessages = Array.isArray(payload?.messages) ? payload.messages : [];
   const normalizedMessages = normalizeHotmailMailApiMessages(rawMessages).map((message, index) => ({
     ...message,
-    mailbox: rawMessages[index]?.mailbox || 'INBOX',
+    mailbox: rawMessages[index]?.mailbox || "INBOX",
     receivedTimestamp: Number(rawMessages[index]?.receivedTimestamp || 0) || 0,
   }));
   const mailboxResults = Array.isArray(payload?.mailboxResults)
     ? payload.mailboxResults.map((item) => ({
-      mailbox: String(item?.mailbox || 'INBOX'),
+      mailbox: String(item?.mailbox || "INBOX"),
       count: Number(item?.count || 0),
-      messages: normalizedMessages.filter((message) => String(message.mailbox || 'INBOX') === String(item?.mailbox || 'INBOX')),
+      messages: normalizedMessages.filter((message) => String(message.mailbox || "INBOX") === String(item?.mailbox || "INBOX")),
     }))
     : mailboxes.map((mailbox) => ({
       mailbox,
-      count: normalizedMessages.filter((message) => String(message.mailbox || 'INBOX') === mailbox).length,
-      messages: normalizedMessages.filter((message) => String(message.mailbox || 'INBOX') === mailbox),
+      count: normalizedMessages.filter((message) => String(message.mailbox || "INBOX") === mailbox).length,
+      messages: normalizedMessages.filter((message) => String(message.mailbox || "INBOX") === mailbox),
     }));
 
   const nextAccount = applyHotmailApiResultToAccount(account, {
-    nextRefreshToken: String(payload?.nextRefreshToken || '').trim(),
+    nextRefreshToken: String(payload?.nextRefreshToken || "").trim(),
   });
   const savedAccount = await upsertHotmailAccount(nextAccount);
   return {
@@ -4001,31 +4071,38 @@ async function requestHotmailLocalMessages(account, mailboxes = HOTMAIL_MAILBOXE
     messages: normalizedMessages,
   };
 }
-
 async function requestHotmailLocalCode(account, pollPayload = {}) {
+  const createHotmailLocalError = (code, message, extras = {}) => {
+    const error = new Error(message);
+    error.code = code;
+    if (extras && typeof extras === "object") {
+      Object.assign(error, extras);
+    }
+    return error;
+  };
   if (!account?.email) {
-    throw new Error('Hotmail 账号缺少邮箱地址。');
+    throw createHotmailLocalError("HOTMAIL_ACCOUNT_INVALID", "Hotmail account email is required.");
   }
   if (!account?.clientId) {
-    throw new Error(`Hotmail 账号 ${account.email || account.id} 缺少客户端 ID。`);
+    throw createHotmailLocalError("HOTMAIL_ACCOUNT_INVALID", "Hotmail account clientId is required: " + (account.email || account.id || "unknown"));
   }
   if (!account?.refreshToken) {
-    throw new Error(`Hotmail 账号 ${account.email || account.id} 缺少刷新令牌（refresh token）。`);
+    throw createHotmailLocalError("HOTMAIL_REFRESH_TOKEN_MISSING", "Hotmail account refreshToken is required: " + (account.email || account.id || "unknown"));
   }
 
   const serviceSettings = getHotmailServiceSettings(await getState());
   const { timeoutMs } = getHotmailMailApiRequestConfig();
   const requestTimeoutMs = Math.max(timeoutMs, HOTMAIL_LOCAL_HELPER_TIMEOUT_MS);
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(new Error('timeout')), requestTimeoutMs);
+  const timeoutId = setTimeout(() => controller.abort(new Error("timeout")), requestTimeoutMs);
 
   let response;
   try {
-    response = await fetch(buildHotmailLocalEndpoint(serviceSettings.localBaseUrl, '/code'), {
-      method: 'POST',
+    response = await fetch(buildHotmailLocalEndpoint(serviceSettings.localBaseUrl, "/code"), {
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
+        "Content-Type": "application/json",
+        Accept: "application/json",
       },
       body: JSON.stringify({
         email: account.email,
@@ -4041,10 +4118,10 @@ async function requestHotmailLocalCode(account, pollPayload = {}) {
       signal: controller.signal,
     });
   } catch (err) {
-    if (err?.name === 'AbortError') {
-      throw new Error(`Hotmail 本地助手请求超时（>${Math.round(requestTimeoutMs / 1000)} 秒）`);
+    if (err?.name === "AbortError") {
+      throw createHotmailLocalError("HOTMAIL_LOCAL_HELPER_UNAVAILABLE", "Hotmail local helper request timed out (" + Math.round(requestTimeoutMs / 1000) + "s)");
     }
-    throw new Error(`Hotmail 本地助手请求失败：${err.message}`);
+    throw createHotmailLocalError("HOTMAIL_LOCAL_HELPER_UNAVAILABLE", "Hotmail local helper request failed: " + err.message);
   } finally {
     clearTimeout(timeoutId);
   }
@@ -4058,30 +4135,32 @@ async function requestHotmailLocalCode(account, pollPayload = {}) {
   }
 
   if (!response.ok || payload?.ok === false) {
-    const errorText = payload?.error || payload?.message || text || `HTTP ${response.status}`;
-    throw new Error(`Hotmail 本地助手返回失败：${errorText}`);
+    const errorText = payload?.error || payload?.message || text || ("HTTP " + response.status);
+    const errorCode = /refresh token invalid|invalid_grant|unauthorized|client id invalid|token expired/i.test(String(errorText || ""))
+      ? "HOTMAIL_ACCOUNT_INVALID"
+      : "HOTMAIL_LOCAL_HELPER_UNAVAILABLE";
+    throw createHotmailLocalError(errorCode, "Hotmail local helper returned failure: " + errorText);
   }
 
   const normalizedMessage = payload?.message
     ? {
       ...normalizeHotmailMailApiMessages([payload.message])[0],
-      mailbox: payload?.message?.mailbox || 'INBOX',
+      mailbox: payload?.message?.mailbox || "INBOX",
       receivedTimestamp: Number(payload?.message?.receivedTimestamp || 0) || 0,
     }
     : null;
   const nextAccount = applyHotmailApiResultToAccount(account, {
-    nextRefreshToken: String(payload?.nextRefreshToken || '').trim(),
+    nextRefreshToken: String(payload?.nextRefreshToken || "").trim(),
   });
   const savedAccount = await upsertHotmailAccount(nextAccount);
   return {
     account: savedAccount,
-    code: String(payload?.code || ''),
+    code: String(payload?.code || ""),
     message: normalizedMessage,
     usedTimeFallback: Boolean(payload?.usedTimeFallback),
-    selectionSource: String(payload?.selectionSource || ''),
+    selectionSource: String(payload?.selectionSource || ""),
   };
 }
-
 async function pollHotmailVerificationCodeViaLocalHelper(step, account, pollPayload = {}) {
   const maxAttempts = Number(pollPayload.maxAttempts) || 5;
   const intervalMs = Number(pollPayload.intervalMs) || 3000;
@@ -4136,16 +4215,17 @@ async function verifyHotmailAccount(accountId) {
   const state = await getState();
   const account = findHotmailAccount(state.hotmailAccounts, accountId);
   if (!account) {
-    throw new Error('未找到需要校验的 Hotmail 账号。');
+    const error = new Error("Hotmail account not found for verification.");
+    error.code = "HOTMAIL_ACCOUNT_INVALID";
+    throw error;
   }
 
-  const result = await fetchHotmailMailboxMessages(account, ['INBOX']);
+  const result = await fetchHotmailMailboxMessages(account, ["INBOX"]);
   return {
     account: result.account,
     messageCount: result.mailboxResults[0]?.count || 0,
   };
 }
-
 async function ensureHotmailMailboxReadyForAutoRunRound(options = {}) {
   const {
     targetRun = 0,
@@ -4185,7 +4265,10 @@ async function ensureHotmailMailboxReadyForAutoRunRound(options = {}) {
         continue;
       }
       if (lastError) {
-        throw new Error(`自动运行${buildRoundLabel()}开始前未找到可通过校验的 Hotmail 账号：${lastError.message}`);
+        const error = new Error("Hotmail mailbox preflight exhausted all candidates: " + lastError.message);
+        error.code = "HOTMAIL_ACCOUNT_INVALID";
+        error.lastError = lastError;
+        throw error;
       }
       throw new Error('没有可用的 Hotmail 账号。请先在侧边栏添加至少一个带刷新令牌（refresh token）的账号，或配置 Hotmail007 ClientKey。');
     }
@@ -7551,6 +7634,46 @@ function getBrowserSwitchRequiredMessage(error) {
     : message;
 }
 
+function getStructuredErrorCode(error) {
+  return error && typeof error === 'object'
+    ? String(error.code || '').trim()
+    : '';
+}
+
+function isSecurityBlockedFailure(error) {
+  return getStructuredErrorCode(error) === 'CF_SECURITY_BLOCKED'
+    || isCloudflareSecurityBlockedError(error);
+}
+
+function isBrowserSwitchRequiredFailure(error) {
+  return getStructuredErrorCode(error) === 'BROWSER_SWITCH_REQUIRED'
+    || isBrowserSwitchRequiredError(error);
+}
+
+function isConfigurationFatalFailure(error) {
+  const code = getStructuredErrorCode(error);
+  if (code === 'HOTMAIL007_BALANCE_LOW' || code === 'HOTMAIL_REFRESH_TOKEN_MISSING') {
+    return true;
+  }
+  const message = getErrorMessage(error);
+  return /Hotmail007 ClientKey is required|refreshToken is required|clientId is required|balance/i.test(message);
+}
+
+function isMailboxProviderTransientFailure(error) {
+  const code = getStructuredErrorCode(error);
+  if ([
+    'HOTMAIL007_TIMEOUT',
+    'HOTMAIL007_REQUEST_FAILED',
+    'HOTMAIL_LOCAL_HELPER_UNAVAILABLE',
+    'MAIL_PROVIDER_TRANSIENT',
+    'MAIL_CODE_TIMEOUT',
+  ].includes(code)) {
+    return true;
+  }
+  const message = getErrorMessage(error);
+  return /temporary unavailable|temporarily unavailable|rate limit|too many requests|429|timed out|timeout|did not respond|helper request failed/i.test(message);
+}
+
 function broadcastSecurityBlockedAlert(title = '流程已完全停止', message = CLOUDFLARE_SECURITY_BLOCK_USER_MESSAGE, alertText = '检测到 Cloudflare 风控，请暂停当前操作。') {
   chrome.runtime.sendMessage({
     type: 'SECURITY_BLOCKED_ALERT',
@@ -9883,9 +10006,13 @@ const autoRunController = self.MultiPageBackgroundAutoRunController?.createAutoR
   getStopRequested: () => stopRequested,
   hasSavedProgress,
   isAddPhoneAuthFailure,
+  isBrowserSwitchRequiredFailure,
+  isConfigurationFatalFailure,
+  isMailboxProviderTransientFailure,
   isPhoneSmsPlatformRateLimitFailure,
   isPlusCheckoutNonFreeTrialFailure,
   isRestartCurrentAttemptError,
+  isSecurityBlockedFailure,
   isStep4Route405RecoveryLimitFailure,
   isSignupUserAlreadyExistsFailure,
   isStopError,

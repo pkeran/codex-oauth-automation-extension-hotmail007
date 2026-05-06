@@ -1,4 +1,4 @@
-(function attachBackgroundAutoRunController(root, factory) {
+﻿(function attachBackgroundAutoRunController(root, factory) {
   root.MultiPageBackgroundAutoRunController = factory();
 })(typeof self !== 'undefined' ? self : globalThis, function createBackgroundAutoRunControllerModule() {
   function createAutoRunController(deps = {}) {
@@ -23,9 +23,13 @@
       getState,
       hasSavedProgress,
       isAddPhoneAuthFailure,
+      isBrowserSwitchRequiredFailure,
+      isConfigurationFatalFailure,
+      isMailboxProviderTransientFailure,
       isPhoneSmsPlatformRateLimitFailure,
       isPlusCheckoutNonFreeTrialFailure,
       isRestartCurrentAttemptError,
+      isSecurityBlockedFailure,
       isStep4Route405RecoveryLimitFailure,
       isSignupUserAlreadyExistsFailure,
       isStopError,
@@ -128,6 +132,12 @@
       return String(state?.mailProvider || '').trim().toLowerCase() === 'custom'
         && Array.isArray(state?.customMailProviderPool)
         && state.customMailProviderPool.length > 0;
+    }
+
+    function getStructuredErrorCode(error) {
+      return error && typeof error === 'object'
+        ? String(error.code || '').trim()
+        : '';
     }
 
     function isPhoneNumberSupplyExhaustedFailure(error) {
@@ -533,12 +543,27 @@
               });
             }
             roundSummary.failureReasons.push(reason);
+            const blockedBySecurity = typeof isSecurityBlockedFailure === 'function'
+              && isSecurityBlockedFailure(err);
+            const blockedByBrowserSwitch = !blockedBySecurity
+              && typeof isBrowserSwitchRequiredFailure === 'function'
+              && isBrowserSwitchRequiredFailure(err);
+            const blockedByConfigurationFatal = !blockedBySecurity
+              && !blockedByBrowserSwitch
+              && typeof isConfigurationFatalFailure === 'function'
+              && isConfigurationFatalFailure(err);
             const blockedByPhoneSmsRateLimit = typeof isPhoneSmsPlatformRateLimitFailure === 'function'
               && isPhoneSmsPlatformRateLimitFailure(err);
             const blockedByPhoneNoSupply = !blockedByPhoneSmsRateLimit
               && isPhoneNumberSupplyExhaustedFailure(err);
+            const blockedByHotmailNoStock = !blockedByPhoneSmsRateLimit
+              && getStructuredErrorCode(err) === 'HOTMAIL007_NO_STOCK';
+            const blockedByHotmailAccountInvalid = !blockedByPhoneSmsRateLimit
+              && getStructuredErrorCode(err) === 'HOTMAIL_ACCOUNT_INVALID';
             const blockedByAddPhone = !blockedByPhoneSmsRateLimit
               && !blockedByPhoneNoSupply
+              && !blockedByHotmailNoStock
+              && !blockedByHotmailAccountInvalid
               && typeof isAddPhoneAuthFailure === 'function'
               && isAddPhoneAuthFailure(err);
             const blockedByPlusNonFreeTrial = typeof isPlusCheckoutNonFreeTrialFailure === 'function'
@@ -548,16 +573,71 @@
               && isSignupUserAlreadyExistsFailure(err);
             const blockedByStep4Route405 = typeof isStep4Route405RecoveryLimitFailure === 'function'
               && isStep4Route405RecoveryLimitFailure(err);
-            const canRetry = !blockedByAddPhone
-              && !blockedByPhoneNoSupply
-              && !blockedByPlusNonFreeTrial
-              && !blockedBySignupUserAlreadyExists
+            const mailboxProviderTransient = typeof isMailboxProviderTransientFailure === 'function'
+              && isMailboxProviderTransientFailure(err);
+            const canRetry = !blockedBySecurity
+              && !blockedByBrowserSwitch
+              && !blockedByConfigurationFatal
+              && (
+                mailboxProviderTransient
+                || (
+                  !blockedByAddPhone
+                  && !blockedByPhoneNoSupply
+                  && !blockedByHotmailNoStock
+                  && !blockedByHotmailAccountInvalid
+                  && !blockedByPlusNonFreeTrial
+                  && !blockedBySignupUserAlreadyExists
+                  && !blockedByStep4Route405
+                )
+              )
               && autoRunSkipFailures
               && attemptRun < maxAttemptsForRound;
 
             await setState({
               autoRunRoundSummaries: serializeAutoRunRoundSummaries(totalRuns, roundSummaries),
             });
+
+            if (blockedBySecurity || blockedByBrowserSwitch || blockedByConfigurationFatal) {
+              roundSummary.status = 'failed';
+              roundSummary.finalFailureReason = reason;
+              await setState({
+                autoRunRoundSummaries: serializeAutoRunRoundSummaries(totalRuns, roundSummaries),
+              });
+              await appendRoundRecordIfNeeded('failed', reason);
+              cancelPendingCommands('auto-run stopped by fatal failure');
+              await broadcastStopToContentScripts();
+              stoppedEarly = true;
+              await broadcastAutoRunStatus('stopped', {
+                currentRun: targetRun,
+                totalRuns,
+                attemptRun,
+                sessionId: 0,
+              });
+              break;
+            }
+
+            if (blockedByHotmailNoStock || blockedByHotmailAccountInvalid) {
+              roundSummary.status = 'failed';
+              roundSummary.finalFailureReason = reason;
+              await setState({
+                autoRunRoundSummaries: serializeAutoRunRoundSummaries(totalRuns, roundSummaries),
+              });
+              await appendRoundRecordIfNeeded('failed', reason);
+              cancelPendingCommands('auto-run stopped by hotmail preflight failure');
+              await broadcastStopToContentScripts();
+              if (!autoRunSkipFailures) {
+                stoppedEarly = true;
+                await broadcastAutoRunStatus('stopped', {
+                  currentRun: targetRun,
+                  totalRuns,
+                  attemptRun,
+                  sessionId: 0,
+                });
+                break;
+              }
+              forceFreshTabsNextRun = true;
+              break;
+            }
 
             if (blockedByAddPhone) {
               roundSummary.status = 'failed';

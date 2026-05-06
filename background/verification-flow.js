@@ -68,6 +68,47 @@
         String(typeof error === 'string' ? error : error?.message || '')
       ));
 
+    function createVerificationFlowError(code, message, extras = {}) {
+      const error = new Error(message);
+      error.code = code;
+      if (extras && typeof extras === 'object') {
+        Object.assign(error, extras);
+      }
+      return error;
+    }
+
+    function normalizeVerificationFlowError(errorLike) {
+      if (errorLike instanceof Error) {
+        return errorLike;
+      }
+      return new Error(String(errorLike || 'Unknown verification flow error'));
+    }
+
+    function classifyVerificationFlowError(errorLike) {
+      const error = normalizeVerificationFlowError(errorLike);
+      if (String(error.code || '').trim()) {
+        return error;
+      }
+      const message = String(error.message || '').trim();
+      if (/再次收到了相同的(?:注册|登录)验证码/i.test(message)) {
+        error.code = 'MAIL_CODE_DUPLICATE';
+        return error;
+      }
+      if (/邮箱轮询结束，但未获取到验证码|无法获取新的(?:注册|登录)验证码/i.test(message)) {
+        error.code = 'MAIL_CODE_TIMEOUT';
+        return error;
+      }
+      if (/refresh token invalid|invalid_grant|token expired|authorization failed|authentication failed|unauthorized|client id invalid/i.test(message)) {
+        error.code = 'MAIL_PROVIDER_AUTH_INVALID';
+        return error;
+      }
+      if (/temporary unavailable|temporarily unavailable|rate limit|too many requests|429|timeout|timed out|通信异常|did not respond in \d+s/i.test(message)) {
+        error.code = 'MAIL_PROVIDER_TRANSIENT';
+        return error;
+      }
+      return error;
+    }
+
     function getVerificationCodeStateKey(step) {
       return step === 4 ? 'lastSignupCode' : 'lastLoginCode';
     }
@@ -730,15 +771,15 @@
             );
 
             if (result && result.error) {
-              throw new Error(result.error);
+              throw classifyVerificationFlowError(new Error(result.error));
             }
 
             if (!result || !result.code) {
-              throw new Error(`步骤 ${step}：邮箱轮询结束，但未获取到验证码。`);
+              throw createVerificationFlowError('MAIL_CODE_TIMEOUT', `步骤 ${step}：邮箱轮询结束，但未获取到验证码。`);
             }
 
             if (rejectedCodes.has(result.code)) {
-              throw new Error(`步骤 ${step}：再次收到了相同的${getVerificationCodeLabel(step)}验证码：${result.code}`);
+              throw createVerificationFlowError('MAIL_CODE_DUPLICATE', `步骤 ${step}：再次收到了相同的${getVerificationCodeLabel(step)}验证码：${result.code}`);
             }
 
             transportErrorStreak = 0;
@@ -761,10 +802,11 @@
             const isTransportError = isRetryableVerificationTransportError(err);
             if (isTransportError) {
               transportErrorStreak += 1;
-              lastError = err;
+              lastError = classifyVerificationFlowError(err);
               await addLog(`步骤 ${step}：${err.message}`, 'warn');
               if (transportErrorStreak >= maxTransportErrorStreak) {
-                throw new Error(
+                throw createVerificationFlowError(
+                  'MAIL_PROVIDER_TRANSIENT',
                   `步骤 ${step}：${mail?.label || '邮箱'}页面通信异常连续 ${transportErrorStreak} 次，已停止当前轮询以避免重复重发验证码。最后错误：${err.message}`
                 );
               }
@@ -781,7 +823,7 @@
               continue;
             }
             transportErrorStreak = 0;
-            lastError = err;
+            lastError = classifyVerificationFlowError(err);
             await addLog(`步骤 ${step}：${err.message}`, 'warn');
           }
 
@@ -827,7 +869,7 @@
         }
       }
 
-      throw lastError || new Error(`步骤 ${step}：无法获取新的${getVerificationCodeLabel(step)}验证码。`);
+      throw classifyVerificationFlowError(lastError || new Error(`步骤 ${step}：无法获取新的${getVerificationCodeLabel(step)}验证码。`));
     }
 
     function shouldRequestLuckmailResendBeforeRetry(error) {
@@ -889,7 +931,7 @@
         }
       }
 
-      throw lastError || new Error(`步骤 ${step}：无法获取新的${getVerificationCodeLabel(step)}验证码。`);
+      throw classifyVerificationFlowError(lastError || new Error(`步骤 ${step}：无法获取新的${getVerificationCodeLabel(step)}验证码。`));
     }
 
     async function pollFreshVerificationCode(step, state, mail, pollOverrides = {}) {
@@ -998,15 +1040,15 @@
           );
 
           if (result && result.error) {
-            throw new Error(result.error);
+            throw classifyVerificationFlowError(new Error(result.error));
           }
 
           if (!result || !result.code) {
-            throw new Error(`步骤 ${step}：邮箱轮询结束，但未获取到验证码。`);
+            throw createVerificationFlowError('MAIL_CODE_TIMEOUT', `步骤 ${step}：邮箱轮询结束，但未获取到验证码。`);
           }
 
           if (rejectedCodes.has(result.code)) {
-            throw new Error(`步骤 ${step}：再次收到了相同的${getVerificationCodeLabel(step)}验证码：${result.code}`);
+            throw createVerificationFlowError('MAIL_CODE_DUPLICATE', `步骤 ${step}：再次收到了相同的${getVerificationCodeLabel(step)}验证码：${result.code}`);
           }
 
           return {
@@ -1023,7 +1065,7 @@
             }
             throw err;
           }
-          lastError = err;
+          lastError = classifyVerificationFlowError(err);
           await addLog(`步骤 ${step}：${err.message}`, 'warn');
           if (round < maxRounds) {
             await addLog(`步骤 ${step}：将重新发送验证码后重试（${round + 1}/${maxRounds}）...`, 'warn');
@@ -1031,7 +1073,7 @@
         }
       }
 
-      throw lastError || new Error(`步骤 ${step}：无法获取新的${getVerificationCodeLabel(step)}验证码。`);
+      throw classifyVerificationFlowError(lastError || new Error(`步骤 ${step}：无法获取新的${getVerificationCodeLabel(step)}验证码。`));
     }
 
     async function submitVerificationCode(step, code, options = {}) {
@@ -1117,7 +1159,10 @@
             }
             if (fallback.restartStep7) {
               const urlPart = fallback.url ? ` URL: ${fallback.url}` : '';
-              throw new Error(`STEP8_RESTART_STEP7::步骤 ${completionStep}：验证码提交后认证页进入登录超时报错页，请回到步骤 ${authLoginStep} 重新开始。${urlPart}`.trim());
+              throw createVerificationFlowError(
+                'STEP8_RESTART_STEP7_REQUIRED',
+                `STEP8_RESTART_STEP7::步骤 ${completionStep}：验证码提交后认证页进入登录超时报错页，请回到步骤 ${authLoginStep} 重新开始。${urlPart}`.trim()
+              );
             }
           }
           throw err;
@@ -1129,7 +1174,7 @@
       }
 
       if (result && result.error) {
-        throw new Error(result.error);
+        throw classifyVerificationFlowError(new Error(result.error));
       }
 
       return result || {};
