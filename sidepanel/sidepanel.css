@@ -2932,8 +2932,26 @@ header {
 .account-cost-ledger-toolbar {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.account-cost-ledger-toolbar {
+  flex-wrap: wrap;
+}
+
+.account-cost-ledger-toolbar-actions {
+  display: flex;
+  align-items: center;
   justify-content: flex-end;
   gap: 6px;
+  margin-left: auto;
+}
+
+.account-cost-ledger-rate-meta {
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.4;
 }
 
 .account-cost-ledger-summary {

@@ -128,6 +128,8 @@ test('account cost ledger manager renders daily ledger groups and clears cost le
   const btnOpenAccountCostLedger = createNode();
   const btnCloseAccountCostLedger = createNode();
   const btnClearAccountCostLedger = createNode();
+  const btnToggleAccountCostLedgerCurrency = createNode();
+  const accountCostLedgerRateMeta = createNode();
   const messages = [];
   const toasts = [];
   let manager = null;
@@ -151,6 +153,8 @@ test('account cost ledger manager renders daily ledger groups and clears cost le
       btnOpenAccountCostLedger,
       btnCloseAccountCostLedger,
       btnClearAccountCostLedger,
+      btnToggleAccountCostLedgerCurrency,
+      accountCostLedgerRateMeta,
     },
     helpers: {
       escapeHtml: (value) => String(value || ''),
@@ -185,6 +189,7 @@ test('account cost ledger manager renders daily ledger groups and clears cost le
   assert.match(daily.innerHTML, /2026-05-05/);
   assert.match(daily.innerHTML, /0\.0700/);
   assert.match(daily.innerHTML, /0\.0500/);
+  assert.equal(btnToggleAccountCostLedgerCurrency.textContent, '显示人民币');
 
   await btnClearAccountCostLedger.listeners.click();
   await flushPromises();
@@ -198,4 +203,157 @@ test('account cost ledger manager renders daily ledger groups and clears cost le
     message: 'Cleared 3 cost ledger entries.',
     tone: 'success',
   });
+});
+
+test('account cost ledger manager keeps success denominator consistent and can toggle usd totals into cny', async () => {
+  const source = fs.readFileSync('sidepanel/account-cost-ledger-manager.js', 'utf8');
+  const windowObject = {};
+  const api = new Function('window', `${source}; return window.SidepanelAccountCostLedgerManager;`)(windowObject);
+
+  let latestState = {
+    accountRunHistory: [
+      {
+        recordId: 'success-1@example.com',
+        email: 'success-1@example.com',
+        finalStatus: 'success',
+        finishedAt: '2026-05-06T08:00:00.000Z',
+        retryCount: 0,
+        failureLabel: 'success',
+        costs: {
+          mail: { provider: 'hotmail007', amount: 0.021, currency: '', status: 'exact' },
+          total: { amount: 0.021, currency: '', status: 'exact' },
+        },
+      },
+      {
+        recordId: 'success-2@example.com',
+        email: 'success-2@example.com',
+        finalStatus: 'success',
+        finishedAt: '2026-05-06T08:05:00.000Z',
+        retryCount: 0,
+        failureLabel: 'success',
+      },
+      {
+        recordId: 'success-3@example.com',
+        email: 'success-3@example.com',
+        finalStatus: 'success',
+        finishedAt: '2026-05-06T08:10:00.000Z',
+        retryCount: 0,
+        failureLabel: 'success',
+      },
+    ],
+    accountCostLedger: [
+      {
+        entryKey: 'mail:hotmail007:1',
+        provider: 'hotmail007',
+        amount: 0.021,
+        currency: '',
+        status: 'exact',
+        outcome: 'consumed',
+        createdAt: '2026-05-06T08:11:00.000Z',
+      },
+      {
+        entryKey: 'phone:hero-sms:1',
+        provider: 'hero-sms',
+        amount: 0.428,
+        currency: '',
+        status: 'exact',
+        outcome: 'consumed',
+        createdAt: '2026-05-06T08:12:00.000Z',
+      },
+    ],
+  };
+
+  const summary = createNode();
+  const daily = createNode();
+  const meta = createNode();
+  const overlay = createNode();
+  const btnOpenAccountCostLedger = createNode();
+  const btnCloseAccountCostLedger = createNode();
+  const btnClearAccountCostLedger = createNode();
+  const btnToggleAccountCostLedgerCurrency = createNode();
+  const accountCostLedgerRateMeta = createNode();
+  const fetchCalls = [];
+  const storage = new Map();
+
+  let manager = null;
+  manager = api.createAccountCostLedgerManager({
+    state: {
+      getLatestState: () => latestState,
+      syncLatestState(nextState) {
+        latestState = {
+          ...latestState,
+          ...(nextState || {}),
+        };
+        manager.render(latestState);
+      },
+    },
+    dom: {
+      accountCostLedgerSummary: summary,
+      accountCostLedgerDailyList: daily,
+      accountCostLedgerMeta: meta,
+      accountCostLedgerOverlay: overlay,
+      btnOpenAccountCostLedger,
+      btnCloseAccountCostLedger,
+      btnClearAccountCostLedger,
+      btnToggleAccountCostLedgerCurrency,
+      accountCostLedgerRateMeta,
+    },
+    helpers: {
+      escapeHtml: (value) => String(value || ''),
+      openConfirmModal: async () => true,
+      showToast() {},
+      fetch: async (url) => {
+        fetchCalls.push(url);
+        return {
+          ok: true,
+          async json() {
+            return {
+              result: 'success',
+              rates: { CNY: 7.2 },
+              time_last_update_unix: 1770000000,
+              time_next_update_unix: 1770086400,
+            };
+          },
+        };
+      },
+      storage: {
+        getItem(key) {
+          return storage.has(key) ? storage.get(key) : null;
+        },
+        setItem(key, value) {
+          storage.set(key, String(value));
+        },
+        removeItem(key) {
+          storage.delete(key);
+        },
+      },
+    },
+    constants: {
+      displayTimeZone: 'Asia/Shanghai',
+      pageSize: 10,
+    },
+  });
+
+  manager.bindEvents();
+  manager.render();
+
+  assert.match(meta.textContent, /成功 3 条/);
+  assert.match(meta.textContent, /已记账 1 条/);
+  assert.match(summary.innerHTML, /成功总数/);
+  assert.match(summary.innerHTML, /已记账成功数/);
+  assert.match(summary.innerHTML, /每成功号摊销成本/);
+  assert.match(summary.innerHTML, /0\.1497/);
+  assert.match(daily.innerHTML, /成功 3/);
+  assert.match(daily.innerHTML, /已记账 1/);
+  assert.match(daily.innerHTML, /0\.1497/);
+
+  await btnToggleAccountCostLedgerCurrency.listeners.click();
+  await flushPromises();
+
+  assert.equal(fetchCalls.length, 1);
+  assert.equal(btnToggleAccountCostLedgerCurrency.textContent, '显示原币');
+  assert.equal(accountCostLedgerRateMeta.hidden, false);
+  assert.match(accountCostLedgerRateMeta.textContent, /1 USD ≈ 7\.2000 CNY/);
+  assert.match(summary.innerHTML, /3\.2328 CNY/);
+  assert.match(daily.innerHTML, /3\.2328 CNY/);
 });

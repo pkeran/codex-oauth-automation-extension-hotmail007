@@ -30,7 +30,9 @@ const accountCostLedgerOverlay = document.getElementById('account-cost-ledger-ov
 const accountCostLedgerMeta = document.getElementById('account-cost-ledger-meta');
 const accountCostLedgerSummary = document.getElementById('account-cost-ledger-summary');
 const accountCostLedgerDailyList = document.getElementById('account-cost-ledger-daily-list');
+const accountCostLedgerRateMeta = document.getElementById('account-cost-ledger-rate-meta');
 const btnCloseAccountCostLedger = document.getElementById('btn-close-account-cost-ledger');
+const btnToggleAccountCostLedgerCurrency = document.getElementById('btn-toggle-account-cost-ledger-currency');
 const updateSection = document.getElementById('update-section');
 const btnRepoHome = document.getElementById('btn-repo-home');
 const extensionUpdateStatus = document.getElementById('extension-update-status');
@@ -10712,10 +10714,12 @@ const accountCostLedgerManager = window.SidepanelAccountCostLedgerManager?.creat
     accountCostLedgerDailyList,
     accountCostLedgerMeta,
     accountCostLedgerOverlay,
+    accountCostLedgerRateMeta,
     accountCostLedgerSummary,
     btnClearAccountCostLedger,
     btnCloseAccountCostLedger,
     btnOpenAccountCostLedger,
+    btnToggleAccountCostLedgerCurrency,
   },
   helpers: {
     escapeHtml,

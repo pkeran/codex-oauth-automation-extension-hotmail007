@@ -146,6 +146,8 @@ test('sidepanel html separates account records overlay from cost ledger overlay 
   assert.match(html, /id="btn-delete-selected-account-records"/);
   assert.match(html, /id="account-cost-ledger-summary"/);
   assert.match(html, /id="account-cost-ledger-daily-list"/);
+  assert.match(html, /id="btn-toggle-account-cost-ledger-currency"/);
+  assert.match(html, /id="account-cost-ledger-rate-meta"/);
   assert.match(html, /id="btn-clear-account-cost-ledger"/);
   assert.match(html, /id="input-sub2api-default-proxy"/);
   assert.match(html, /src="editable-list-picker\.js"/);
