@@ -14,6 +14,7 @@
       isGeneratedAliasProvider,
       isReusableGeneratedAliasEmail,
       isHotmailProvider,
+      handleInvalidSignupPhoneCredential = null,
       isRetryableContentScriptTransportError = () => false,
       isLuckmailProvider,
       isSignupEmailVerificationPageUrl,
@@ -252,6 +253,29 @@
           logMessage: `步骤 ${step}：密码已提交，正在确认是否进入下一页面，必要时自动恢复重试页...`,
         });
       } catch (error) {
+        const rawMessage = error?.message || String(error || '');
+        if (/^STEP3_PHONE_CREDENTIAL_INVALID::/i.test(rawMessage)) {
+          const detail = rawMessage.replace(/^STEP3_PHONE_CREDENTIAL_INVALID::/i, '').trim() || 'Incorrect phone number or password';
+          let cleanupResult = null;
+          if (typeof handleInvalidSignupPhoneCredential === 'function') {
+            cleanupResult = await handleInvalidSignupPhoneCredential({
+              step,
+              tabId,
+              password,
+              message: detail,
+              rawError: error,
+            });
+          }
+          const nextError = new Error(
+            cleanupResult?.message
+            || `步骤 ${step}：检测到当前手机号或密码错误（${detail}），已清理当前号码运行态，请更换号码后重试。`
+          );
+          nextError.code = 'STEP3_PHONE_CREDENTIAL_INVALID';
+          if (cleanupResult) {
+            nextError.cleanup = cleanupResult;
+          }
+          throw nextError;
+        }
         if (isRetryableContentScriptTransportError(error)) {
           const message = `步骤 ${step}：认证页在提交后切换过程中页面通信超时，未能重新就绪，暂时无法确认是否进入下一页面。请重试当前轮。`;
           if (typeof addLog === 'function') {

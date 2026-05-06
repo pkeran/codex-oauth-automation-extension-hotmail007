@@ -4450,6 +4450,13 @@ function inspectSignupVerificationState() {
 
   const passwordInput = getSignupPasswordInput();
   if (passwordInput) {
+    const passwordErrorText = getPageTextSnapshot();
+    if (/incorrect\s+phone\s+number\s+or\s+password|invalid\s+phone\s+number\s+or\s+password|手机号.*密码.*错误|手机号码.*密码.*错误/i.test(passwordErrorText)) {
+      return {
+        state: 'phone_password_invalid',
+        errorText: String(passwordErrorText || '').trim(),
+      };
+    }
     return {
       state: 'password',
       passwordInput,
@@ -4477,6 +4484,7 @@ async function waitForSignupVerificationTransition(timeout = 5000) {
       || snapshot.state === 'post_signup_onboarding_page'
       || snapshot.state === 'verification'
       || snapshot.state === 'error'
+      || snapshot.state === 'phone_password_invalid'
       || snapshot.state === 'email_exists'
     ) {
       return snapshot;
@@ -4530,6 +4538,10 @@ async function prepareSignupVerificationFlow(payload = {}, timeout = 30000) {
 
     if (snapshot.state === 'email_exists') {
       throw new Error('当前邮箱已存在，需要重新开始新一轮。');
+    }
+
+    if (snapshot.state === 'phone_password_invalid') {
+      throw new Error(`STEP3_PHONE_CREDENTIAL_INVALID::${snapshot.errorText || 'Incorrect phone number or password'}`);
     }
 
     if (snapshot.state === 'post_signup_onboarding_page') {

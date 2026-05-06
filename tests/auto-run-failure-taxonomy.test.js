@@ -117,6 +117,7 @@ function createHarness(options = {}) {
     getFirstUnfinishedStep: () => 1,
     getPendingAutoRunTimerPlan: () => null,
     getRunningSteps: () => [],
+    getStructuredErrorCode: (error) => String(error?.code || '').trim(),
     getState: async () => ({
       ...currentState,
       stepStatuses: { ...(currentState.stepStatuses || {}) },
@@ -306,4 +307,31 @@ test('auto-run controller treats HOTMAIL_ACCOUNT_INVALID as round-fatal and skip
   assert.equal(events.accountRecords.length, 1);
   assert.equal(events.accountRecords[0].status, 'failed');
   assert.equal(events.accountRecords[0].reason, 'Hotmail account invalid');
+});
+
+test('auto-run controller retries STEP3_PHONE_CREDENTIAL_INVALID in the same round even when auto retry is disabled', async () => {
+  let attempts = 0;
+  const { controller, events } = createHarness({
+    totalRuns: 1,
+    autoRunSkipFailures: false,
+    runImpl: async () => {
+      attempts += 1;
+      if (attempts === 1) {
+        const error = new Error('step 3 phone credential invalid');
+        error.code = 'STEP3_PHONE_CREDENTIAL_INVALID';
+        throw error;
+      }
+      return {};
+    },
+  });
+
+  await controller.autoRunLoop(1, {
+    autoRunSkipFailures: false,
+    mode: 'restart',
+  });
+
+  assert.equal(attempts, 2);
+  assert.deepEqual(events.runTargets, [1, 1]);
+  assert.equal(events.broadcasts.some(({ phase }) => phase === 'retrying'), true);
+  assert.equal(events.accountRecords.some(({ status }) => status === 'failed'), false);
 });

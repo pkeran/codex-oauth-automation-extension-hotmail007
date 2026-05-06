@@ -9707,10 +9707,27 @@ function notifyStepComplete(step, payload) {
   if (waiter) waiter.resolve(payload);
 }
 
+function normalizeStepWaiterError(error) {
+  if (error instanceof Error) {
+    return error;
+  }
+  if (error && typeof error === 'object') {
+    const nextError = new Error(getErrorMessage(error));
+    if (error.code) {
+      nextError.code = String(error.code || '').trim();
+    }
+    if (error.cleanup !== undefined) {
+      nextError.cleanup = error.cleanup;
+    }
+    return nextError;
+  }
+  return new Error(getErrorMessage(error));
+}
+
 function notifyStepError(step, error) {
   const waiter = stepWaiters.get(step);
   console.warn(LOG_PREFIX, `[notifyStepError] step ${step}, hasWaiter=${Boolean(waiter)}, error=${error}`);
-  if (waiter) waiter.reject(new Error(error));
+  if (waiter) waiter.reject(normalizeStepWaiterError(error));
 }
 
 async function runCompletedStepSideEffects(step, payload, completionState, lastStepId) {
@@ -10761,6 +10778,7 @@ const autoRunController = self.MultiPageBackgroundAutoRunController?.createAutoR
   getFirstUnfinishedStep,
   getPendingAutoRunTimerPlan,
   getRunningSteps,
+  getStructuredErrorCode,
   getState,
   getStopRequested: () => stopRequested,
   hasSavedProgress,
@@ -11451,6 +11469,31 @@ const signupFlowHelpers = self.MultiPageSignupFlowHelpers?.createSignupFlowHelpe
   ensureLuckmailPurchaseForFlow,
   fetchGeneratedEmail,
   getTabId,
+  handleInvalidSignupPhoneCredential: async (payload = {}) => {
+    const currentState = await getState();
+    const cleanup = await phoneVerificationHelpers?.handleInvalidSignupPhoneCredential?.(
+      currentState,
+      currentState?.signupPhoneActivation,
+    ) || {
+      inspected: false,
+      exists: false,
+      active: false,
+      refundable: false,
+      cancelled: false,
+      deferredCancel: false,
+    };
+    const detail = String(payload?.message || payload?.rawError?.message || '').trim() || 'Incorrect phone number or password';
+    const cleanupText = cleanup.cancelled
+      ? '已检查并取消当前接码订单'
+      : (cleanup.deferredCancel
+        ? '已检查订单仍在 2 分钟保护期内，暂不立即取消，等待平台自动回收'
+        : '已检查并清理当前接码运行态');
+    await addLog(`步骤 3：检测到手机号/密码错误（${detail}），${cleanupText}。`, 'warn');
+    return {
+      ...cleanup,
+      message: `步骤 3：检测到手机号或密码错误（${detail}），${cleanupText}，准备换号后重试。`,
+    };
+  },
   isGeneratedAliasProvider,
   isReusableGeneratedAliasEmail,
   isSignupEmailVerificationPageUrl,

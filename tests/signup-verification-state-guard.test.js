@@ -305,6 +305,63 @@ return {
   });
 });
 
+test('signup verification state recognizes invalid phone/password on password page', () => {
+  const api = new Function(`
+const location = {
+  href: 'https://auth.openai.com/create-account/password',
+};
+
+function getStep4PostVerificationState() {
+  return null;
+}
+
+function isSignupPasswordErrorPage() {
+  return false;
+}
+
+function getSignupPasswordTimeoutErrorPageState() {
+  return null;
+}
+
+function isPhoneVerificationPageReady() {
+  return false;
+}
+
+function isVerificationPageStillVisible() {
+  return false;
+}
+
+function isSignupEmailAlreadyExistsPage() {
+  return false;
+}
+
+function getSignupPasswordInput() {
+  return { value: 'Secret123!' };
+}
+
+function getSignupPasswordSubmitButton() {
+  return { textContent: 'Continue' };
+}
+
+function getPageTextSnapshot() {
+  return 'Incorrect phone number or password Forgot password?';
+}
+
+${extractFunction('inspectSignupVerificationState')}
+
+return {
+  run() {
+    return inspectSignupVerificationState();
+  },
+};
+`)();
+
+  assert.deepStrictEqual(api.run(), {
+    state: 'phone_password_invalid',
+    errorText: 'Incorrect phone number or password Forgot password?',
+  });
+});
+
 test('logged-out chatgpt homepage with signup and login actions is not treated as logged-in home', () => {
   const api = new Function(`
 const location = {

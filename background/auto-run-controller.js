@@ -391,7 +391,7 @@
         const keepSameEmailUntilAddPhone = autoRunSkipFailures && shouldKeepCustomMailProviderPoolEmail(currentRoundState);
         const maxAttemptsForRound = autoRunSkipFailures
           ? (keepSameEmailUntilAddPhone ? Number.MAX_SAFE_INTEGER : AUTO_RUN_MAX_RETRIES_PER_ROUND + 1)
-          : Math.max(1, attemptRun);
+          : (AUTO_RUN_MAX_RETRIES_PER_ROUND + 1);
 
         while (attemptRun <= maxAttemptsForRound) {
           runtime.set({
@@ -573,25 +573,32 @@
               && isSignupUserAlreadyExistsFailure(err);
             const blockedByStep4Route405 = typeof isStep4Route405RecoveryLimitFailure === 'function'
               && isStep4Route405RecoveryLimitFailure(err);
+            const blockedByStep3PhoneCredentialInvalid = getStructuredErrorCode(err) === 'STEP3_PHONE_CREDENTIAL_INVALID';
             const mailboxProviderTransient = typeof isMailboxProviderTransientFailure === 'function'
               && isMailboxProviderTransientFailure(err);
             const canRetry = !blockedBySecurity
               && !blockedByBrowserSwitch
               && !blockedByConfigurationFatal
               && (
-                mailboxProviderTransient
+                (blockedByStep3PhoneCredentialInvalid && attemptRun < maxAttemptsForRound)
                 || (
-                  !blockedByAddPhone
-                  && !blockedByPhoneNoSupply
-                  && !blockedByHotmailNoStock
-                  && !blockedByHotmailAccountInvalid
-                  && !blockedByPlusNonFreeTrial
-                  && !blockedBySignupUserAlreadyExists
-                  && !blockedByStep4Route405
+                  (
+                    mailboxProviderTransient
+                    || (
+                      !blockedByAddPhone
+                      && !blockedByPhoneNoSupply
+                      && !blockedByHotmailNoStock
+                      && !blockedByHotmailAccountInvalid
+                      && !blockedByPlusNonFreeTrial
+                      && !blockedBySignupUserAlreadyExists
+                      && !blockedByStep4Route405
+                      && !blockedByStep3PhoneCredentialInvalid
+                    )
+                  )
+                  && autoRunSkipFailures
+                  && attemptRun < maxAttemptsForRound
                 )
-              )
-              && autoRunSkipFailures
-              && attemptRun < maxAttemptsForRound;
+              );
 
             await setState({
               autoRunRoundSummaries: serializeAutoRunRoundSummaries(totalRuns, roundSummaries),

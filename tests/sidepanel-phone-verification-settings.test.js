@@ -1,4 +1,4 @@
-const test = require('node:test');
+﻿const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const {
@@ -61,6 +61,11 @@ test('sidepanel html exposes phone verification toggle and multi-provider SMS ro
   assert.match(html, /id="input-phone-verification-enabled"/);
   assert.match(html, /id="phone-verification-global-panel"/);
   assert.match(html, /id="phone-verification-provider-panel"/);
+  assert.match(html, /id="phone-verification-global-mode-group"/);
+  assert.match(html, /id="phone-verification-global-order-group"/);
+  assert.match(html, /id="phone-verification-provider-selection-group"/);
+  assert.match(html, /id="phone-verification-provider-routing-group"/);
+  assert.match(html, /id="phone-verification-provider-access-group"/);
   assert.match(html, /id="phone-verification-flow-panel"/);
   assert.match(html, /id="phone-verification-recovery-panel"/);
   assert.match(html, /id="phone-verification-runtime-panel"/);
@@ -93,13 +98,26 @@ test('sidepanel html exposes phone verification toggle and multi-provider SMS ro
   assert.match(html, /id="row-phone-sms-provider-order"/);
   assert.match(html, /id="select-phone-sms-provider-order"[^>]*multiple/);
   assert.match(html, /id="btn-phone-sms-provider-order-menu"/);
-  assert.match(html, /id="row-phone-sms-provider-order-actions"/);
   assert.match(html, /id="btn-phone-sms-provider-order-reset"/);
   assert.ok(
-    html.indexOf('id="row-phone-sms-provider-order-actions"') > html.indexOf('id="row-phone-sms-provider-order"'),
-    'provider order actions should be merged inside the provider order block'
+    html.indexOf('id="row-phone-sms-provider"') > html.indexOf('id="phone-verification-provider-panel"'),
+    'current provider selector should live inside the current provider panel'
   );
-  assert.match(html, /id="row-hero-sms-platform"/);
+  assert.ok(
+    html.indexOf('id="phone-verification-global-order-group"') > html.indexOf('id="phone-verification-global-mode-group"'),
+    'global provider fallback chain should be split from the mode block'
+  );
+  assert.ok(
+    html.indexOf('id="phone-verification-provider-routing-group"') > html.indexOf('id="phone-verification-provider-selection-group"'),
+    'provider routing block should render after provider selection'
+  );
+  assert.ok(
+    html.indexOf('id="phone-verification-provider-access-group"') > html.indexOf('id="phone-verification-provider-routing-group"'),
+    'provider credential and price actions should render after routing controls'
+  );
+  assert.doesNotMatch(html, /id="row-phone-sms-provider-order-actions"/);
+  assert.match(html, /id="display-hero-sms-platform"/);
+  assert.doesNotMatch(html, /id="row-hero-sms-platform"/);
   assert.match(html, /id="select-phone-sms-provider"/);
   assert.match(html, /\.\.\/phone-sms\/providers\/hero-sms\.js/);
   assert.match(html, /\.\.\/phone-sms\/providers\/five-sim\.js/);
@@ -163,6 +181,9 @@ test('sidepanel html exposes phone verification toggle and multi-provider SMS ro
 });
 
 test('sidepanel source wires runtime signup phone field to background sync messages', () => {
+  assert.doesNotMatch(sidepanelSource, /function updatePhoneVerificationSettingsUILegacy\(/);
+  assert.doesNotMatch(sidepanelSource, /rowPhoneSmsProviderOrderActions/);
+  assert.doesNotMatch(sidepanelSource, /rowHeroSmsPlatform/);
   assert.match(sidepanelSource, /function getRuntimeSignupPhoneValue\(state = latestState\)/);
   assert.match(sidepanelSource, /function shouldExecuteStep3WithSignupPhoneIdentity\(state = latestState\)/);
   assert.match(sidepanelSource, /function shouldPreserveSignupPhoneInputValue\(stateSignupPhone = ''\)/);
@@ -356,7 +377,6 @@ const rowSignupMethod = { style: { display: 'none' } };
 const rowSignupPhone = { style: { display: 'none' } };
 const rowPhoneSmsProvider = { style: { display: 'none' } };
 const rowPhoneSmsProviderOrder = { style: { display: 'none' } };
-const rowPhoneSmsProviderOrderActions = { style: { display: 'none' } };
 const selectPhoneSmsProvider = { value: 'hero-sms' };
 const btnTogglePhoneVerificationSection = {
   disabled: false,
@@ -393,7 +413,6 @@ const btnTogglePhoneVerificationSection = {
     return [fallbackProvider];
   }
 function updatePhoneSmsProviderOrderSummary() {}
-const rowHeroSmsPlatform = { style: { display: 'none' } };
 const rowHeroSmsCountry = { style: { display: 'none' } };
 const rowHeroSmsCountryFallback = { style: { display: 'none' } };
 const rowHeroSmsAcquirePriority = { style: { display: 'none' } };
@@ -444,11 +463,9 @@ return {
   rowSignupPhone,
   rowPhoneSmsProvider,
   rowPhoneSmsProviderOrder,
-  rowPhoneSmsProviderOrderActions,
   selectPhoneSmsProvider,
   btnTogglePhoneVerificationSection,
   inputPhoneVerificationEnabled,
-  rowHeroSmsPlatform,
   rowHeroSmsCountry,
   rowHeroSmsCountryFallback,
   rowHeroSmsAcquirePriority,
@@ -487,10 +504,8 @@ return {
   assert.equal(api.rowSignupPhone.style.display, 'none');
   assert.equal(api.rowPhoneSmsProvider.style.display, 'none');
   assert.equal(api.rowPhoneSmsProviderOrder.style.display, 'none');
-  assert.equal(api.rowPhoneSmsProviderOrderActions.style.display, 'none');
   assert.equal(api.btnTogglePhoneVerificationSection.disabled, true);
   assert.equal(api.btnTogglePhoneVerificationSection.textContent, '展开设置');
-  assert.equal(api.rowHeroSmsPlatform.style.display, 'none');
   assert.equal(api.rowHeroSmsRuntimePair.style.display, 'none');
   assert.equal(api.rowHeroSmsCountry.style.display, 'none');
   assert.equal(api.rowHeroSmsCountryFallback.style.display, 'none');
@@ -538,10 +553,8 @@ return {
   assert.equal(api.rowSignupMethod.style.display, '');
   assert.equal(api.rowPhoneSmsProvider.style.display, '');
   assert.equal(api.rowPhoneSmsProviderOrder.style.display, '');
-  assert.equal(api.rowPhoneSmsProviderOrderActions.style.display, '');
   assert.equal(api.btnTogglePhoneVerificationSection.disabled, false);
   assert.equal(api.btnTogglePhoneVerificationSection.textContent, '收起设置');
-  assert.equal(api.rowHeroSmsPlatform.style.display, '');
   assert.equal(api.rowHeroSmsCountry.style.display, '');
   assert.equal(api.rowHeroSmsCountryFallback.style.display, '');
   assert.equal(api.rowHeroSmsAcquirePriority.style.display, '');
@@ -599,7 +612,6 @@ const rowSignupMethod = { style: { display: 'none' } };
 const rowSignupPhone = { style: { display: 'none' } };
 const rowPhoneSmsProvider = { style: { display: 'none' } };
 const rowPhoneSmsProviderOrder = { style: { display: 'none' } };
-const rowPhoneSmsProviderOrderActions = { style: { display: 'none' } };
 const selectPhoneSmsProvider = { value: 'hero-sms' };
 const btnTogglePhoneVerificationSection = { disabled: false, textContent: '', title: '', setAttribute: () => {} };
 const btnTogglePhoneFlowPanel = { textContent: '', title: '', setAttribute: () => {} };
@@ -623,7 +635,6 @@ function resolveNormalizedProviderOrderForRuntime(state = {}) {
 }
 function updatePhoneSmsProviderOrderSummary() {}
 function buildPhoneSmsStrategySummaryText() { return 'HeroSMS -> 5sim | TH -> ID -> CL'; }
-const rowHeroSmsPlatform = { style: { display: 'none' } };
 const rowHeroSmsCountry = { style: { display: 'none' } };
 const rowHeroSmsCountryFallback = { style: { display: 'none' } };
 const rowHeroSmsAcquirePriority = { style: { display: 'none' } };
@@ -676,7 +687,6 @@ return {
   rowPhoneRuntimeFold,
   rowPhoneSmsProvider,
   rowPhoneSmsProviderOrder,
-  rowPhoneSmsProviderOrderActions,
   rowSignupMethod,
   rowSignupPhone,
   rowHeroSmsRuntimePair,
@@ -726,7 +736,6 @@ return {
   assert.equal(api.rowPhoneRuntimeFold.style.display, 'none');
   assert.equal(api.rowPhoneSmsProvider.style.display, '');
   assert.equal(api.rowPhoneSmsProviderOrder.style.display, '');
-  assert.equal(api.rowPhoneSmsProviderOrderActions.style.display, '');
   assert.equal(api.displayPhoneSmsStrategySummary.textContent, 'HeroSMS -> 5sim | TH -> ID -> CL');
   assert.equal(api.rowPhoneVerificationResendCount.style.display, 'none');
   assert.equal(api.rowPhoneReplacementLimit.style.display, 'none');

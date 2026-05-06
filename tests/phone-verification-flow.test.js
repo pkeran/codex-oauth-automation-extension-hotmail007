@@ -336,6 +336,252 @@ test('signup phone helper finalizes or cancels signup activation without clearin
   assert.ok(!setStateCalls.some((updates) => Object.prototype.hasOwnProperty.call(updates, 'currentPhoneActivation')));
 });
 
+test('signup phone helper inspects old HeroSMS activation and cancels it on invalid phone/password after 2 minutes', async () => {
+  const statusActions = [];
+  let currentState = {
+    heroSmsApiKey: 'demo-key',
+    signupPhoneActivation: {
+      activationId: 'signup-123',
+      latestActivationId: 'signup-123',
+      phoneNumber: '66959916439',
+      provider: 'hero-sms',
+      serviceCode: 'dr',
+      countryId: 52,
+      successfulUses: 0,
+      maxUses: 3,
+      acquiredAt: Date.now() - 3 * 60 * 1000,
+    },
+  };
+  const helpers = api.createPhoneVerificationHelpers({
+    addLog: async () => {},
+    ensureStep8SignupPageReady: async () => {},
+    fetchImpl: async (url) => {
+      const parsedUrl = new URL(url);
+      const action = parsedUrl.searchParams.get('action');
+      if (action === 'getStatus') {
+        return { ok: true, text: async () => 'STATUS_WAIT_CODE' };
+      }
+      if (action === 'setStatus') {
+        statusActions.push(parsedUrl.searchParams.get('status'));
+        return { ok: true, text: async () => 'ACCESS_CANCEL' };
+      }
+      throw new Error(`Unexpected HeroSMS action: ${action}`);
+    },
+    getState: async () => currentState,
+    sendToContentScriptResilient: async () => ({}),
+    setState: async (updates) => {
+      currentState = { ...currentState, ...updates };
+    },
+    sleepWithStop: async () => {},
+    throwIfStopped: () => {},
+  });
+
+  const result = await helpers.handleInvalidSignupPhoneCredential(currentState, currentState.signupPhoneActivation);
+
+  assert.equal(result.cancelled, true);
+  assert.equal(result.deferredCancel, false);
+  assert.deepStrictEqual(statusActions, ['8']);
+  assert.equal(currentState.signupPhoneActivation, null);
+  assert.equal(currentState.signupPhoneNumber, '');
+});
+
+test('signup phone helper defers HeroSMS cancel on invalid phone/password when activation is younger than 2 minutes', async () => {
+  const statusActions = [];
+  let currentState = {
+    heroSmsApiKey: 'demo-key',
+    signupPhoneActivation: {
+      activationId: 'signup-123',
+      latestActivationId: 'signup-123',
+      phoneNumber: '66959916439',
+      provider: 'hero-sms',
+      serviceCode: 'dr',
+      countryId: 52,
+      successfulUses: 0,
+      maxUses: 3,
+      acquiredAt: Date.now() - 60 * 1000,
+    },
+  };
+  const helpers = api.createPhoneVerificationHelpers({
+    addLog: async () => {},
+    ensureStep8SignupPageReady: async () => {},
+    fetchImpl: async (url) => {
+      const parsedUrl = new URL(url);
+      const action = parsedUrl.searchParams.get('action');
+      if (action === 'getStatus') {
+        return { ok: true, text: async () => 'STATUS_WAIT_CODE' };
+      }
+      if (action === 'setStatus') {
+        statusActions.push(parsedUrl.searchParams.get('status'));
+        return { ok: true, text: async () => 'ACCESS_CANCEL' };
+      }
+      throw new Error(`Unexpected HeroSMS action: ${action}`);
+    },
+    getState: async () => currentState,
+    sendToContentScriptResilient: async () => ({}),
+    setState: async (updates) => {
+      currentState = { ...currentState, ...updates };
+    },
+    sleepWithStop: async () => {},
+    throwIfStopped: () => {},
+  });
+
+  const result = await helpers.handleInvalidSignupPhoneCredential(currentState, currentState.signupPhoneActivation);
+
+  assert.equal(result.cancelled, false);
+  assert.equal(result.deferredCancel, true);
+  assert.deepStrictEqual(statusActions, []);
+  assert.equal(currentState.signupPhoneActivation, null);
+  assert.equal(currentState.signupPhoneNumber, '');
+});
+
+test('signup phone helper quarantines invalid phone/password by provider+phone and clears matching reusable entries', async () => {
+  const statusActions = [];
+  let currentState = {
+    heroSmsApiKey: 'demo-key',
+    signupPhoneActivation: {
+      activationId: 'signup-123',
+      latestActivationId: 'signup-123',
+      phoneNumber: '66959916439',
+      provider: 'hero-sms',
+      serviceCode: 'dr',
+      countryId: 52,
+      successfulUses: 0,
+      maxUses: 3,
+      acquiredAt: Date.now() - 3 * 60 * 1000,
+    },
+    reusablePhoneActivation: {
+      activationId: 'reuse-123',
+      latestActivationId: 'reuse-123',
+      phoneNumber: '66959916439',
+      provider: 'hero-sms',
+      serviceCode: 'dr',
+      countryId: 52,
+      successfulUses: 1,
+      maxUses: 3,
+    },
+    phoneReusableActivationPool: [
+      {
+        activationId: 'reuse-123',
+        latestActivationId: 'reuse-123',
+        phoneNumber: '66959916439',
+        provider: 'hero-sms',
+        serviceCode: 'dr',
+        countryId: 52,
+        successfulUses: 1,
+        maxUses: 3,
+      },
+    ],
+    phonePreferredActivation: {
+      activationId: 'preferred-123',
+      latestActivationId: 'preferred-123',
+      phoneNumber: '66959916439',
+      provider: 'hero-sms',
+      serviceCode: 'dr',
+      countryId: 52,
+      successfulUses: 1,
+      maxUses: 3,
+    },
+  };
+  const helpers = api.createPhoneVerificationHelpers({
+    addLog: async () => {},
+    ensureStep8SignupPageReady: async () => {},
+    fetchImpl: async (url) => {
+      const parsedUrl = new URL(url);
+      const action = parsedUrl.searchParams.get('action');
+      if (action === 'getStatus') {
+        return { ok: true, text: async () => 'STATUS_WAIT_CODE' };
+      }
+      if (action === 'setStatus') {
+        statusActions.push(parsedUrl.searchParams.get('status'));
+        return { ok: true, text: async () => 'ACCESS_CANCEL' };
+      }
+      throw new Error(`Unexpected HeroSMS action: ${action}`);
+    },
+    getState: async () => currentState,
+    sendToContentScriptResilient: async () => ({}),
+    setState: async (updates) => {
+      currentState = { ...currentState, ...updates };
+    },
+    sleepWithStop: async () => {},
+    throwIfStopped: () => {},
+  });
+
+  const result = await helpers.handleInvalidSignupPhoneCredential(currentState, currentState.signupPhoneActivation);
+
+  assert.equal(result.cancelled, true);
+  assert.equal(Array.isArray(currentState.phoneCredentialInvalidBlocklist), true);
+  assert.deepStrictEqual(
+    currentState.phoneCredentialInvalidBlocklist.map((entry) => ({
+      provider: entry.provider,
+      phoneNumber: entry.phoneNumber,
+    })),
+    [{ provider: 'hero-sms', phoneNumber: '66959916439' }]
+  );
+  assert.equal(currentState.reusablePhoneActivation, null);
+  assert.deepStrictEqual(currentState.phoneReusableActivationPool, []);
+  assert.equal(currentState.phonePreferredActivation, null);
+  assert.deepStrictEqual(statusActions, ['8']);
+});
+
+test('signup phone helper skips provider+phone quarantined numbers and reacquires a different activation', async () => {
+  const requests = [];
+  let acquireCount = 0;
+  let currentState = {
+    heroSmsApiKey: 'demo-key',
+    phoneSmsProvider: 'hero-sms',
+    phoneCredentialInvalidBlocklist: [
+      {
+        provider: 'hero-sms',
+        phoneNumber: '66959916439',
+        addedAt: Date.now() - 5 * 60 * 1000,
+      },
+    ],
+  };
+  const helpers = api.createPhoneVerificationHelpers({
+    addLog: async () => {},
+    ensureStep8SignupPageReady: async () => {},
+    fetchImpl: async (url) => {
+      const parsedUrl = new URL(url);
+      requests.push(parsedUrl);
+      const action = parsedUrl.searchParams.get('action');
+      if (action === 'getPrices') {
+        return {
+          ok: true,
+          text: async () => buildHeroSmsPricesPayload(),
+        };
+      }
+      if (action === 'getNumber') {
+        acquireCount += 1;
+        return {
+          ok: true,
+          text: async () => (
+            acquireCount === 1
+              ? 'ACCESS_NUMBER:first-activation:66959916439'
+              : 'ACCESS_NUMBER:second-activation:66880000000'
+          ),
+        };
+      }
+      throw new Error(`Unexpected HeroSMS action: ${action}`);
+    },
+    getState: async () => currentState,
+    sendToContentScriptResilient: async () => ({}),
+    setState: async (updates) => {
+      currentState = { ...currentState, ...updates };
+    },
+    sleepWithStop: async () => {},
+    throwIfStopped: () => {},
+  });
+
+  const activation = await helpers.prepareSignupPhoneActivation(currentState);
+
+  assert.equal(activation.activationId, 'second-activation');
+  assert.equal(activation.phoneNumber, '66880000000');
+  assert.equal(
+    requests.filter((requestUrl) => requestUrl.searchParams.get('action') === 'getNumber').length,
+    2
+  );
+});
+
 test('signup phone helper completes signup SMS verification without touching add-phone activation', async () => {
   const setStateCalls = [];
   const contentMessages = [];

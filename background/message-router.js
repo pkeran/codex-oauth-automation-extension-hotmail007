@@ -565,7 +565,7 @@
             await setStepStatus(message.step, 'failed');
             await addLog(`失败：${errorMessage}`, 'error', { step: message.step });
             await appendManualAccountRunRecordIfNeeded(`step${message.step}_failed`, null, errorMessage);
-            notifyStepError(message.step, errorMessage);
+            notifyStepError(message.step, error);
             return { ok: true, error: errorMessage };
           }
 

@@ -1,4 +1,4 @@
-// sidepanel/sidepanel.js — Side Panel logic
+﻿// sidepanel/sidepanel.js — Side Panel logic
 
 const STATUS_ICONS = {
   pending: '',
@@ -402,7 +402,6 @@ const rowSignupMethod = document.getElementById('row-signup-method');
 const rowSignupPhone = document.getElementById('row-signup-phone');
 const signupMethodButtons = Array.from(document.querySelectorAll('[data-signup-method]'));
 const selectPhoneSmsProvider = document.getElementById('select-phone-sms-provider');
-const rowHeroSmsPlatform = document.getElementById('row-hero-sms-platform');
 const rowHeroSmsCountry = document.getElementById('row-hero-sms-country');
 const rowHeroSmsCountryFallback = document.getElementById('row-hero-sms-country-fallback');
 const rowHeroSmsAcquirePriority = document.getElementById('row-hero-sms-acquire-priority');
@@ -410,7 +409,6 @@ const rowHeroSmsApiKey = document.getElementById('row-hero-sms-api-key');
 const rowHeroSmsMaxPrice = document.getElementById('row-hero-sms-max-price');
 const rowPhoneSmsProvider = document.getElementById('row-phone-sms-provider');
 const rowPhoneSmsProviderOrder = document.getElementById('row-phone-sms-provider-order');
-const rowPhoneSmsProviderOrderActions = document.getElementById('row-phone-sms-provider-order-actions');
 const rowFiveSimApiKey = document.getElementById('row-five-sim-api-key');
 const rowFiveSimCountry = document.getElementById('row-five-sim-country');
 const rowFiveSimCountryFallback = document.getElementById('row-five-sim-country-fallback');
@@ -7230,128 +7228,6 @@ function updateSignupMethodUI(options = {}) {
   }
 }
 
-function updatePhoneVerificationSettingsUILegacy() {
-  const enabled = Boolean(inputPhoneVerificationEnabled?.checked);
-  const showSettings = enabled && phoneVerificationSectionExpanded;
-  const normalizeProvider = typeof normalizePhoneSmsProviderValue === 'function'
-    ? normalizePhoneSmsProviderValue
-    : ((value = '') => {
-      const normalized = String(value || '').trim().toLowerCase();
-      if (normalized === '5sim') return '5sim';
-      if (normalized === 'nexsms') return 'nexsms';
-      return 'hero-sms';
-    });
-  const heroProviderValue = typeof PHONE_SMS_PROVIDER_HERO !== 'undefined' ? PHONE_SMS_PROVIDER_HERO : 'hero-sms';
-  const fiveSimProviderValue = typeof PHONE_SMS_PROVIDER_FIVE_SIM !== 'undefined' ? PHONE_SMS_PROVIDER_FIVE_SIM : '5sim';
-  const nexSmsProviderValue = typeof PHONE_SMS_PROVIDER_NEXSMS !== 'undefined' ? PHONE_SMS_PROVIDER_NEXSMS : 'nexsms';
-  const providerOrderForDisplay = resolveNormalizedProviderOrderForRuntime(latestState || {});
-  const provider = providerOrderForDisplay[0] || (
-    typeof getSelectedPhoneSmsProvider === 'function'
-      ? getSelectedPhoneSmsProvider()
-      : normalizeProvider(selectPhoneSmsProvider?.value || latestState?.phoneSmsProvider || heroProviderValue)
-  );
-  const heroProvider = provider === heroProviderValue;
-  const fiveSimProvider = provider === fiveSimProviderValue;
-  const nexSmsProvider = provider === nexSmsProviderValue;
-  if (rowPhoneVerificationEnabled) {
-    rowPhoneVerificationEnabled.style.display = '';
-  }
-  if (rowHeroSmsPlatform) {
-    rowHeroSmsPlatform.style.display = '';
-  }
-  updateSignupMethodUI();
-  if (btnTogglePhoneVerificationSection) {
-    btnTogglePhoneVerificationSection.disabled = !enabled;
-    btnTogglePhoneVerificationSection.textContent = showSettings ? '收起设置' : '展开设置';
-    btnTogglePhoneVerificationSection.title = enabled
-      ? (showSettings ? '收起接码设置' : '展开接码设置')
-      : '开启接码后可展开设置';
-    btnTogglePhoneVerificationSection.setAttribute('aria-expanded', String(showSettings));
-  }
-  if (rowPhoneVerificationFold) {
-    rowPhoneVerificationFold.style.display = showSettings ? '' : 'none';
-  }
-
-  const phoneVerificationRows = [
-    typeof rowPhoneSmsProvider !== 'undefined' ? rowPhoneSmsProvider : null,
-    typeof rowPhoneSmsProviderOrder !== 'undefined' ? rowPhoneSmsProviderOrder : null,
-    typeof rowPhoneSmsProviderOrderActions !== 'undefined' ? rowPhoneSmsProviderOrderActions : null,
-    typeof rowHeroSmsCountry !== 'undefined' ? rowHeroSmsCountry : null,
-    typeof rowHeroSmsCountryFallback !== 'undefined' ? rowHeroSmsCountryFallback : null,
-    typeof rowHeroSmsAcquirePriority !== 'undefined' ? rowHeroSmsAcquirePriority : null,
-    typeof rowHeroSmsApiKey !== 'undefined' ? rowHeroSmsApiKey : null,
-    typeof rowFiveSimApiKey !== 'undefined' ? rowFiveSimApiKey : null,
-    typeof rowFiveSimCountry !== 'undefined' ? rowFiveSimCountry : null,
-    typeof rowFiveSimCountryFallback !== 'undefined' ? rowFiveSimCountryFallback : null,
-    typeof rowFiveSimProduct !== 'undefined' ? rowFiveSimProduct : null,
-    typeof rowNexSmsApiKey !== 'undefined' ? rowNexSmsApiKey : null,
-    typeof rowNexSmsCountry !== 'undefined' ? rowNexSmsCountry : null,
-    typeof rowNexSmsCountryFallback !== 'undefined' ? rowNexSmsCountryFallback : null,
-    typeof rowNexSmsServiceCode !== 'undefined' ? rowNexSmsServiceCode : null,
-    typeof rowHeroSmsMaxPrice !== 'undefined' ? rowHeroSmsMaxPrice : null,
-    typeof rowFiveSimOperator !== 'undefined' ? rowFiveSimOperator : null,
-    typeof rowPhoneCodeSettingsGroup !== 'undefined' ? rowPhoneCodeSettingsGroup : null,
-    typeof rowPhoneRecoveryStrategyGroup !== 'undefined' ? rowPhoneRecoveryStrategyGroup : null,
-    typeof rowPhoneProviderFallbackStrategyGroup !== 'undefined' ? rowPhoneProviderFallbackStrategyGroup : null,
-    typeof rowPhoneVerificationResendCount !== 'undefined' ? rowPhoneVerificationResendCount : null,
-    typeof rowPhoneReplacementLimit !== 'undefined' ? rowPhoneReplacementLimit : null,
-    typeof rowPhoneCodeWaitSeconds !== 'undefined' ? rowPhoneCodeWaitSeconds : null,
-    typeof rowPhoneCodeTimeoutWindows !== 'undefined' ? rowPhoneCodeTimeoutWindows : null,
-    typeof rowPhoneCodePollIntervalSeconds !== 'undefined' ? rowPhoneCodePollIntervalSeconds : null,
-    typeof rowPhoneCodePollMaxRounds !== 'undefined' ? rowPhoneCodePollMaxRounds : null,
-  ];
-  phoneVerificationRows.forEach((row) => {
-    if (row) {
-      row.style.display = showSettings ? '' : 'none';
-    }
-  });
-  if (rowHeroSmsCountry) rowHeroSmsCountry.style.display = showSettings && heroProvider ? '' : 'none';
-  if (rowHeroSmsCountryFallback) rowHeroSmsCountryFallback.style.display = showSettings && heroProvider ? '' : 'none';
-  if (rowHeroSmsAcquirePriority) rowHeroSmsAcquirePriority.style.display = showSettings && heroProvider ? '' : 'none';
-  if (rowHeroSmsApiKey) rowHeroSmsApiKey.style.display = showSettings && heroProvider ? '' : 'none';
-  if (rowFiveSimApiKey) rowFiveSimApiKey.style.display = showSettings && fiveSimProvider ? '' : 'none';
-  if (rowFiveSimCountry) rowFiveSimCountry.style.display = showSettings && fiveSimProvider ? '' : 'none';
-  if (rowFiveSimCountryFallback) rowFiveSimCountryFallback.style.display = showSettings && fiveSimProvider ? '' : 'none';
-  if (rowFiveSimOperator) rowFiveSimOperator.style.display = showSettings && fiveSimProvider ? '' : 'none';
-  if (rowFiveSimProduct) rowFiveSimProduct.style.display = showSettings && fiveSimProvider ? '' : 'none';
-  if (rowNexSmsApiKey) rowNexSmsApiKey.style.display = showSettings && nexSmsProvider ? '' : 'none';
-  if (rowNexSmsCountry) rowNexSmsCountry.style.display = showSettings && nexSmsProvider ? '' : 'none';
-  if (rowNexSmsCountryFallback) rowNexSmsCountryFallback.style.display = showSettings && nexSmsProvider ? '' : 'none';
-  if (rowNexSmsServiceCode) rowNexSmsServiceCode.style.display = showSettings && nexSmsProvider ? '' : 'none';
-  if (rowFiveSimOperator) {
-    rowFiveSimOperator.style.display = showSettings && fiveSimProvider ? '' : 'none';
-  }
-  const runtimeVisible = enabled;
-  [
-    typeof rowHeroSmsRuntimePair !== 'undefined' ? rowHeroSmsRuntimePair : null,
-    typeof rowHeroSmsCurrentNumber !== 'undefined' ? rowHeroSmsCurrentNumber : null,
-    typeof rowHeroSmsCurrentCountdown !== 'undefined' ? rowHeroSmsCurrentCountdown : null,
-    typeof rowHeroSmsCurrentCode !== 'undefined' ? rowHeroSmsCurrentCode : null,
-    typeof rowHeroSmsPreferredActivation !== 'undefined' ? rowHeroSmsPreferredActivation : null,
-  ].forEach((row) => {
-    if (row) {
-      row.style.display = runtimeVisible ? '' : 'none';
-    }
-  });
-  if (typeof syncSignupPhoneInputFromState === 'function') {
-    syncSignupPhoneInputFromState(latestState);
-  }
-  if (!showSettings && typeof rowHeroSmsPriceTiers !== 'undefined' && rowHeroSmsPriceTiers) {
-    rowHeroSmsPriceTiers.style.display = 'none';
-  }
-  if (
-    typeof inputPhonePageRateLimitCooldownSeconds !== 'undefined' && inputPhonePageRateLimitCooldownSeconds
-    && typeof selectPhonePageRateLimitAction !== 'undefined' && selectPhonePageRateLimitAction
-  ) {
-    const isRestartAfterCooldown = normalizePhonePageRateLimitActionValue(selectPhonePageRateLimitAction.value)
-      === PHONE_PAGE_RATE_LIMIT_ACTION_RESTART_STEP7_AFTER_COOLDOWN;
-    inputPhonePageRateLimitCooldownSeconds.title = isRestartAfterCooldown
-      ? '遇到页面级限流后，先冷却再重开步骤 7'
-      : '遇到页面级限流后，先冷却再切换号码';
-  }
-  updateHeroSmsPlatformDisplay();
-}
-
 function updatePhoneVerificationSettingsUI() {
   const enabled = Boolean(inputPhoneVerificationEnabled?.checked);
   const showSettings = enabled && phoneVerificationSectionExpanded;
@@ -7438,8 +7314,6 @@ function updatePhoneVerificationSettingsUI() {
   if (rowSignupMethod) rowSignupMethod.style.display = showSettings ? '' : 'none';
   if (rowPhoneSmsProvider) rowPhoneSmsProvider.style.display = showSettings ? '' : 'none';
   if (rowPhoneSmsProviderOrder) rowPhoneSmsProviderOrder.style.display = showSettings ? '' : 'none';
-  if (rowPhoneSmsProviderOrderActions) rowPhoneSmsProviderOrderActions.style.display = showSettings ? '' : 'none';
-  if (rowHeroSmsPlatform) rowHeroSmsPlatform.style.display = showSettings ? '' : 'none';
 
   if (rowHeroSmsCountry) rowHeroSmsCountry.style.display = showSettings && heroProvider ? '' : 'none';
   if (rowHeroSmsCountryFallback) rowHeroSmsCountryFallback.style.display = showSettings && heroProvider ? '' : 'none';

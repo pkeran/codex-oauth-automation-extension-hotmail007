@@ -739,3 +739,47 @@ test('signup flow helper rewrites retryable step 3 finalize transport timeout in
     },
   ]);
 });
+
+test('signup flow helper converts step 3 invalid phone/password into structured error and invokes cleanup callback', async () => {
+  const cleanupCalls = [];
+
+  const helpers = signupFlowApi.createSignupFlowHelpers({
+    addLog: async () => {},
+    buildGeneratedAliasEmail: () => '',
+    chrome: { tabs: { get: async () => ({ id: 31, url: 'https://auth.openai.com/create-account/password' }) } },
+    ensureContentScriptReadyOnTab: async () => {},
+    ensureHotmailAccountForFlow: async () => ({}),
+    ensureLuckmailPurchaseForFlow: async () => ({}),
+    handleInvalidSignupPhoneCredential: async (payload = {}) => {
+      cleanupCalls.push(payload);
+      return { inspected: true, cleared: true };
+    },
+    isGeneratedAliasProvider: () => false,
+    isReusableGeneratedAliasEmail: () => false,
+    isHotmailProvider: () => false,
+    isRetryableContentScriptTransportError: () => false,
+    isLuckmailProvider: () => false,
+    isSignupEmailVerificationPageUrl: () => false,
+    isSignupPasswordPageUrl: () => true,
+    reuseOrCreateTab: async () => 31,
+    sendToContentScriptResilient: async () => {
+      throw new Error('STEP3_PHONE_CREDENTIAL_INVALID::Incorrect phone number or password');
+    },
+    setEmailState: async () => {},
+    SIGNUP_ENTRY_URL: 'https://chatgpt.com/',
+    SIGNUP_PAGE_INJECT_FILES: ['content/utils.js', 'content/signup-page.js'],
+    waitForTabUrlMatch: async () => null,
+  });
+
+  await assert.rejects(
+    () => helpers.finalizeSignupPasswordSubmitInTab(31, 'Secret123!', 3),
+    (error) => {
+      assert.equal(error.code, 'STEP3_PHONE_CREDENTIAL_INVALID');
+      assert.match(error.message, /Incorrect phone number or password/);
+      return true;
+    }
+  );
+
+  assert.equal(cleanupCalls.length, 1);
+  assert.equal(cleanupCalls[0].step, 3);
+});

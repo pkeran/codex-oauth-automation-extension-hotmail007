@@ -74,6 +74,7 @@
     const PHONE_ACTIVATION_RETRY_ROUNDS_MIN = 1;
     const PHONE_ACTIVATION_RETRY_ROUNDS_MAX = 10;
     const DEFAULT_PHONE_ACTIVATION_RETRY_DELAY_MS = 2000;
+    const HERO_SMS_CANCEL_GRACE_MS = 2 * 60 * 1000;
     const HERO_SMS_ACQUIRE_PRIORITY_COUNTRY = 'country';
     const HERO_SMS_ACQUIRE_PRIORITY_PRICE = 'price';
     const HERO_SMS_ACQUIRE_PRIORITY_PRICE_HIGH = 'price_high';
@@ -89,6 +90,9 @@
       PHONE_SMS_PROVIDER_NEXSMS,
     ]);
     const MAX_PHONE_REUSABLE_POOL = 12;
+    const PHONE_CREDENTIAL_INVALID_BLOCKLIST_STATE_KEY = 'phoneCredentialInvalidBlocklist';
+    const MAX_PHONE_CREDENTIAL_INVALID_BLOCKLIST = 100;
+    const PHONE_BLOCKLIST_REACQUIRE_ATTEMPTS = 3;
     const PHONE_ERROR_CODE_RATE_LIMIT = 'PHONE_SMS_RATE_LIMIT';
     const PHONE_ERROR_CODE_NO_SUPPLY = 'PHONE_SMS_NO_SUPPLY';
     const PHONE_ERROR_CODE_ROUTE_405_RECOVERY_FAILED = 'PHONE_ROUTE_405_RECOVERY_FAILED';
@@ -1258,6 +1262,82 @@
       ].join('::');
     }
 
+    function normalizePhoneCredentialInvalidBlockEntry(entry) {
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+        return null;
+      }
+      const provider = normalizePhoneSmsProvider(entry.provider || '');
+      const rawPhoneNumber = String(
+        entry.phoneNumber ?? entry.number ?? entry.phone ?? ''
+      ).trim();
+      const normalizedPhoneNumber = rawPhoneNumber.replace(/\D+/g, '').trim() || rawPhoneNumber;
+      if (!provider || !normalizedPhoneNumber) {
+        return null;
+      }
+      const addedAt = normalizeTimestampMs(entry.addedAt) || Date.now();
+      return {
+        provider,
+        phoneNumber: normalizedPhoneNumber,
+        addedAt,
+        key: `${provider}::${normalizedPhoneNumber}`,
+      };
+    }
+
+    function readPhoneCredentialInvalidBlocklistFromState(state = {}) {
+      const source = Array.isArray(state?.[PHONE_CREDENTIAL_INVALID_BLOCKLIST_STATE_KEY])
+        ? state[PHONE_CREDENTIAL_INVALID_BLOCKLIST_STATE_KEY]
+        : [];
+      const normalized = [];
+      const seen = new Set();
+      source.forEach((entry) => {
+        const nextEntry = normalizePhoneCredentialInvalidBlockEntry(entry);
+        if (!nextEntry || seen.has(nextEntry.key)) {
+          return;
+        }
+        seen.add(nextEntry.key);
+        normalized.push(nextEntry);
+      });
+      return normalized.slice(0, MAX_PHONE_CREDENTIAL_INVALID_BLOCKLIST);
+    }
+
+    function isPhoneCredentialInvalidBlocked(state = {}, activation = null) {
+      const activationKey = buildReusableActivationPoolKey(activation);
+      if (!activationKey) {
+        return false;
+      }
+      return readPhoneCredentialInvalidBlocklistFromState(state)
+        .some((entry) => entry.key === activationKey);
+    }
+
+    async function rememberPhoneCredentialInvalidBlockedActivation(state = {}, activation = null) {
+      const normalizedActivation = normalizeActivation(activation);
+      const nextEntry = normalizePhoneCredentialInvalidBlockEntry(normalizedActivation);
+      if (!normalizedActivation || !nextEntry) {
+        return [];
+      }
+      const existingEntries = readPhoneCredentialInvalidBlocklistFromState(state);
+      const nextEntries = [
+        nextEntry,
+        ...existingEntries.filter((entry) => entry.key !== nextEntry.key),
+      ].slice(0, MAX_PHONE_CREDENTIAL_INVALID_BLOCKLIST);
+      const nextUpdates = {
+        [PHONE_CREDENTIAL_INVALID_BLOCKLIST_STATE_KEY]: nextEntries,
+      };
+      if (buildReusableActivationPoolKey(state?.[REUSABLE_PHONE_ACTIVATION_STATE_KEY]) === nextEntry.key) {
+        nextUpdates[REUSABLE_PHONE_ACTIVATION_STATE_KEY] = null;
+      }
+      if (buildReusableActivationPoolKey(state?.[PREFERRED_PHONE_ACTIVATION_STATE_KEY]) === nextEntry.key) {
+        nextUpdates[PREFERRED_PHONE_ACTIVATION_STATE_KEY] = null;
+      }
+      const reusablePool = readReusableActivationPoolFromState(state);
+      const nextReusablePool = reusablePool.filter((entry) => buildReusableActivationPoolKey(entry) !== nextEntry.key);
+      if (nextReusablePool.length !== reusablePool.length) {
+        nextUpdates[REUSABLE_PHONE_ACTIVATION_POOL_STATE_KEY] = nextReusablePool;
+      }
+      await setPhoneRuntimeState(nextUpdates);
+      return nextEntries;
+    }
+
     function isSameActivation(left, right) {
       const leftKey = buildActivationIdentityKey(left);
       const rightKey = buildActivationIdentityKey(right);
@@ -1342,7 +1422,7 @@
       }
 
       const rawAcquiredAt = activation?.acquiredAt ?? options.acquiredAt;
-      const acquiredAt = normalizeTimestampMs(rawAcquiredAt);
+      const acquiredAt = normalizeTimestampMs(rawAcquiredAt) || (price !== null ? Date.now() : 0);
       if (acquiredAt > 0 && (price !== null || rawAcquiredAt !== undefined && rawAcquiredAt !== null && String(rawAcquiredAt).trim() !== '')) {
         trackedActivation.acquiredAt = acquiredAt;
       }
@@ -4605,6 +4685,186 @@
       });
     }
 
+    function extractPhoneVerificationCode(rawCode) {
+      const trimmed = String(rawCode || '').trim();
+      if (!trimmed) {
+        return '';
+      }
+      const digitMatch = trimmed.match(/\b(\d{4,8})\b/);
+      return digitMatch?.[1] || '';
+    }
+
+    async function inspectPhoneActivationStatus(state = {}, activation) {
+      const normalizedActivation = normalizeActivation(activation);
+      if (!normalizedActivation) {
+        return {
+          exists: false,
+          active: false,
+          refundable: false,
+          provider: '',
+          statusText: '',
+        };
+      }
+
+      const provider = normalizePhoneSmsProvider(normalizedActivation.provider || state?.phoneSmsProvider || DEFAULT_PHONE_SMS_PROVIDER);
+      const activationOrderId = resolveActivationOrderId(normalizedActivation);
+      const config = resolvePhoneConfig({
+        ...state,
+        phoneSmsProvider: provider,
+      });
+
+      try {
+        if (provider === PHONE_SMS_PROVIDER_5SIM) {
+          const payload = await fetchFiveSimPayload(
+            config,
+            `/user/check/${activationOrderId}`,
+            '5sim check activation'
+          );
+          const text = describeFiveSimPayload(payload);
+          const statusText = String(payload?.status || text || '').trim().toUpperCase();
+          const smsList = Array.isArray(payload?.sms) ? payload.sms : [];
+          const hasCode = Boolean(
+            extractPhoneVerificationCode(payload?.code || payload?.sms_code)
+            || smsList
+              .map((smsItem) => extractPhoneVerificationCode(smsItem?.code || smsItem?.text || smsItem?.message || ''))
+              .find(Boolean)
+          );
+          const active = /^(PENDING|PREPARE|WAITING|RETRY)$/i.test(statusText) || (!statusText && !hasCode);
+          return {
+            exists: true,
+            active,
+            refundable: active,
+            provider,
+            statusText: statusText || text || 'UNKNOWN',
+            hasCode,
+          };
+        }
+
+        if (provider === PHONE_SMS_PROVIDER_NEXSMS) {
+          const payload = await fetchNexSmsPayload(
+            config,
+            '/api/sms/messages',
+            'NexSMS get sms messages',
+            {
+              query: {
+                phoneNumber: normalizedActivation.phoneNumber,
+                format: 'json_latest',
+              },
+            }
+          );
+          const text = describeNexSmsPayload(payload);
+          const hasCode = Boolean(extractPhoneVerificationCode(payload?.data?.code || payload?.data?.text || ''));
+          return {
+            exists: true,
+            active: !hasCode,
+            refundable: false,
+            provider,
+            statusText: text || 'UNKNOWN',
+            hasCode,
+          };
+        }
+
+        const statusAction = resolveActivationStatusAction(normalizedActivation);
+        const payload = await fetchHeroSmsPayload(config, {
+          action: statusAction,
+          id: activationOrderId,
+        }, `HeroSMS ${statusAction}`);
+        const text = describeHeroSmsPayload(payload);
+        const v2Code = (
+          payload
+          && typeof payload === 'object'
+          && !Array.isArray(payload)
+          && (
+            extractPhoneVerificationCode(payload.sms?.code)
+            || extractPhoneVerificationCode(payload.call?.code)
+          )
+        );
+        const okMatch = text.match(/^STATUS_OK:(.+)$/i);
+        const hasCode = Boolean(v2Code || (okMatch && extractPhoneVerificationCode(okMatch[1] || '')));
+        const active = /^STATUS_(WAIT_CODE|WAIT_RETRY|WAIT_RESEND)(?::.+)?$/i.test(text)
+          || (/^ACCESS_READY$/i.test(text))
+          || (statusAction === 'getStatusV2' && !hasCode && payload && typeof payload === 'object' && !Array.isArray(payload));
+        return {
+          exists: true,
+          active,
+          refundable: active,
+          provider,
+          statusText: text || 'UNKNOWN',
+          hasCode,
+        };
+      } catch (error) {
+        if (isPhoneActivationOrderMissingError(error, provider) || Number(error?.status) === 404) {
+          return {
+            exists: false,
+            active: false,
+            refundable: false,
+            provider,
+            statusText: error?.message || 'ORDER_NOT_FOUND',
+          };
+        }
+        throw error;
+      }
+    }
+
+    async function handleInvalidSignupPhoneCredential(state = {}, activation = null) {
+      const normalizedActivation = normalizeActivation(activation || state?.signupPhoneActivation);
+      if (!normalizedActivation) {
+        await clearSignupPhoneRuntimeState();
+        return {
+          inspected: false,
+          exists: false,
+          active: false,
+          refundable: false,
+          cancelled: false,
+          deferredCancel: false,
+        };
+      }
+
+      await rememberPhoneCredentialInvalidBlockedActivation(state, normalizedActivation);
+
+      let inspection = null;
+      try {
+        inspection = await inspectPhoneActivationStatus(state, normalizedActivation);
+      } catch (error) {
+        inspection = {
+          exists: false,
+          active: false,
+          refundable: false,
+          provider: normalizePhoneSmsProvider(normalizedActivation.provider || state?.phoneSmsProvider || DEFAULT_PHONE_SMS_PROVIDER),
+          statusText: error?.message || String(error || 'inspect_failed'),
+          inspectError: true,
+        };
+      }
+
+      const provider = normalizePhoneSmsProvider(normalizedActivation.provider || state?.phoneSmsProvider || DEFAULT_PHONE_SMS_PROVIDER);
+      const ageMs = Math.max(0, Date.now() - Math.max(0, Number(normalizedActivation.acquiredAt) || 0));
+      const deferredCancel = provider === PHONE_SMS_PROVIDER_HERO
+        && inspection?.exists
+        && inspection?.active
+        && inspection?.refundable
+        && ageMs > 0
+        && ageMs < HERO_SMS_CANCEL_GRACE_MS;
+      let cancelled = false;
+
+      if (inspection?.exists && inspection?.active && inspection?.refundable && !deferredCancel) {
+        await cancelPhoneActivation(state, normalizedActivation).catch(() => {});
+        cancelled = true;
+      }
+
+      await clearSignupPhoneRuntimeState();
+      return {
+        inspected: true,
+        exists: Boolean(inspection?.exists),
+        active: Boolean(inspection?.active),
+        refundable: Boolean(inspection?.refundable),
+        provider,
+        statusText: String(inspection?.statusText || '').trim(),
+        cancelled,
+        deferredCancel,
+        ageMs,
+      };
+    }
+
     async function acquirePhoneActivation(state = {}, options = {}) {
       const provider = normalizePhoneSmsProvider(state?.phoneSmsProvider || DEFAULT_PHONE_SMS_PROVIDER);
       const providerOrder = resolvePhoneProviderOrder(state, provider);
@@ -4693,6 +4953,7 @@
         && preferredActivation
         && (provider === PHONE_SMS_PROVIDER_HERO || provider === PHONE_SMS_PROVIDER_5SIM)
         && preferredActivation.provider === provider
+        && !isPhoneCredentialInvalidBlocked(state, preferredActivation)
         && !blockedCountryIds.has(normalizeCountryKey(preferredActivation.countryId))
         && allowedCountryIds.has(normalizeCountryKey(preferredActivation.countryId))
         && preferredActivation.successfulUses < preferredActivation.maxUses
@@ -4744,6 +5005,9 @@
             continue;
           }
           if (candidateActivation.successfulUses >= candidateActivation.maxUses) {
+            continue;
+          }
+          if (isPhoneCredentialInvalidBlocked(state, candidateActivation)) {
             continue;
           }
           if (blockedCountryIds.has(normalizeCountryKey(candidateActivation.countryId))) {
@@ -4821,13 +5085,32 @@
           continue;
         }
         try {
-          const activation = await requestPhoneActivation(
-            scopedState,
-            {
-              blockedCountryIds: useBlockedCountryIds,
-              countryPriceFloorByCountryId: useCountryPriceFloorByCountryId,
+          let activation = null;
+          let blocklistedActivationAttempts = 0;
+          while (!activation && blocklistedActivationAttempts < PHONE_BLOCKLIST_REACQUIRE_ATTEMPTS) {
+            const nextActivation = await requestPhoneActivation(
+              scopedState,
+              {
+                blockedCountryIds: useBlockedCountryIds,
+                countryPriceFloorByCountryId: useCountryPriceFloorByCountryId,
+              }
+            );
+            if (!isPhoneCredentialInvalidBlocked(state, nextActivation)) {
+              activation = nextActivation;
+              break;
             }
-          );
+            blocklistedActivationAttempts += 1;
+            await addLog(
+              `步骤 ${getActivePhoneVerificationVisibleStep()}：${providerLabel} 返回了已隔离号码 ${nextActivation.phoneNumber}，正在重新获取（${blocklistedActivationAttempts}/${PHONE_BLOCKLIST_REACQUIRE_ATTEMPTS}）。`,
+              'warn'
+            );
+          }
+          if (!activation) {
+            throw buildPhoneSmsNoSupplyError(
+              `Step ${getActivePhoneVerificationVisibleStep()}: ${providerLabel} reacquire exhausted because the provider kept returning provider+phone isolated numbers.`,
+              { provider: providerCandidate }
+            );
+          }
           const providerCountryLabel = providerCandidate === provider
             ? resolveCountryLabelById(activation.countryId)
             : String(activation?.countryLabel || activation?.countryId || '').trim();
@@ -6503,6 +6786,8 @@
       completeSignupPhoneVerificationFlow,
       finalizeLoginPhoneActivationAfterSuccess,
       finalizeSignupPhoneActivationAfterSuccess,
+      handleInvalidSignupPhoneCredential,
+      inspectPhoneActivationStatus,
       normalizeActivation,
       pollPhoneActivationCode,
       prepareLoginPhoneActivation,

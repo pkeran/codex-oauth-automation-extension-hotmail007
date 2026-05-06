@@ -983,6 +983,26 @@ header {
   gap: 8px;
 }
 
+.phone-verification-panel-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border-subtle);
+}
+
+.phone-verification-panel-group:first-child {
+  padding-top: 0;
+  border-top: none;
+}
+
+.phone-verification-group-title {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
 .phone-verification-subfold-row {
   display: block;
 }
@@ -2326,6 +2346,15 @@ header {
 .hero-sms-country-note {
   font-size: 12px;
   color: var(--text-muted);
+}
+
+.phone-verification-order-footer {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .hero-sms-reuse-max-inline {

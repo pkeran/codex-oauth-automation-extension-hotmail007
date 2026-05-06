@@ -1,4 +1,4 @@
-const test = require('node:test');
+﻿const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 
@@ -445,12 +445,10 @@ test('message router marks step 3 failed when post-submit finalize fails', async
   }, {});
 
   assert.deepStrictEqual(events.stepStatuses, [{ step: 3, status: 'failed' }]);
-  assert.deepStrictEqual(events.notifyErrors, [
-    {
-      step: 3,
-      error: '步骤 3 提交后仍停留在密码页。',
-    },
-  ]);
+  assert.equal(events.notifyErrors.length, 1);
+  assert.equal(events.notifyErrors[0].step, 3);
+  assert.equal(events.notifyErrors[0].error instanceof Error, true);
+  assert.equal(events.notifyErrors[0].error.message, '步骤 3 提交后仍停留在密码页。');
   assert.equal(events.logs.some(({ message, step }) => /失败：步骤 3 提交后仍停留在密码页。/.test(message) && step === 3), true);
   assert.deepStrictEqual(response, { ok: true, error: '步骤 3 提交后仍停留在密码页。' });
 });
@@ -467,12 +465,7 @@ test('message router stops the flow and surfaces cloudflare security block error
   }, {});
 
   assert.deepStrictEqual(events.securityBlocks, ['CF_SECURITY_BLOCKED::您已触发Cloudflare 安全防护系统']);
-  assert.deepStrictEqual(events.notifyErrors, [
-    {
-      step: 7,
-      error: '流程已被用户停止。',
-    },
-  ]);
+  assert.deepStrictEqual(events.notifyErrors, [{ step: 7, error: '流程已被用户停止。' }]);
   assert.deepStrictEqual(response, {
     ok: true,
     error: '您已触发Cloudflare 安全防护系统',
