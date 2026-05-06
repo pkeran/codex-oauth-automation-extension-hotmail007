@@ -101,6 +101,8 @@ const POST_SIGNUP_ONBOARDING_OPTION_PATTERNS = [
   /fun\\s+and\\s+entertainment|乐趣和娱乐/i,
   /other|其他/i,
 ];
+const POST_SIGNUP_ONBOARDING_GUIDE_PATTERN = /有问题，尽管问|从快速提问到大胆创意|跳过导览|你已准备就绪|继续操作即表示你同意|请勿共享敏感信息|请核实你的信息|ChatGPT 入门技巧/i;
+const POST_SIGNUP_ONBOARDING_ROOT_SELECTOR = '#modal-onboarding, [data-testid="modal-onboarding"], [data-testid="getting-started-button"], dialog[aria-label*="ChatGPT"], dialog[aria-label*="准备就绪"], dialog[aria-label*="尽管问"]';
 
 function isPhoneVerificationPageReady() {
   return false;
@@ -235,6 +237,8 @@ const POST_SIGNUP_ONBOARDING_OPTION_PATTERNS = [
   /fun\\s+and\\s+entertainment|乐趣和娱乐/i,
   /other|其他/i,
 ];
+const POST_SIGNUP_ONBOARDING_GUIDE_PATTERN = /有问题，尽管问|从快速提问到大胆创意|跳过导览|你已准备就绪|继续操作即表示你同意|请勿共享敏感信息|请核实你的信息|ChatGPT 入门技巧/i;
+const POST_SIGNUP_ONBOARDING_ROOT_SELECTOR = '#modal-onboarding, [data-testid="modal-onboarding"], [data-testid="getting-started-button"], dialog[aria-label*="ChatGPT"], dialog[aria-label*="准备就绪"], dialog[aria-label*="尽管问"]';
 
 function getStep4PostVerificationState() {
   return null;

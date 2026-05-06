@@ -677,6 +677,7 @@
         logMessage = '',
         logStep = null,
         logStepKey = '',
+        onRetryableTransportError = null,
         responseTimeoutMs,
       } = options;
       const start = Date.now();
@@ -713,6 +714,15 @@
               stepKey: logStepKey,
             });
             logged = true;
+          }
+
+          if (typeof onRetryableTransportError === 'function') {
+            await onRetryableTransportError(err, {
+              attempt,
+              source,
+              message,
+              remainingTimeoutMs,
+            });
           }
 
           await sleepOrStop(retryDelayMs);

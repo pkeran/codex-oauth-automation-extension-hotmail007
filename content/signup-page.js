@@ -145,8 +145,8 @@ const LOGIN_CODE_ONLY_ACTION_PATTERN = /one[-\s]*time|passcode|use\s+(?:a\s+)?co
 
 const RESEND_VERIFICATION_CODE_PATTERN = /重新发送(?:验证码)?|再次发送(?:验证码)?|重发(?:验证码)?|未收到(?:验证码|邮件)|resend(?:\s+code)?|send\s+(?:a\s+)?new\s+code|send\s+(?:it\s+)?again|request\s+(?:a\s+)?new\s+code|didn'?t\s+receive/i;
 const POST_SIGNUP_ONBOARDING_TITLE_PATTERN = /what\s+brings\s+you\s+to\s+chatgpt|what\s+brought\s+you\s+to\s+chatgpt|是什么促使你使用\s*chatgpt|你为何使用\s*chatgpt|你想如何使用\s*chatgpt/i;
-const POST_SIGNUP_ONBOARDING_SKIP_PATTERN = /skip|跳过/i;
-const POST_SIGNUP_ONBOARDING_NEXT_PATTERN = /next|continue|下一步|继续/i;
+const POST_SIGNUP_ONBOARDING_SKIP_PATTERN = /skip(?:\s+(?:tour|guide|intro))?|跳过(?:导览)?/i;
+const POST_SIGNUP_ONBOARDING_NEXT_PATTERN = /next|continue|get\s*started|start|let'?s\s*go|下一步|继续|开始吧|好的，开始吧/i;
 const POST_SIGNUP_ONBOARDING_OPTION_PATTERNS = [
   /school|学校/i,
   /work|工作/i,
@@ -154,6 +154,8 @@ const POST_SIGNUP_ONBOARDING_OPTION_PATTERNS = [
   /fun\s+and\s+entertainment|乐趣和娱乐/i,
   /other|其他/i,
 ];
+const POST_SIGNUP_ONBOARDING_GUIDE_PATTERN = /有问题，尽管问|从快速提问到大胆创意|跳过导览|你已准备就绪|继续操作即表示你同意|请勿共享敏感信息|请核实你的信息|ChatGPT 入门技巧/i;
+const POST_SIGNUP_ONBOARDING_ROOT_SELECTOR = '#modal-onboarding, [data-testid="modal-onboarding"], [data-testid="getting-started-button"], dialog[aria-label*="ChatGPT"], dialog[aria-label*="准备就绪"], dialog[aria-label*="尽管问"]';
 
 function isVisibleElement(el) {
   if (!el) return false;
@@ -583,7 +585,13 @@ function detectPostSignupOnboardingState() {
   const pageText = (document.body?.innerText || document.body?.textContent || '')
     .replace(/\s+/g, ' ')
     .trim();
-  if (!pageText) {
+  const onboardingRoot = typeof document?.querySelector === 'function'
+    ? document.querySelector(POST_SIGNUP_ONBOARDING_ROOT_SELECTOR)
+    : null;
+  const explicitGettingStartedButton = typeof document?.querySelector === 'function'
+    ? document.querySelector('[data-testid="getting-started-button"]')
+    : null;
+  if (!pageText && !onboardingRoot && !explicitGettingStartedButton) {
     return null;
   }
 
@@ -591,12 +599,18 @@ function detectPostSignupOnboardingState() {
     (count, pattern) => count + (pattern.test(pageText) ? 1 : 0),
     0
   );
-
-  const candidates = document.querySelectorAll(
-    'button, a, [role="button"], [role="link"], input[type="button"], input[type="submit"]'
-  );
+  const guideMatched = POST_SIGNUP_ONBOARDING_GUIDE_PATTERN.test(pageText);
+  const candidates = typeof onboardingRoot?.querySelectorAll === 'function'
+    ? onboardingRoot.querySelectorAll(
+      'button, a, [role="button"], [role="link"], input[type="button"], input[type="submit"]'
+    )
+    : document.querySelectorAll(
+      'button, a, [role="button"], [role="link"], input[type="button"], input[type="submit"]'
+    );
   let skipButton = null;
-  let nextButton = null;
+  let nextButton = explicitGettingStartedButton && isVisibleElement(explicitGettingStartedButton) && isActionEnabled(explicitGettingStartedButton)
+    ? explicitGettingStartedButton
+    : null;
   for (const el of candidates) {
     if (!isVisibleElement(el) || !isActionEnabled(el)) continue;
     const text = getActionText(el);
@@ -611,7 +625,8 @@ function detectPostSignupOnboardingState() {
   }
 
   const titleMatched = POST_SIGNUP_ONBOARDING_TITLE_PATTERN.test(pageText);
-  const looksLikeOnboarding = titleMatched || optionMatchCount >= 2;
+  const rootMatched = Boolean(onboardingRoot || explicitGettingStartedButton);
+  const looksLikeOnboarding = titleMatched || optionMatchCount >= 2 || guideMatched || rootMatched;
   if (!looksLikeOnboarding || (!skipButton && !nextButton)) {
     return null;
   }

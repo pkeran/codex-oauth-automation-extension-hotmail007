@@ -224,6 +224,16 @@
         logMessage: `步骤 ${step}：认证页仍在切换，正在等待页面恢复后继续确认提交流程...`,
       });
 
+      const reattachAfterTransportError = async () => {
+        await ensureContentScriptReadyOnTab('signup-page', tabId, {
+          inject: SIGNUP_PAGE_INJECT_FILES,
+          injectSource: 'signup-page',
+          timeoutMs: 45000,
+          retryDelayMs: 900,
+          logMessage: `步骤 ${step}：密码提交后页面已切换，正在重新接管当前页面...`,
+        });
+      };
+
       let result;
       try {
         result = await sendToContentScriptResilient('signup-page', {
@@ -238,6 +248,7 @@
         }, {
           timeoutMs: 30000,
           retryDelayMs: 700,
+          onRetryableTransportError: reattachAfterTransportError,
           logMessage: `步骤 ${step}：密码已提交，正在确认是否进入下一页面，必要时自动恢复重试页...`,
         });
       } catch (error) {
