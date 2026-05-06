@@ -4282,9 +4282,35 @@
         return countryCandidates.find((entry) => normalizeCountryKey(entry.id || entry.code) === normalizedCountryKey)?.label
           || preferredCountryLabel;
       };
+      const normalizeCountryKeyForProvider = (providerId, value) => {
+        const normalizedProvider = normalizePhoneSmsProvider(providerId);
+        if (normalizedProvider === PHONE_SMS_PROVIDER_5SIM) {
+          return normalizeFiveSimCountryCode(value, '');
+        }
+        if (normalizedProvider === PHONE_SMS_PROVIDER_NEXSMS) {
+          return String(normalizeNexSmsCountryId(value, -1));
+        }
+        return String(normalizeCountryId(value, 0));
+      };
       const scopedStateForProvider = (providerName) => ({
         ...state,
         phoneSmsProvider: normalizePhoneSmsProvider(providerName),
+      });
+      const hasUsableFallbackProvider = (currentProviderId) => providerOrder.some((candidateProvider) => {
+        const normalizedCandidate = normalizePhoneSmsProvider(candidateProvider);
+        if (normalizedCandidate === normalizePhoneSmsProvider(currentProviderId)) {
+          return false;
+        }
+        if (normalizedCandidate === PHONE_SMS_PROVIDER_5SIM) {
+          return Boolean(normalizeApiKey(state?.fiveSimApiKey || state?.heroSmsApiKey))
+            && resolveFiveSimCountryCandidates(state).length > 0;
+        }
+        if (normalizedCandidate === PHONE_SMS_PROVIDER_NEXSMS) {
+          return Boolean(normalizeApiKey(state?.nexSmsApiKey || state?.heroSmsApiKey))
+            && resolveNexSmsCountryCandidates(state).length > 0;
+        }
+        return Boolean(normalizeApiKey(state?.heroSmsApiKey))
+          && resolveCountryCandidates(state).length > 0;
       });
       const preferredActivation = normalizeActivation(state[PREFERRED_PHONE_ACTIVATION_STATE_KEY]);
       let failedPreferredActivation = null;
@@ -4385,15 +4411,48 @@
         )
           ? options.countryPriceFloorByCountryId
           : {};
+        const providerLabel = getPhoneSmsProviderLabel(providerCandidate);
+        const scopedState = scopedStateForProvider(providerCandidate);
+        const providerCountryCandidates = resolveCountryCandidatesForProvider(scopedState, providerCandidate);
+        const allProviderCountriesBlocked = (
+          providerCandidate === provider
+          && useBlockedCountryIds.length > 0
+          && hasUsableFallbackProvider(providerCandidate)
+          && providerCountryCandidates.length > 0
+          && providerCountryCandidates.every((countryEntry) => {
+            const countryKey = normalizeCountryKeyForProvider(
+              providerCandidate,
+              countryEntry?.id ?? countryEntry?.code ?? ''
+            );
+            return Boolean(countryKey) && useBlockedCountryIds.includes(countryKey);
+          })
+        );
+        if (allProviderCountriesBlocked) {
+          const blockError = buildPhoneSmsNoSupplyError(
+            `Step ${getActivePhoneVerificationVisibleStep()}: ${providerLabel} selected countries are temporarily blocked by local failure policy.`,
+            { provider: providerCandidate }
+          );
+          lastProviderError = blockError;
+          providerFailures.push({
+            provider: providerCandidate,
+            error: blockError,
+            message: blockError.message,
+          });
+          providerErrors.push(`${providerCandidate}: ${blockError.message}`);
+          await addLog(
+            `Step 9: all selected countries for ${providerLabel} are temporarily blocked by recent verification failures; trying the next provider fallback.`,
+            'warn'
+          );
+          continue;
+        }
         try {
           const activation = await requestPhoneActivation(
-            scopedStateForProvider(providerCandidate),
+            scopedState,
             {
               blockedCountryIds: useBlockedCountryIds,
               countryPriceFloorByCountryId: useCountryPriceFloorByCountryId,
             }
           );
-          const providerLabel = getPhoneSmsProviderLabel(providerCandidate);
           const providerCountryLabel = providerCandidate === provider
             ? resolveCountryLabelById(activation.countryId)
             : String(activation?.countryLabel || activation?.countryId || '').trim();
@@ -5674,15 +5733,17 @@
                   await sleepWithStop(retryDelayMs);
                   continue;
                 }
-                throw createPhoneFlowError(
-                  PHONE_ERROR_CODE_ADD_PHONE_REJECT_UNKNOWN,
-                  `Step 9: add-phone keeps rejecting ${activation.phoneNumber} without a used-number signal: ${retryRejectText}.`,
-                  {
-                    provider: activation.provider,
-                    reason: 'add_phone_rejected_unknown',
-                    fingerprint: rejectFingerprint,
-                  }
+                await markCountrySmsFailure(
+                  activation.countryId,
+                  'add_phone_rejected_unknown',
+                  activation.provider
                 );
+                await rotateActivationAfterAddPhoneFailure(
+                  `add-phone keeps rejecting ${activation.phoneNumber} without a used-number signal (${retryRejectText})`,
+                  'add_phone_rejected_unknown',
+                  submitResult || {}
+                );
+                continue;
                 throw new Error(
                   `步骤 9：添加手机号页面持续拒绝当前号码，但没有明确“已使用”状态：${submitResult.errorText || submitResult.url || '未知错误'}。`
                 );
