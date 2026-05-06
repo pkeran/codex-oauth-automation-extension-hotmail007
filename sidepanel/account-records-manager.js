@@ -605,47 +605,26 @@
       dom.accountRecordsMeta.textContent = metaText;
     }
 
-    function updateStats(allRecords, currentState = state.getLatestState()) {
+    function updateStats(allRecords) {
       if (!dom.accountRecordsStats) {
         return;
       }
 
       const summary = summarizeAccountRunHistory(allRecords);
-      const successCostSummary = summarizeSuccessCosts(allRecords);
-      const successTotals = [...successCostSummary.totalByCurrency.entries()]
-        .map(([currency, amount]) => ({ currency, amount }))
-        .sort((left, right) => String(left.currency).localeCompare(String(right.currency)));
-      const successAverages = successTotals.map((entry) => ({
-        currency: entry.currency,
-        amount: successCostSummary.successCount > 0
-          ? Math.round((entry.amount / successCostSummary.successCount) * 10000) / 10000
-          : 0,
-      }));
-      const ledgerSummary = summarizeLedgerCosts(
-        getAccountCostLedger(currentState),
-        successCostSummary.successCount
-      );
       dom.accountRecordsStats.innerHTML = [
         createStatChip('all', summary.total),
         createStatChip('success', summary.success),
         createStatChip('failed', summary.failed),
         createStatChip('stopped', summary.stopped),
         createStatChip('retry', summary.retryTotal),
-        createInfoStatChip('成功总成本', formatCurrencySummary(successTotals), 'is-cost-success-total'),
-        createInfoStatChip('成功平均成本', formatCurrencySummary(successAverages), 'is-cost-success-average'),
-        createInfoStatChip('全部消耗总成本', formatCurrencySummary(ledgerSummary.totalByCurrency), 'is-cost-ledger-total'),
-        createInfoStatChip('成功摊销平均成本', formatCurrencySummary(ledgerSummary.averageByCurrency), 'is-cost-ledger-average'),
       ].join('');
     }
 
     function updateToolbarState(allRecords) {
       const totalRecords = allRecords.length;
-      const ledgerEntryCount = getAccountCostLedger().length;
       setNodeDisabled(dom.btnClearAccountRecords, totalRecords === 0);
-      setNodeDisabled(dom.btnClearAccountCostLedger, ledgerEntryCount === 0);
       setNodeDisabled(dom.btnToggleAccountRecordsSelection, totalRecords === 0);
       setNodeHidden(dom.btnClearAccountRecords, selectionMode);
-      setNodeHidden(dom.btnClearAccountCostLedger, selectionMode);
       toggleNodeClass(dom.btnToggleAccountRecordsSelection, 'is-active', selectionMode);
       setNodeAttr(dom.btnToggleAccountRecordsSelection, 'aria-pressed', selectionMode ? 'true' : 'false');
       setNodeText(dom.btnToggleAccountRecordsSelection, selectionMode ? '取消多选' : '多选');
@@ -781,9 +760,8 @@
 
       const filteredRecords = getFilteredRecords(allRecords);
       updateHeader(allRecords, filteredRecords);
-      updateStats(allRecords, currentState);
+      updateStats(allRecords);
       updateToolbarState(allRecords);
-      renderDailyCostGroups(currentState);
       renderRecordList(allRecords, filteredRecords);
     }
 
@@ -862,35 +840,6 @@
       resetSelection();
       state.syncLatestState({ accountRunHistory: [] });
       helpers.showToast?.(`已清理 ${Math.max(0, Number(response?.clearedCount) || 0)} 条账号记录。`, 'success', 2200);
-    }
-
-    async function clearCostLedger() {
-      const ledgerEntries = getAccountCostLedger();
-      if (!ledgerEntries.length) {
-        helpers.showToast?.('No cost ledger entries to clear.', 'warn', 1800);
-        return;
-      }
-
-      const confirmed = await helpers.openConfirmModal({
-        title: 'Clear Cost Ledger',
-        message: 'Clear the current cost ledger only? Account run records will be kept.',
-        confirmLabel: 'Clear Ledger',
-        confirmVariant: 'btn-danger',
-      });
-      if (!confirmed) {
-        return;
-      }
-
-      const response = await runtime.sendMessage({
-        type: 'CLEAR_ACCOUNT_COST_LEDGER',
-        source: 'sidepanel',
-      });
-      if (response?.error) {
-        throw new Error(response.error);
-      }
-
-      state.syncLatestState({ accountCostLedger: [] });
-      helpers.showToast?.(`Cleared ${Math.max(0, Number(response?.clearedCount) || 0)} cost ledger entries.`, 'success', 2200);
     }
 
     async function deleteSelectedRecords() {
@@ -1022,13 +971,6 @@
           helpers.showToast?.(`Failed to clear account run records: ${error.message}`, 'error');
         }
       });
-      dom.btnClearAccountCostLedger?.addEventListener('click', async () => {
-        try {
-          await clearCostLedger();
-        } catch (error) {
-          helpers.showToast?.(`Failed to clear cost ledger: ${error.message}`, 'error');
-        }
-      });
     }
 
     function reset() {
@@ -1042,7 +984,6 @@
 
     return {
       bindEvents,
-      clearCostLedger,
       clearRecords,
       closePanel,
       deleteSelectedRecords,

@@ -2868,6 +2868,150 @@ header {
   box-shadow: var(--shadow-md), 0 18px 36px rgba(0, 0, 0, 0.18);
 }
 
+.account-cost-ledger-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1210;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  background: rgba(15, 17, 23, 0.32);
+  backdrop-filter: blur(2px);
+}
+
+.account-cost-ledger-overlay[hidden] {
+  display: none !important;
+}
+
+.account-cost-ledger-panel {
+  width: min(100%, 420px);
+  max-height: calc(100vh - 24px);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  background:
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--bg-base) 82%, var(--blue-soft)),
+      color-mix(in srgb, var(--bg-surface) 96%, var(--bg-base))
+    );
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow-md), 0 18px 36px rgba(0, 0, 0, 0.18);
+}
+
+.account-cost-ledger-panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.account-cost-ledger-panel-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.account-cost-ledger-panel-title {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+}
+
+.account-cost-ledger-panel-meta {
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+
+.account-cost-ledger-panel-actions,
+.account-cost-ledger-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.account-cost-ledger-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.account-cost-ledger-summary-chip,
+.account-cost-ledger-daily-item,
+.account-cost-ledger-daily-empty {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--bg-base) 90%, transparent);
+  box-shadow: var(--shadow-sm);
+}
+
+.account-cost-ledger-summary-chip {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+}
+
+.account-cost-ledger-summary-chip-label {
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.account-cost-ledger-summary-chip-value {
+  color: var(--text-primary);
+  font-family: 'JetBrains Mono', 'Consolas', monospace;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.account-cost-ledger-daily-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 420px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.account-cost-ledger-daily-list::-webkit-scrollbar { width: 5px; }
+.account-cost-ledger-daily-list::-webkit-scrollbar-track { background: transparent; }
+.account-cost-ledger-daily-list::-webkit-scrollbar-thumb { background: var(--bg-elevated); border-radius: 4px; }
+
+.account-cost-ledger-daily-item,
+.account-cost-ledger-daily-empty {
+  padding: 8px 10px;
+}
+
+.account-cost-ledger-daily-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.account-cost-ledger-daily-date {
+  color: var(--text-primary);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.account-cost-ledger-daily-success,
+.account-cost-ledger-daily-line,
+.account-cost-ledger-daily-empty {
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
 .account-records-panel-header {
   display: flex;
   align-items: flex-start;

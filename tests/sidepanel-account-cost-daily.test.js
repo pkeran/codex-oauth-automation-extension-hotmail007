@@ -1,4 +1,4 @@
-const test = require('node:test');
+﻿const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 
@@ -61,10 +61,10 @@ async function flushPromises() {
   await new Promise((resolve) => setImmediate(resolve));
 }
 
-test('account records manager renders daily ledger groups and clears cost ledger independently', async () => {
-  const source = fs.readFileSync('sidepanel/account-records-manager.js', 'utf8');
+test('account cost ledger manager renders daily ledger groups and clears cost ledger independently', async () => {
+  const source = fs.readFileSync('sidepanel/account-cost-ledger-manager.js', 'utf8');
   const windowObject = {};
-  const api = new Function('window', `${source}; return window.SidepanelAccountRecordsManager;`)(windowObject);
+  const api = new Function('window', `${source}; return window.SidepanelAccountCostLedgerManager;`)(windowObject);
 
   let latestState = {
     accountRunHistory: [
@@ -119,13 +119,20 @@ test('account records manager renders daily ledger groups and clears cost ledger
     ],
   };
 
+  assert.equal(typeof api?.createAccountCostLedgerManager, 'function');
+
+  const summary = createNode();
   const daily = createNode();
+  const meta = createNode();
+  const overlay = createNode();
+  const btnOpenAccountCostLedger = createNode();
+  const btnCloseAccountCostLedger = createNode();
   const btnClearAccountCostLedger = createNode();
   const messages = [];
   const toasts = [];
   let manager = null;
 
-  manager = api.createAccountRecordsManager({
+  manager = api.createAccountCostLedgerManager({
     state: {
       getLatestState: () => latestState,
       syncLatestState(nextState) {
@@ -137,20 +144,13 @@ test('account records manager renders daily ledger groups and clears cost ledger
       },
     },
     dom: {
-      accountRecordsList: createNode(),
-      accountRecordsDailyCosts: daily,
-      accountRecordsMeta: createNode(),
-      accountRecordsOverlay: createNode(),
-      accountRecordsPageLabel: createNode(),
-      accountRecordsStats: createNode(),
-      btnAccountRecordsNext: createNode(),
-      btnAccountRecordsPrev: createNode(),
-      btnClearAccountRecords: createNode(),
+      accountCostLedgerSummary: summary,
+      accountCostLedgerDailyList: daily,
+      accountCostLedgerMeta: meta,
+      accountCostLedgerOverlay: overlay,
+      btnOpenAccountCostLedger,
+      btnCloseAccountCostLedger,
       btnClearAccountCostLedger,
-      btnCloseAccountRecords: createNode(),
-      btnDeleteSelectedAccountRecords: createNode(),
-      btnOpenAccountRecords: createNode(),
-      btnToggleAccountRecordsSelection: createNode(),
     },
     helpers: {
       escapeHtml: (value) => String(value || ''),
@@ -179,6 +179,8 @@ test('account records manager renders daily ledger groups and clears cost ledger
   manager.bindEvents();
   manager.render();
 
+  assert.match(summary.innerHTML, /0\.1200/);
+  assert.match(summary.innerHTML, /0\.0600/);
   assert.match(daily.innerHTML, /2026-05-06/);
   assert.match(daily.innerHTML, /2026-05-05/);
   assert.match(daily.innerHTML, /0\.0700/);
@@ -191,7 +193,7 @@ test('account records manager renders daily ledger groups and clears cost ledger
   assert.equal(messages[0].type, 'CLEAR_ACCOUNT_COST_LEDGER');
   assert.equal(latestState.accountRunHistory.length, 2);
   assert.deepStrictEqual(latestState.accountCostLedger, []);
-  assert.match(daily.innerHTML, /0\.0000|暂无/);
+  assert.match(daily.innerHTML, /0\.0000|鏆傛棤/);
   assert.deepStrictEqual(toasts.at(-1), {
     message: 'Cleared 3 cost ledger entries.',
     tone: 'success',

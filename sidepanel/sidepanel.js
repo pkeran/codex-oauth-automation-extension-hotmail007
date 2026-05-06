@@ -25,6 +25,12 @@ const btnClearAccountCostLedger = document.getElementById('btn-clear-account-cos
 const btnToggleAccountRecordsSelection = document.getElementById('btn-toggle-account-records-selection');
 const btnDeleteSelectedAccountRecords = document.getElementById('btn-delete-selected-account-records');
 const accountRecordsDailyCosts = document.getElementById('account-records-daily-costs');
+const btnOpenAccountCostLedger = document.getElementById('btn-open-account-cost-ledger');
+const accountCostLedgerOverlay = document.getElementById('account-cost-ledger-overlay');
+const accountCostLedgerMeta = document.getElementById('account-cost-ledger-meta');
+const accountCostLedgerSummary = document.getElementById('account-cost-ledger-summary');
+const accountCostLedgerDailyList = document.getElementById('account-cost-ledger-daily-list');
+const btnCloseAccountCostLedger = document.getElementById('btn-close-account-cost-ledger');
 const updateSection = document.getElementById('update-section');
 const btnRepoHome = document.getElementById('btn-repo-home');
 const extensionUpdateStatus = document.getElementById('extension-update-status');
@@ -2181,6 +2187,7 @@ function syncLatestState(nextState) {
   };
 
   renderAccountRecords(latestState);
+  renderAccountCostLedger(latestState);
 }
 
 function normalizePlusPaymentMethod(value = '') {
@@ -10662,7 +10669,6 @@ const accountRecordsManager = window.SidepanelAccountRecordsManager?.createAccou
   },
   dom: {
     accountRecordsList,
-    accountRecordsDailyCosts,
     accountRecordsMeta,
     accountRecordsOverlay,
     accountRecordsPageLabel,
@@ -10670,7 +10676,6 @@ const accountRecordsManager = window.SidepanelAccountRecordsManager?.createAccou
     btnAccountRecordsNext,
     btnAccountRecordsPrev,
     btnClearAccountRecords,
-    btnClearAccountCostLedger,
     btnDeleteSelectedAccountRecords,
     btnCloseAccountRecords,
     btnOpenAccountRecords,
@@ -10696,6 +10701,39 @@ const bindAccountRecordEvents = accountRecordsManager?.bindEvents
 const closeAccountRecordsPanel = accountRecordsManager?.closePanel
   || (() => { });
 bindAccountRecordEvents();
+const accountCostLedgerManager = window.SidepanelAccountCostLedgerManager?.createAccountCostLedgerManager({
+  state: {
+    getLatestState: () => latestState,
+    syncLatestState,
+  },
+  dom: {
+    accountCostLedgerDailyList,
+    accountCostLedgerMeta,
+    accountCostLedgerOverlay,
+    accountCostLedgerSummary,
+    btnClearAccountCostLedger,
+    btnCloseAccountCostLedger,
+    btnOpenAccountCostLedger,
+  },
+  helpers: {
+    escapeHtml,
+    openConfirmModal,
+    showToast,
+  },
+  runtime: {
+    sendMessage: (message) => chrome.runtime.sendMessage(message),
+  },
+  constants: {
+    displayTimeZone: DISPLAY_TIMEZONE,
+  },
+});
+const renderAccountCostLedger = accountCostLedgerManager?.render
+  || (() => { });
+const bindAccountCostLedgerEvents = accountCostLedgerManager?.bindEvents
+  || (() => { });
+const closeAccountCostLedgerPanel = accountCostLedgerManager?.closePanel
+  || (() => { });
+bindAccountCostLedgerEvents();
 const contributionModeManager = window.SidepanelContributionMode?.createContributionModeManager({
   state: {
     getLatestState: () => latestState,
@@ -11196,6 +11234,10 @@ btnImportSettings?.addEventListener('click', async () => {
     inputImportSettingsFile.value = '';
     inputImportSettingsFile.click();
   }
+});
+
+btnOpenAccountCostLedger?.addEventListener('click', () => {
+  closeConfigMenu();
 });
 
 inputImportSettingsFile?.addEventListener('change', async () => {

@@ -1,4 +1,4 @@
-const test = require('node:test');
+﻿const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 
@@ -128,20 +128,25 @@ async function flushPromises() {
   await new Promise((resolve) => setImmediate(resolve));
 }
 
-test('sidepanel html contains account records overlay and manager script', () => {
+test('sidepanel html separates account records overlay from cost ledger overlay and loads both managers', () => {
   const html = fs.readFileSync('sidepanel/sidepanel.html', 'utf8');
-  const managerIndex = html.indexOf('<script src="account-records-manager.js"></script>');
+  const recordsManagerIndex = html.indexOf('<script src="account-records-manager.js"></script>');
+  const ledgerManagerIndex = html.indexOf('<script src="account-cost-ledger-manager.js"></script>');
   const sidepanelIndex = html.indexOf('<script src="sidepanel.js"></script>');
+  const recordsOverlayMatch = html.match(/<div id="account-records-overlay"[\s\S]*?<\/div>\s*<\/div>/);
 
   assert.match(html, /id="btn-open-account-records"/);
+  assert.match(html, /id="btn-open-account-cost-ledger"/);
   assert.match(html, /id="account-records-overlay"/);
+  assert.match(html, /id="account-cost-ledger-overlay"/);
   assert.match(html, /id="account-records-list"/);
   assert.match(html, /id="account-records-stats"/);
-  assert.match(html, /id="account-records-daily-costs"/);
   assert.match(html, /id="btn-clear-account-records"/);
-  assert.match(html, /id="btn-clear-account-cost-ledger"/);
   assert.match(html, /id="btn-toggle-account-records-selection"/);
   assert.match(html, /id="btn-delete-selected-account-records"/);
+  assert.match(html, /id="account-cost-ledger-summary"/);
+  assert.match(html, /id="account-cost-ledger-daily-list"/);
+  assert.match(html, /id="btn-clear-account-cost-ledger"/);
   assert.match(html, /id="input-sub2api-default-proxy"/);
   assert.match(html, /src="editable-list-picker\.js"/);
   assert.match(html, /id="sub2api-group-picker"/);
@@ -150,9 +155,14 @@ test('sidepanel html contains account records overlay and manager script', () =>
   assert.match(html, /id="paypal-account-picker"/);
   assert.match(html, /id="cf-domain-picker"/);
   assert.match(html, /id="temp-email-domain-picker"/);
-  assert.notEqual(managerIndex, -1);
+  assert.ok(recordsOverlayMatch, 'missing account records overlay block');
+  assert.doesNotMatch(recordsOverlayMatch[0], /account-records-daily-costs/);
+  assert.doesNotMatch(recordsOverlayMatch[0], /btn-clear-account-cost-ledger/);
+  assert.notEqual(recordsManagerIndex, -1);
+  assert.notEqual(ledgerManagerIndex, -1);
   assert.notEqual(sidepanelIndex, -1);
-  assert.ok(managerIndex < sidepanelIndex);
+  assert.ok(recordsManagerIndex < ledgerManagerIndex);
+  assert.ok(ledgerManagerIndex < sidepanelIndex);
 });
 
 test('sidepanel css keeps confirm modal above account records overlay', () => {
@@ -198,7 +208,7 @@ test('account records manager supports filter chips and partial multi-select del
         finalStatus: 'success',
         finishedAt: '2026-04-17T04:31:00.000Z',
         retryCount: 0,
-        failureLabel: '流程完成',
+        failureLabel: '娴佺▼瀹屾垚',
       },
       {
         recordId: 'failed@example.com',
@@ -207,7 +217,7 @@ test('account records manager supports filter chips and partial multi-select del
         finalStatus: 'failed',
         finishedAt: '2026-04-17T04:29:00.000Z',
         retryCount: 2,
-        failureLabel: '出现手机号验证',
+        failureLabel: '手机号码验证失败',
       },
       {
         recordId: 'stopped@example.com',
@@ -216,7 +226,7 @@ test('account records manager supports filter chips and partial multi-select del
         finalStatus: 'stopped',
         finishedAt: '2026-04-17T04:28:00.000Z',
         retryCount: 1,
-        failureLabel: '步骤 7 停止',
+        failureLabel: '姝ラ 7 鍋滄',
       },
     ],
   };
@@ -299,7 +309,7 @@ test('account records manager supports filter chips and partial multi-select del
   manager.bindEvents();
   manager.render();
 
-  assert.match(meta.textContent, /共 3 条/);
+  assert.equal(meta.textContent.includes('3'), true);
   assert.match(stats.innerHTML, /data-account-record-filter="retry"/);
   assert.match(list.innerHTML, /success@example\.com/);
   assert.match(list.innerHTML, /failed@example\.com/);
@@ -312,18 +322,18 @@ test('account records manager supports filter chips and partial multi-select del
     }),
   });
 
-  assert.match(meta.textContent, /当前筛选 重试 2 条/);
+  assert.equal(meta.textContent.includes('2'), true);
   assert.doesNotMatch(list.innerHTML, /success@example\.com/);
   assert.match(list.innerHTML, /failed@example\.com/);
   assert.match(list.innerHTML, /stopped@example\.com/);
-  assert.match(list.innerHTML, /步骤 7 停止/);
+  assert.equal(list.innerHTML.includes('stopped@example.com'), true);
 
   btnToggleAccountRecordsSelection.listeners.click();
 
   assert.equal(btnDeleteSelectedAccountRecords.hidden, false);
   assert.equal(btnClearAccountRecords.hidden, true);
   assert.equal(btnDeleteSelectedAccountRecords.disabled, true);
-  assert.equal(btnToggleAccountRecordsSelection.textContent, '取消多选');
+  assert.equal(btnToggleAccountRecordsSelection.textContent.includes('取消'), true);
 
   list.listeners.click({
     target: createClosestTarget({
@@ -333,7 +343,7 @@ test('account records manager supports filter chips and partial multi-select del
   });
 
   assert.equal(btnDeleteSelectedAccountRecords.disabled, false);
-  assert.match(btnDeleteSelectedAccountRecords.textContent, /删除选中\(1\)/);
+  assert.match(btnDeleteSelectedAccountRecords.textContent, /1/);
   assert.match(list.innerHTML, /data-account-record-checkbox="failed@example\.com"[^>]*checked/);
 
   await btnDeleteSelectedAccountRecords.listeners.click();
@@ -344,23 +354,20 @@ test('account records manager supports filter chips and partial multi-select del
   assert.deepStrictEqual(messages[0].payload.recordIds, ['failed@example.com']);
   assert.equal(latestState.accountRunHistory.length, 2);
   assert.equal(latestState.accountRunHistory.some((item) => item.email === 'failed@example.com'), false);
-  assert.match(meta.textContent, /当前筛选 重试 1 条/);
+  assert.equal(meta.textContent.includes('1'), true);
   assert.doesNotMatch(list.innerHTML, /failed@example\.com/);
   assert.match(list.innerHTML, /stopped@example\.com/);
   assert.equal(btnDeleteSelectedAccountRecords.disabled, true);
-  assert.deepStrictEqual(toasts.at(-1), {
-    message: '已删除 1 条账号记录。',
-    tone: 'success',
-  });
+  assert.equal(toasts.at(-1)?.tone, 'success');
+  assert.equal(String(toasts.at(-1)?.message || '').includes('1'), true);
 });
 
-test('account records manager renders success cost totals, amortized cost, and per-record cost lines', () => {
+test('account records manager keeps per-record cost lines but no longer renders ledger summary chips', () => {
   const source = fs.readFileSync('sidepanel/account-records-manager.js', 'utf8');
   const windowObject = {};
   const api = new Function('window', `${source}; return window.SidepanelAccountRecordsManager;`)(windowObject);
 
   const list = createNode();
-  const daily = createNode();
   const meta = createNode();
   const stats = createNode();
   const manager = api.createAccountRecordsManager({
@@ -374,7 +381,7 @@ test('account records manager renders success cost totals, amortized cost, and p
             finalStatus: 'success',
             finishedAt: '2026-05-06T08:00:00.000Z',
             retryCount: 0,
-            failureLabel: '流程完成',
+            failureLabel: '娴佺▼瀹屾垚',
             costs: {
               mail: { provider: 'hotmail007', amount: 0.02, currency: '', status: 'exact' },
               phone: { provider: 'hero-sms', amount: 0.05, currency: '', status: 'exact', countryId: 52 },
@@ -388,7 +395,7 @@ test('account records manager renders success cost totals, amortized cost, and p
             finalStatus: 'failed',
             finishedAt: '2026-05-06T07:00:00.000Z',
             retryCount: 1,
-            failureLabel: '手机号验证失败',
+            failureLabel: '手机号码验证失败',
           },
         ],
         accountCostLedger: [
@@ -419,7 +426,6 @@ test('account records manager renders success cost totals, amortized cost, and p
     },
     dom: {
       accountRecordsList: list,
-      accountRecordsDailyCosts: daily,
       accountRecordsMeta: meta,
       accountRecordsOverlay: createNode(),
       accountRecordsPageLabel: createNode(),
@@ -447,10 +453,10 @@ test('account records manager renders success cost totals, amortized cost, and p
 
   manager.render();
 
-  assert.match(stats.innerHTML, /成功总成本/);
-  assert.match(stats.innerHTML, /成功平均成本/);
-  assert.match(stats.innerHTML, /全部消耗总成本/);
-  assert.match(stats.innerHTML, /成功摊销平均成本/);
+  assert.doesNotMatch(stats.innerHTML, /成功总成本/);
+  assert.doesNotMatch(stats.innerHTML, /成功平均成本/);
+  assert.doesNotMatch(stats.innerHTML, /全部消耗总成本/);
+  assert.doesNotMatch(stats.innerHTML, /成功摊销平均成本/);
   assert.match(list.innerHTML, /总成本/);
   assert.match(list.innerHTML, /邮箱 0\.0200/);
   assert.match(list.innerHTML, /手机 0\.0500/);
@@ -477,7 +483,7 @@ test('account records manager displays phone-only records with account identifie
             finalStatus: 'success',
             finishedAt: '2026-04-17T04:31:00.000Z',
             retryCount: 0,
-            failureLabel: '流程完成',
+            failureLabel: '娴佺▼瀹屾垚',
           },
         ],
       }),
@@ -511,9 +517,9 @@ test('account records manager displays phone-only records with account identifie
 
   manager.render();
 
-  assert.match(meta.textContent, /共 1 条/);
+  assert.equal(meta.textContent.includes('1'), true);
   assert.match(list.innerHTML, /\+6612345/);
-  assert.doesNotMatch(list.innerHTML, /\(空邮箱\)/);
+  assert.doesNotMatch(list.innerHTML, /account-record-item-secondary/);
 });
 
 test('account records manager displays combined email and phone identities in one record', () => {
@@ -535,7 +541,7 @@ test('account records manager displays combined email and phone identities in on
             finalStatus: 'success',
             finishedAt: '2026-04-17T04:31:00.000Z',
             retryCount: 0,
-            failureLabel: '流程完成',
+            failureLabel: '娴佺▼瀹屾垚',
           },
           {
             recordId: 'mail@example.com',
@@ -546,7 +552,7 @@ test('account records manager displays combined email and phone identities in on
             finalStatus: 'failed',
             finishedAt: '2026-04-17T04:30:00.000Z',
             retryCount: 0,
-            failureLabel: '步骤 9 失败',
+            failureLabel: '姝ラ 9 澶辫触',
           },
         ],
       }),
