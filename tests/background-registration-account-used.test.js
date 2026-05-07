@@ -84,6 +84,9 @@ async function finalizeIcloudAliasAfterSuccessfulFlow() {
 async function markCurrentCustomEmailPoolEntryUsed() {
   return { updated: false };
 }
+async function setPersistentSettings() {}
+async function setState() {}
+function broadcastDataUpdate() {}
 async function addLog(message, level) {
   logs.push({ message, level });
 }
@@ -103,4 +106,74 @@ return { markCurrentRegistrationAccountUsed, patchCalls, logs };
   assert.equal(api.patchCalls[0].id, 'hot-1');
   assert.equal(api.patchCalls[0].updates.used, true);
   assert.equal(api.logs.some((entry) => /Hotmail 账号已标记为已用/.test(entry.message)), true);
+});
+
+test('markCurrentRegistrationAccountUsed consumes current custom mail provider pool email after successful remote create', async () => {
+  const bundle = extractFunction('markCurrentRegistrationAccountUsed');
+  const factory = new Function(`
+const persistentUpdates = [];
+const stateUpdates = [];
+const broadcasts = [];
+const logs = [];
+async function getState() {
+  return {
+    mailProvider: 'custom',
+    email: 'first@example.com',
+    customMailProviderPool: ['first@example.com', 'second@example.com'],
+  };
+}
+function isHotmailProvider() {
+  return false;
+}
+function isLuckmailProvider() {
+  return false;
+}
+function getCurrentLuckmailPurchase() {
+  return null;
+}
+async function patchHotmailAccount() {}
+async function setLuckmailPurchaseUsedState() {}
+async function clearLuckmailRuntimeState() {}
+async function patchMail2925Account() {}
+async function finalizeIcloudAliasAfterSuccessfulFlow() {
+  return { handled: false };
+}
+async function markCurrentCustomEmailPoolEntryUsed() {
+  return { updated: false };
+}
+async function setPersistentSettings(payload) {
+  persistentUpdates.push(payload);
+}
+async function setState(payload) {
+  stateUpdates.push(payload);
+}
+function broadcastDataUpdate(payload) {
+  broadcasts.push(payload);
+}
+async function addLog(message, level) {
+  logs.push({ message, level });
+}
+
+${bundle}
+
+return {
+  markCurrentRegistrationAccountUsed,
+  persistentUpdates,
+  stateUpdates,
+  broadcasts,
+  logs,
+};
+`);
+  const api = factory();
+
+  const result = await api.markCurrentRegistrationAccountUsed({}, {
+    logPrefix: '流程完成',
+    level: 'ok',
+  });
+
+  assert.equal(result.updated, true);
+  assert.deepEqual(api.persistentUpdates[0].customMailProviderPool, ['second@example.com']);
+  assert.deepEqual(api.stateUpdates[0].customMailProviderPool, ['second@example.com']);
+  assert.deepEqual(api.broadcasts[0].customMailProviderPool, ['second@example.com']);
+  assert.equal(api.logs.some((entry) => /自定义邮箱号池/.test(entry.message)), true);
 });

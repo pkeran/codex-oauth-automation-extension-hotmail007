@@ -13,6 +13,7 @@ function createJsonResponse(payload, status = 200) {
 
 function createSub2ApiPanelContext(fetchCalls = []) {
   const storage = new Map();
+  const extensionStorage = new Map();
   const documentElement = {
     attrs: new Map(),
     getAttribute(name) {
@@ -35,6 +36,33 @@ function createSub2ApiPanelContext(fetchCalls = []) {
       replace() {},
     },
     chrome: {
+      storage: {
+        local: {
+          async get(keys) {
+            if (typeof keys === 'string') {
+              return { [keys]: extensionStorage.get(keys) };
+            }
+            if (Array.isArray(keys)) {
+              return Object.fromEntries(keys.map((key) => [key, extensionStorage.get(key)]));
+            }
+            if (keys && typeof keys === 'object') {
+              return Object.fromEntries(
+                Object.keys(keys).map((key) => [key, extensionStorage.has(key) ? extensionStorage.get(key) : keys[key]])
+              );
+            }
+            return Object.fromEntries(extensionStorage.entries());
+          },
+          async set(items) {
+            Object.entries(items || {}).forEach(([key, value]) => {
+              extensionStorage.set(key, value);
+            });
+          },
+          async remove(keys) {
+            const list = Array.isArray(keys) ? keys : [keys];
+            list.filter(Boolean).forEach((key) => extensionStorage.delete(key));
+          },
+        },
+      },
       runtime: {
         onMessage: { addListener() {} },
         sendMessage: async () => ({
@@ -116,6 +144,8 @@ function createSub2ApiPanelContext(fetchCalls = []) {
             refresh_token: 'openai-refresh',
             expires_at: 1770000000,
             email: 'flow@example.com',
+            chatgpt_account_id: 'chatgpt-account-1',
+            chatgpt_user_id: 'chatgpt-user-1',
           },
         });
       }
@@ -132,6 +162,7 @@ function createSub2ApiPanelContext(fetchCalls = []) {
 
   vm.createContext(context);
   vm.runInContext(fs.readFileSync('content/sub2api-panel.js', 'utf8'), context);
+  context.extensionStorage = extensionStorage;
   return context;
 }
 
@@ -320,4 +351,62 @@ test('SUB2API step 10 omits proxy_id when no proxy is configured', async () => {
 
   assert.equal(Object.hasOwn(exchangeCall.body, 'proxy_id'), false);
   assert.equal(Object.hasOwn(createCall.body, 'proxy_id'), false);
+});
+
+test('SUB2API step 10 skips duplicate account creation when local ledger already recorded the same OpenAI account', async () => {
+  const fetchCalls = [];
+  const context = createSub2ApiPanelContext(fetchCalls);
+  context.extensionStorage.set('sub2apiAccountCreateLedger', [{
+    status: 'created',
+    email: 'flow@example.com',
+    chatgptAccountId: 'chatgpt-account-1',
+    chatgptUserId: 'chatgpt-user-1',
+    sub2apiAccountId: 42,
+    createdAt: 1770000000000,
+  }]);
+
+  await vm.runInContext(`
+    step9_submitOpenAiCallback({
+      localhostUrl: 'http://localhost:1455/auth/callback?code=callback-code&state=oauth-state',
+      sub2apiUrl: 'https://sub.example/admin/accounts',
+      sub2apiEmail: 'admin@example.com',
+      sub2apiPassword: 'secret',
+      sub2apiGroupName: 'codex',
+      sub2apiSessionId: 'session-1',
+      sub2apiOAuthState: 'oauth-state',
+      sub2apiGroupId: 5
+    })
+  `, context);
+
+  const createCalls = fetchCalls.filter((call) => call.path === '/api/v1/admin/accounts');
+  assert.equal(createCalls.length, 0);
+  assert.equal(context.completed[0].step, 10);
+  assert.match(String(context.completed[0].payload?.verifiedStatus || ''), /跳过重复创建|已存在/i);
+});
+
+test('SUB2API step 10 persists created account identity into local ledger after successful create', async () => {
+  const fetchCalls = [];
+  const context = createSub2ApiPanelContext(fetchCalls);
+
+  await vm.runInContext(`
+    step9_submitOpenAiCallback({
+      localhostUrl: 'http://localhost:1455/auth/callback?code=callback-code&state=oauth-state',
+      sub2apiUrl: 'https://sub.example/admin/accounts',
+      sub2apiEmail: 'admin@example.com',
+      sub2apiPassword: 'secret',
+      sub2apiGroupName: 'codex',
+      sub2apiSessionId: 'session-1',
+      sub2apiOAuthState: 'oauth-state',
+      sub2apiGroupId: 5
+    })
+  `, context);
+
+  const ledger = context.extensionStorage.get('sub2apiAccountCreateLedger');
+  assert.equal(Array.isArray(ledger), true);
+  assert.equal(ledger.length, 1);
+  assert.equal(ledger[0].status, 'created');
+  assert.equal(ledger[0].email, 'flow@example.com');
+  assert.equal(ledger[0].chatgptAccountId, 'chatgpt-account-1');
+  assert.equal(ledger[0].chatgptUserId, 'chatgpt-user-1');
+  assert.equal(ledger[0].sub2apiAccountId, 11);
 });

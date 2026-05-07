@@ -9,6 +9,7 @@ const SUB2API_DEFAULT_REDIRECT_URI = 'http://localhost:1455/auth/callback';
 const SUB2API_DEFAULT_CONCURRENCY = 10;
 const SUB2API_DEFAULT_PRIORITY = 1;
 const SUB2API_DEFAULT_RATE_MULTIPLIER = 1;
+const SUB2API_ACCOUNT_CREATE_LEDGER_STORAGE_KEY = 'sub2apiAccountCreateLedger';
 
 if (document.documentElement.getAttribute(SUB2API_PANEL_LISTENER_SENTINEL) !== '1') {
   document.documentElement.setAttribute(SUB2API_PANEL_LISTENER_SENTINEL, '1');
@@ -118,6 +119,132 @@ async function requestJson(origin, path, options = {}) {
   }
 
   return json;
+}
+
+function normalizeSub2ApiAccountCreateLedgerEntry(record = {}) {
+  if (!record || typeof record !== 'object' || Array.isArray(record)) {
+    return null;
+  }
+  const email = String(record.email || '').trim().toLowerCase();
+  const chatgptAccountId = String(record.chatgptAccountId || record.chatgpt_account_id || '').trim();
+  const chatgptUserId = String(record.chatgptUserId || record.chatgpt_user_id || '').trim();
+  const status = String(record.status || '').trim().toLowerCase();
+  if (!email && !chatgptAccountId && !chatgptUserId) {
+    return null;
+  }
+  if (status !== 'created') {
+    return null;
+  }
+  return {
+    status: 'created',
+    ...(email ? { email } : {}),
+    ...(chatgptAccountId ? { chatgptAccountId } : {}),
+    ...(chatgptUserId ? { chatgptUserId } : {}),
+    ...(Number.isFinite(Number(record.sub2apiAccountId)) ? { sub2apiAccountId: Number(record.sub2apiAccountId) } : {}),
+    ...(Array.isArray(record.groupIds) ? { groupIds: record.groupIds.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0) } : {}),
+    createdAt: Math.max(0, Number(record.createdAt) || Date.now()),
+    lastAttemptAt: Math.max(0, Number(record.lastAttemptAt) || Date.now()),
+  };
+}
+
+function buildSub2ApiAccountCreateIdentity(exchangeData = {}, credentials = {}, fallbackEmail = '') {
+  const email = String(
+    exchangeData?.email
+    || credentials?.email
+    || fallbackEmail
+    || ''
+  ).trim().toLowerCase();
+  const chatgptAccountId = String(
+    exchangeData?.chatgptAccountId
+    || credentials?.chatgptAccountId
+    || exchangeData?.chatgpt_account_id
+    || credentials?.chatgpt_account_id
+    || ''
+  ).trim();
+  const chatgptUserId = String(
+    exchangeData?.chatgptUserId
+    || credentials?.chatgptUserId
+    || exchangeData?.chatgpt_user_id
+    || credentials?.chatgpt_user_id
+    || ''
+  ).trim();
+  if (!email && !chatgptAccountId && !chatgptUserId) {
+    return null;
+  }
+  return {
+    ...(email ? { email } : {}),
+    ...(chatgptAccountId ? { chatgptAccountId } : {}),
+    ...(chatgptUserId ? { chatgptUserId } : {}),
+  };
+}
+
+function isSameSub2ApiAccountCreateIdentity(entry = {}, identity = {}) {
+  const entryEmail = String(entry?.email || '').trim().toLowerCase();
+  const identityEmail = String(identity?.email || '').trim().toLowerCase();
+  const entryAccountId = String(entry?.chatgptAccountId || '').trim();
+  const identityAccountId = String(identity?.chatgptAccountId || '').trim();
+  const entryUserId = String(entry?.chatgptUserId || '').trim();
+  const identityUserId = String(identity?.chatgptUserId || '').trim();
+  return Boolean(
+    (entryAccountId && identityAccountId && entryAccountId === identityAccountId)
+    || (entryUserId && identityUserId && entryUserId === identityUserId)
+    || (entryEmail && identityEmail && entryEmail === identityEmail)
+  );
+}
+
+async function getSub2ApiAccountCreateLedger() {
+  if (!chrome?.storage?.local?.get) {
+    return [];
+  }
+  const stored = await chrome.storage.local.get(SUB2API_ACCOUNT_CREATE_LEDGER_STORAGE_KEY);
+  const entries = Array.isArray(stored?.[SUB2API_ACCOUNT_CREATE_LEDGER_STORAGE_KEY])
+    ? stored[SUB2API_ACCOUNT_CREATE_LEDGER_STORAGE_KEY]
+    : [];
+  return entries
+    .map((entry) => normalizeSub2ApiAccountCreateLedgerEntry(entry))
+    .filter(Boolean);
+}
+
+async function setSub2ApiAccountCreateLedger(entries = []) {
+  if (!chrome?.storage?.local?.set) {
+    return;
+  }
+  const normalizedEntries = Array.isArray(entries)
+    ? entries.map((entry) => normalizeSub2ApiAccountCreateLedgerEntry(entry)).filter(Boolean)
+    : [];
+  await chrome.storage.local.set({
+    [SUB2API_ACCOUNT_CREATE_LEDGER_STORAGE_KEY]: normalizedEntries,
+  });
+}
+
+async function findSub2ApiCreatedAccountEntry(identity = null) {
+  if (!identity) {
+    return null;
+  }
+  const ledger = await getSub2ApiAccountCreateLedger();
+  return ledger.find((entry) => isSameSub2ApiAccountCreateIdentity(entry, identity)) || null;
+}
+
+async function recordSub2ApiCreatedAccountEntry(identity = null, payload = {}) {
+  if (!identity) {
+    return null;
+  }
+  const now = Date.now();
+  const ledger = await getSub2ApiAccountCreateLedger();
+  const normalizedIdentity = buildSub2ApiAccountCreateIdentity(identity, {}, identity.email || '');
+  const nextEntry = normalizeSub2ApiAccountCreateLedgerEntry({
+    ...(ledger.find((entry) => isSameSub2ApiAccountCreateIdentity(entry, normalizedIdentity)) || {}),
+    ...normalizedIdentity,
+    status: 'created',
+    sub2apiAccountId: payload?.sub2apiAccountId,
+    groupIds: payload?.groupIds,
+    createdAt: payload?.createdAt || now,
+    lastAttemptAt: now,
+  });
+  const nextLedger = ledger.filter((entry) => !isSameSub2ApiAccountCreateIdentity(entry, normalizedIdentity));
+  nextLedger.push(nextEntry);
+  await setSub2ApiAccountCreateLedger(nextLedger);
+  return nextEntry;
 }
 
 function storeAuthSession(loginData) {
@@ -626,6 +753,7 @@ async function step9_submitOpenAiCallback(payload = {}) {
   const credentials = buildOpenAiCredentials(exchangeData);
   const extra = buildOpenAiExtra(exchangeData);
   const resolvedEmail = String(exchangeData?.email || credentials?.email || '').trim();
+  const createIdentity = buildSub2ApiAccountCreateIdentity(exchangeData, credentials, flowEmail);
   const groupIds = groups
     .map((group) => Number(group.id))
     .filter((id) => Number.isFinite(id) && id > 0);
@@ -656,6 +784,26 @@ async function step9_submitOpenAiCallback(payload = {}) {
     createPayload.extra = extra;
   }
 
+  const existingCreatedEntry = await findSub2ApiCreatedAccountEntry(createIdentity);
+  if (existingCreatedEntry) {
+    const existingAccountId = Number(existingCreatedEntry.sub2apiAccountId) || 0;
+    const verifiedStatus = existingAccountId > 0
+      ? `SUB2API 已跳过重复创建，沿用账号#${existingAccountId}`
+      : 'SUB2API 已跳过重复创建，沿用已存在账号';
+    log(
+      `检测到当前 OpenAI 账号已在本地建号账本中存在（${existingCreatedEntry.email || existingCreatedEntry.chatgptAccountId || existingCreatedEntry.chatgptUserId}），跳过重复创建。`,
+      'warn',
+      { step: visibleStep, stepKey: 'platform-verify' }
+    );
+    log(verifiedStatus, 'ok', { step: visibleStep, stepKey: 'platform-verify' });
+    reportComplete(visibleStep, {
+      localhostUrl: callback.url,
+      verifiedStatus,
+    });
+    openAccountsPageSoon(origin);
+    return;
+  }
+
   log(`授权码交换成功，正在创建 SUB2API 账号（名称：${accountName}）...`, 'info', { step: visibleStep, stepKey: 'platform-verify' });
   const createdAccount = await requestJson(origin, '/api/v1/admin/accounts', {
     method: 'POST',
@@ -663,6 +811,10 @@ async function step9_submitOpenAiCallback(payload = {}) {
     body: createPayload,
   });
 
+  await recordSub2ApiCreatedAccountEntry(createIdentity, {
+    sub2apiAccountId: Number(createdAccount?.id) || 0,
+    groupIds,
+  });
   const verifiedStatus = `SUB2API 已创建账号 #${createdAccount?.id || 'unknown'}`;
   log(verifiedStatus, 'ok', { step: visibleStep, stepKey: 'platform-verify' });
   reportComplete(visibleStep, {

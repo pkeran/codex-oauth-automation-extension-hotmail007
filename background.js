@@ -1942,6 +1942,25 @@ async function markCurrentRegistrationAccountUsed(state = {}, options = {}) {
   const icloudResult = await finalizeIcloudAliasAfterSuccessfulFlow(latestState);
   updated = Boolean(icloudResult?.handled) || updated;
 
+  if (String(latestState.mailProvider || '').trim().toLowerCase() === 'custom') {
+    const currentEmail = String(latestState.email || '').trim().toLowerCase();
+    const currentPool = Array.isArray(latestState.customMailProviderPool)
+      ? latestState.customMailProviderPool
+        .map((entry) => String(entry || '').trim().toLowerCase())
+        .filter((entry) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(entry))
+      : [];
+    if (currentEmail && currentPool.length) {
+      const nextCustomMailProviderPool = currentPool.filter((entry) => entry !== currentEmail);
+      if (nextCustomMailProviderPool.length !== currentPool.length) {
+        await setPersistentSettings({ customMailProviderPool: nextCustomMailProviderPool });
+        await setState({ customMailProviderPool: nextCustomMailProviderPool });
+        broadcastDataUpdate({ customMailProviderPool: nextCustomMailProviderPool });
+        await addLog(`${reasonPrefix}：自定义邮箱号池已移除 ${currentEmail}。`, options.level || 'warn');
+        updated = true;
+      }
+    }
+  }
+
   if (typeof markCurrentCustomEmailPoolEntryUsed === 'function') {
     const result = await markCurrentCustomEmailPoolEntryUsed(latestState, {
       logPrefix: `${reasonPrefix}：自定义邮箱池`,
