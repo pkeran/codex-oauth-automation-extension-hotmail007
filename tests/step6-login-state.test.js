@@ -279,6 +279,18 @@ return {
   assert.strictEqual(snapshot.addEmailPage, true);
 }
 
+{
+  const api = createApi({
+    passwordInput: { id: 'password' },
+    switchTrigger: { id: 'otp' },
+    pageText: 'Incorrect email address or password',
+  });
+
+  const snapshot = api.inspectLoginAuthState();
+  assert.strictEqual(snapshot.state, 'login_password_invalid');
+  assert.match(String(snapshot.errorText || ''), /Incorrect email address or password/i);
+}
+
 assert.ok(
   extractFunction('inspectLoginAuthState').includes("state: 'oauth_consent_page'"),
   'inspectLoginAuthState 应产出 oauth_consent_page 状态'

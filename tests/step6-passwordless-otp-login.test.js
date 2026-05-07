@@ -160,3 +160,55 @@ test('step6LoginFromPasswordPage returns a recoverable result when password is m
     cleanupGlobals();
   }
 });
+
+test('step6LoginFromPasswordPage returns a recoverable result when password page already shows invalid credentials', async () => {
+  const api = createApi();
+  const logs = [];
+  const snapshot = {
+    state: 'login_password_invalid',
+    passwordInput: { id: 'password' },
+    switchTrigger: { id: 'otp' },
+    errorText: 'Incorrect email address or password',
+    url: 'https://auth.openai.com/log-in/password',
+  };
+
+  globalThis.normalizeStep6Snapshot = (value) => value;
+  globalThis.inspectLoginAuthState = () => snapshot;
+  globalThis.log = (message, level = 'info', options = {}) => {
+    logs.push({ message, level, step: options.step, stepKey: options.stepKey });
+  };
+  globalThis.step6SwitchToOneTimeCodeLogin = async () => {
+    throw new Error('should not switch to one-time-code login from a known invalid-credential page');
+  };
+  globalThis.createStep6RecoverableResult = (reason, stateSnapshot, details) => ({
+    step6Outcome: 'recoverable',
+    reason,
+    stateSnapshot,
+    ...details,
+  });
+  globalThis.fillInput = () => {
+    throw new Error('should not fill password again on invalid-credential page');
+  };
+  globalThis.humanPause = async () => {};
+  globalThis.sleep = async () => {};
+  globalThis.triggerLoginSubmitAction = async () => {
+    throw new Error('should not resubmit password on invalid-credential page');
+  };
+  globalThis.waitForStep6PasswordSubmitTransition = async () => {
+    throw new Error('should not wait for password submit transition on invalid-credential page');
+  };
+
+  try {
+    const result = await api.step6LoginFromPasswordPage({ email: 'user@example.com', password: 'secret' }, snapshot);
+
+    assert.deepStrictEqual(result, {
+      step6Outcome: 'recoverable',
+      reason: 'login_password_invalid',
+      stateSnapshot: snapshot,
+      message: '当前密码页检测到邮箱或密码错误（Incorrect email address or password），请回到步骤 7 重新开始登录。',
+    });
+    assert.equal(logs.some(({ message }) => /邮箱或密码错误/.test(message)), true);
+  } finally {
+    cleanupGlobals();
+  }
+});

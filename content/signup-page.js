@@ -3867,6 +3867,7 @@ function inspectLoginAuthState() {
   const passwordInput = getLoginPasswordInput();
   const emailInput = getLoginEmailInput();
   const phoneInput = getLoginPhoneInput();
+  const pageText = getPageTextSnapshot();
   const switchTrigger = findOneTimeCodeLoginTrigger();
   const loginEntryTrigger = findLoginEntryTrigger();
   const phoneEntryTrigger = findLoginPhoneEntryTrigger();
@@ -3943,6 +3944,14 @@ function inspectLoginAuthState() {
   }
 
   if (passwordInput || switchTrigger) {
+    const invalidPasswordMatched = /incorrect\s+(?:email\s+address|phone\s+number|email|username)?\s*or\s+password|wrong\s+password|invalid\s+(?:email(?:\s+address)?|phone\s+number|password|credentials)|邮箱(?:地址)?或密码错误|电子邮件(?:地址)?或密码错误|手机(?:号码|号)?或密码错误|手机号或密码错误/i.test(pageText);
+    if (invalidPasswordMatched) {
+      return {
+        ...baseState,
+        state: 'login_password_invalid',
+        errorText: String(pageText || '').trim(),
+      };
+    }
     return {
       ...baseState,
       state: 'password_page',
@@ -4021,6 +4030,8 @@ function getLoginAuthStateLabel(snapshot) {
   switch (state) {
     case 'verification_page':
       return '登录验证码页';
+    case 'login_password_invalid':
+      return '密码错误页';
     case 'password_page':
       return '密码页';
     case 'email_page':
@@ -5069,6 +5080,17 @@ async function resolveStep6PostSubmitSnapshot(snapshot, options = {}) {
     return { action: 'phone', snapshot: normalizedSnapshot };
   }
 
+  if (normalizedSnapshot.state === 'login_password_invalid') {
+    const detail = String(normalizedSnapshot.errorText || '').trim();
+    return {
+      action: 'recoverable',
+      result: createStep6RecoverableResult('login_password_invalid', normalizedSnapshot, {
+        message: `当前密码页检测到邮箱或密码错误${detail ? `（${detail}）` : ''}，请回到步骤 ${visibleStep} 重新开始登录。`,
+        loginVerificationRequestedAt,
+      }),
+    };
+  }
+
   if (normalizedSnapshot.state === 'password_page') {
     if (allowPasswordAction || (final && allowFinalPasswordAction)) {
       return { action: 'password', snapshot: normalizedSnapshot };
@@ -5327,14 +5349,12 @@ async function step6SwitchToOneTimeCodeLogin(payload, snapshot) {
       via: result.via || 'switch_to_one_time_code_login',
     });
   }
-  if (result?.action === 'password') {
-    return step6LoginFromPasswordPage(payload, result.snapshot);
-  }
-  if (result?.action === 'phone') {
-    return step6LoginFromPhonePage(payload, result.snapshot);
-  }
-  if (result?.action === 'email') {
-    return step6LoginFromEmailPage(payload, result.snapshot);
+  if (result?.action === 'password' || result?.action === 'phone' || result?.action === 'email') {
+    const fallbackSnapshot = normalizeStep6Snapshot(result.snapshot || inspectLoginAuthState());
+    return createStep6RecoverableResult('one_time_code_switch_unexpected_state', fallbackSnapshot, {
+      message: `点击一次性验证码登录后页面进入${getLoginAuthStateLabel(fallbackSnapshot)}，请回到步骤 ${visibleStep} 重新开始登录。`,
+      loginVerificationRequestedAt: null,
+    });
   }
   return result;
 }
@@ -5529,6 +5549,17 @@ async function step6LoginFromPasswordPage(payload, snapshot) {
   const visibleStep = Math.floor(Number(payload?.visibleStep) || 0) || 7;
   const currentSnapshot = normalizeStep6Snapshot(snapshot || inspectLoginAuthState());
   const hasPassword = Boolean(String(payload?.password || '').trim());
+
+  if (currentSnapshot.state === 'login_password_invalid') {
+    const detail = String(currentSnapshot.errorText || '').trim();
+    log(`当前密码页检测到邮箱或密码错误${detail ? `：${detail}` : ''}，准备回到步骤 ${visibleStep} 重新开始登录。`, 'warn', {
+      step: visibleStep,
+      stepKey: 'oauth-login',
+    });
+    return createStep6RecoverableResult('login_password_invalid', currentSnapshot, {
+      message: `当前密码页检测到邮箱或密码错误${detail ? `（${detail}）` : ''}，请回到步骤 ${visibleStep} 重新开始登录。`,
+    });
+  }
 
   if (currentSnapshot.passwordInput) {
     if (!hasPassword) {
@@ -5732,6 +5763,11 @@ async function step6_login(payload) {
 
   if (snapshot.state === 'password_page') {
     log('认证页已在密码页，继续当前登录流程。', 'info', { step: visibleStep, stepKey: 'oauth-login' });
+    return step6LoginFromPasswordPage(payload, snapshot);
+  }
+
+  if (snapshot.state === 'login_password_invalid') {
+    log('认证页当前显示邮箱或密码错误，准备回到步骤 7 重新开始登录。', 'warn', { step: visibleStep, stepKey: 'oauth-login' });
     return step6LoginFromPasswordPage(payload, snapshot);
   }
 
