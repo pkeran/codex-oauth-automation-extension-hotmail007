@@ -200,6 +200,7 @@
     async function syncStepAccountIdentityFromPayload(payload = {}) {
       const identifierType = String(payload?.accountIdentifierType || '').trim().toLowerCase();
       const signupPhoneNumber = resolveSignupPhonePayload(payload);
+      const latestState = await getState();
       if (identifierType === 'phone' || signupPhoneNumber) {
         if (signupPhoneNumber) {
           await setSignupPhoneStateSilently(signupPhoneNumber);
@@ -220,14 +221,33 @@
 
       const email = resolveEmailIdentityPayload(payload);
       if (identifierType === 'email' || email) {
+        const preserveSignupPhoneCompletion = Boolean(
+          normalizeSignupMethod(latestState?.resolvedSignupMethod || latestState?.signupMethod) === 'phone'
+          && latestState?.signupPhoneCompletedActivation
+          && typeof latestState.signupPhoneCompletedActivation === 'object'
+          && String(
+            latestState?.signupPhoneCompletedActivation?.activationId
+            || latestState?.signupPhoneCompletedActivation?.latestActivationId
+            || latestState?.signupPhoneCompletedActivation?.phoneNumber
+            || ''
+          ).trim()
+        );
         if (email) {
           await setEmailState(email);
         }
         const updates = {
           phoneNumber: '',
-          signupPhoneNumber: '',
+          signupPhoneNumber: preserveSignupPhoneCompletion
+            ? String(
+              latestState?.signupPhoneNumber
+              || latestState?.signupPhoneCompletedActivation?.phoneNumber
+              || ''
+            ).trim()
+            : '',
           signupPhoneActivation: null,
-          signupPhoneCompletedActivation: null,
+          signupPhoneCompletedActivation: preserveSignupPhoneCompletion
+            ? latestState.signupPhoneCompletedActivation
+            : null,
           signupPhoneVerificationRequestedAt: null,
           signupPhoneVerificationPurpose: '',
           ...(email ? {
@@ -235,7 +255,9 @@
             accountIdentifier: email,
           } : {}),
         };
-        await setSignupPhoneStateSilently(null);
+        if (!preserveSignupPhoneCompletion) {
+          await setSignupPhoneStateSilently(null);
+        }
         await setState(updates);
         broadcastDataUpdate(updates);
       }

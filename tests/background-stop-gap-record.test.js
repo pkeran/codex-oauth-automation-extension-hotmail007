@@ -254,3 +254,114 @@ return {
   assert.equal(state.autoRunSessionId, 0);
   assert.equal(state.stopRequested, true);
 });
+
+test('appendAndBroadcastAccountRunRecord preserves latest phone completion cost when stale override clears it', async () => {
+  const bundle = [
+    extractFunction('getRunningSteps'),
+    extractFunction('inferStoppedRecordStep'),
+    extractFunction('resolveAccountRunRecordStatusForStop'),
+    extractFunction('extractStoppedStepFromRecordStatus'),
+    extractFunction('resolveAccountRunRecordReasonForStop'),
+    extractFunction('buildRunCostSnapshotFromState'),
+    extractFunction('appendAndBroadcastAccountRunRecord'),
+  ].join('\n');
+
+  const api = new Function(`
+const STEP_IDS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+const HOTMAIL_PROVIDER = 'hotmail-api';
+const LUCKMAIL_PROVIDER = 'luckmail-api';
+const STOP_ERROR_MESSAGE = '流程已被用户停止。';
+const DEFAULT_STATE = {
+  stepStatuses: Object.fromEntries(STEP_IDS.map((step) => [step, 'pending'])),
+};
+let captured = null;
+const latestState = {
+  mailProvider: 'hotmail-api',
+  email: 'trusted-graph@hotmail.com',
+  currentHotmailAccountId: 'hm-1',
+  hotmailAccounts: [{
+    id: 'hm-1',
+    email: 'trusted-graph@hotmail.com',
+    source: 'hotmail007',
+    purchaseType: 'hotmail Trusted Graph',
+    purchasePrice: 0.02,
+    purchaseCurrency: 'USD',
+    purchaseCostStatus: 'exact',
+  }],
+  signupMethod: 'phone',
+  resolvedSignupMethod: 'phone',
+  signupPhoneCompletedActivation: {
+    activationId: 'signup-123',
+    phoneNumber: '66959916439',
+    provider: 'hero-sms',
+    countryId: 52,
+    price: 0.05,
+    priceCurrency: 'USD',
+    priceStatus: 'exact',
+    costOutcome: 'consumed',
+  },
+};
+const accountRunHistoryHelpers = {
+  appendAccountRunRecord: async (status, state, reason) => {
+    captured = { status, state, reason };
+    return { status, state, reason };
+  },
+};
+async function broadcastAccountRunHistoryUpdate() {}
+async function getState() {
+  return latestState;
+}
+function isHotmailProvider(state) {
+  return String(state?.mailProvider || '').trim() === HOTMAIL_PROVIDER;
+}
+function isLuckmailProvider(state) {
+  return String(state?.mailProvider || '').trim() === LUCKMAIL_PROVIDER;
+}
+function findHotmailAccount(accounts, accountId) {
+  return (Array.isArray(accounts) ? accounts : []).find((account) => account?.id === accountId) || null;
+}
+function getCurrentLuckmailPurchase(state = {}) {
+  return state.currentLuckmailPurchase || null;
+}
+${bundle}
+return {
+  appendAndBroadcastAccountRunRecord,
+  getCaptured() {
+    return captured;
+  },
+};
+`)();
+
+  await api.appendAndBroadcastAccountRunRecord('success', {
+    email: 'trusted-graph@hotmail.com',
+    accountIdentifierType: 'email',
+    accountIdentifier: 'trusted-graph@hotmail.com',
+    signupPhoneCompletedActivation: null,
+    completedPhoneActivation: null,
+  }, '');
+
+  const captured = api.getCaptured();
+  assert.equal(captured.status, 'success');
+  assert.equal(captured.state.signupPhoneCompletedActivation?.activationId, 'signup-123');
+  assert.deepStrictEqual(captured.state.runCosts, {
+    mail: {
+      provider: 'hotmail007',
+      sourceType: 'hotmail Trusted Graph',
+      amount: 0.02,
+      currency: 'USD',
+      status: 'exact',
+    },
+    phone: {
+      provider: 'hero-sms',
+      countryId: 52,
+      amount: 0.05,
+      currency: 'USD',
+      status: 'exact',
+    },
+    total: {
+      amount: 0.07,
+      currency: 'USD',
+      status: 'exact',
+    },
+  });
+});

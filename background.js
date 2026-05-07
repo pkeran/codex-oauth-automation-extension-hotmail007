@@ -3117,6 +3117,18 @@ function isPhoneActivationForNumber(activation, phoneNumber) {
 async function setEmailStateSilently(email) {
   const normalizedEmail = String(email || '').trim() || null;
   const currentState = await getState();
+  const preserveSignupPhoneCompletion = Boolean(
+    normalizedEmail
+    && currentState?.signupPhoneCompletedActivation
+    && typeof currentState.signupPhoneCompletedActivation === 'object'
+    && String(
+      currentState?.signupPhoneCompletedActivation?.activationId
+      || currentState?.signupPhoneCompletedActivation?.latestActivationId
+      || currentState?.signupPhoneCompletedActivation?.phoneNumber
+      || ''
+    ).trim()
+    && String(currentState?.resolvedSignupMethod || currentState?.signupMethod || '').trim().toLowerCase() === 'phone'
+  );
   const updates = {
     email: normalizedEmail,
   };
@@ -3126,11 +3138,20 @@ async function setEmailStateSilently(email) {
     updates.accountIdentifier = normalizedEmail;
     updates.phoneNumber = '';
     updates.completedPhoneActivation = null;
-    updates.signupPhoneNumber = '';
     updates.signupPhoneActivation = null;
-    updates.signupPhoneCompletedActivation = null;
     updates.signupPhoneVerificationRequestedAt = null;
     updates.signupPhoneVerificationPurpose = '';
+    if (preserveSignupPhoneCompletion) {
+      updates.signupPhoneNumber = String(
+        currentState?.signupPhoneNumber
+        || currentState?.signupPhoneCompletedActivation?.phoneNumber
+        || ''
+      ).trim();
+      updates.signupPhoneCompletedActivation = currentState.signupPhoneCompletedActivation;
+    } else {
+      updates.signupPhoneNumber = '';
+      updates.signupPhoneCompletedActivation = null;
+    }
   } else if (String(currentState?.accountIdentifierType || '').trim().toLowerCase() === 'email') {
     updates.accountIdentifierType = null;
     updates.accountIdentifier = '';
@@ -10801,6 +10822,15 @@ async function appendAndBroadcastAccountRunRecord(status, stateOverride = null, 
   const state = stateOverride
     ? { ...latestState, ...stateOverride }
     : latestState;
+  for (const phoneCompletionKey of ['completedPhoneActivation', 'signupPhoneCompletedActivation']) {
+    if (
+      (state?.[phoneCompletionKey] === null || state?.[phoneCompletionKey] === undefined)
+      && latestState?.[phoneCompletionKey]
+      && typeof latestState[phoneCompletionKey] === 'object'
+    ) {
+      state[phoneCompletionKey] = latestState[phoneCompletionKey];
+    }
+  }
   const resolvedStatus = resolveAccountRunRecordStatusForStop(status, state);
   const resolvedReason = resolveAccountRunRecordReasonForStop(resolvedStatus, reason);
   const recordState = {

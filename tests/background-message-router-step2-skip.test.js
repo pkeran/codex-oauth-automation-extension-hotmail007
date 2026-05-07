@@ -235,6 +235,39 @@ test('message router clears stale signup phone runtime when step 2 resolves emai
   )));
 });
 
+test('message router keeps completed signup phone activation when phone signup later binds email identity', async () => {
+  const preservedActivation = {
+    activationId: 'signup-123',
+    phoneNumber: '66959916439',
+    provider: 'hero-sms',
+    price: 0.05,
+    priceCurrency: 'USD',
+    priceStatus: 'exact',
+    costOutcome: 'consumed',
+  };
+  const { router, events } = createRouter({
+    state: {
+      signupMethod: 'phone',
+      resolvedSignupMethod: 'phone',
+      signupPhoneNumber: '66959916439',
+      signupPhoneCompletedActivation: preservedActivation,
+      stepStatuses: { 3: 'pending' },
+    },
+  });
+
+  await router.handleStepData(3, {
+    email: 'user@example.com',
+    accountIdentifierType: 'email',
+    accountIdentifier: 'user@example.com',
+  });
+
+  assert.deepStrictEqual(events.emailStates, ['user@example.com']);
+  assert.equal(events.stateUpdates.some((updates) => (
+    Object.prototype.hasOwnProperty.call(updates, 'signupPhoneCompletedActivation')
+    && updates.signupPhoneCompletedActivation === null
+  )), false);
+});
+
 test('message router does not overwrite a completed step 3 when step 2 is replayed', async () => {
   const { router, events } = createRouter({
     state: { stepStatuses: { 3: 'completed' } },
