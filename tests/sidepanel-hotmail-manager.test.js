@@ -77,6 +77,9 @@ test('sidepanel html contains hotmail007 automation controls and account view to
   assert.match(html, /id="display-hotmail007-stock"/);
   assert.match(html, /id="btn-hotmail007-prefetch-account"/);
   assert.match(html, /id="btn-toggle-hotmail-view"/);
+  assert.match(html, /id="btn-export-hotmail007-long-lived-json"/);
+  assert.match(html, /id="btn-export-hotmail007-long-lived-csv"/);
+  assert.match(html, /id="btn-export-hotmail007-long-lived-txt"/);
 });
 
 test('sidepanel css gives hotmail007 action row enough room and allows the status text to wrap', () => {
@@ -449,4 +452,147 @@ test('hotmail manager forwards manual hotmail007 purchase quantity to background
       quantity: 5,
     },
   });
+});
+
+test('hotmail manager exports hotmail007 long-lived accounts in json/csv/txt formats', async () => {
+  const source = fs.readFileSync('sidepanel/hotmail-manager.js', 'utf8');
+  const windowObject = {
+    SidepanelAccountPoolUi: createAccountPoolUiStub(),
+  };
+  const localStorageMock = {
+    getItem() {
+      return null;
+    },
+    setItem() {},
+  };
+
+  const api = new Function('window', 'localStorage', `${source}; return window.SidepanelHotmailManager;`)(
+    windowObject,
+    localStorageMock
+  );
+
+  const handlers = {};
+  const sentMessages = [];
+  const downloads = [];
+
+  function createExportButton(format) {
+    return {
+      disabled: false,
+      addEventListener(type, handler) {
+        if (type === 'click') handlers[format] = handler;
+      },
+    };
+  }
+
+  const manager = api.createHotmailManager({
+    state: {
+      getLatestState: () => ({ currentHotmailAccountId: null }),
+      syncLatestState() {},
+    },
+    dom: {
+      btnAddHotmailAccount: { addEventListener() {} },
+      btnClearUsedHotmailAccounts: { textContent: '', disabled: false, addEventListener() {} },
+      btnDeleteAllHotmailAccounts: { textContent: '', disabled: false, addEventListener() {} },
+      btnExportHotmail007LongLivedJson: createExportButton('json'),
+      btnExportHotmail007LongLivedCsv: createExportButton('csv'),
+      btnExportHotmail007LongLivedTxt: createExportButton('txt'),
+      btnHotmail007Balance: { addEventListener() {} },
+      btnHotmail007PrefetchAccount: { addEventListener() {} },
+      btnHotmail007RefreshCatalog: { addEventListener() {} },
+      btnHotmailUsageGuide: { addEventListener() {} },
+      btnImportHotmailAccounts: { disabled: false, addEventListener() {} },
+      btnToggleHotmailForm: { setAttribute() {}, addEventListener() {} },
+      btnToggleHotmailList: { textContent: '', disabled: false, setAttribute() {}, addEventListener() {} },
+      btnToggleHotmailView: { textContent: '', disabled: false, setAttribute() {}, addEventListener() {} },
+      displayHotmail007Balance: { textContent: '' },
+      displayHotmail007Status: { textContent: '' },
+      displayHotmail007Stock: { textContent: '' },
+      hotmailAccountsList: { innerHTML: '', addEventListener() {}, classList: { toggle() {} } },
+      hotmailFormShell: { hidden: true },
+      hotmailListShell: { classList: { toggle() {} }, addEventListener() {} },
+      inputEmail: { value: '' },
+      inputHotmail007ClientKey: { value: 'client-key-1' },
+      inputHotmail007PurchaseQuantity: { value: '1' },
+      inputHotmailClientId: { value: '' },
+      inputHotmailEmail: { value: '', focus() {} },
+      inputHotmailImport: { value: '' },
+      inputHotmailPassword: { value: '' },
+      inputHotmailRefreshToken: { value: '' },
+      inputHotmailSearch: { value: '', addEventListener() {} },
+      selectHotmail007MailType: { value: 'hotmail Trusted Graph', innerHTML: '', addEventListener() {} },
+      selectHotmailAccountSource: { value: 'hotmail007' },
+      selectHotmailFilter: { value: 'all', addEventListener() {} },
+      selectMailProvider: { value: 'hotmail-api' },
+    },
+    helpers: {
+      downloadTextFile(content, fileName, mimeType) {
+        downloads.push({ content, fileName, mimeType });
+      },
+      getHotmailAccounts: () => [],
+      getCurrentHotmailEmail: () => '',
+      escapeHtml: (value) => String(value || ''),
+      showToast() {},
+      openConfirmModal: async () => true,
+      copyTextToClipboard: async () => {},
+    },
+    runtime: {
+      sendMessage: async (message) => {
+        sentMessages.push(message);
+        return {
+          fileName: `hotmail007-long-lived.${message.payload.format}`,
+          fileContent: `content-${message.payload.format}`,
+          mimeType: message.payload.format === 'json'
+            ? 'application/json;charset=utf-8'
+            : (message.payload.format === 'csv' ? 'text/csv;charset=utf-8' : 'text/plain;charset=utf-8'),
+          exportedCount: 2,
+        };
+      },
+    },
+    constants: {
+      copyIcon: '',
+      displayTimeZone: 'Asia/Shanghai',
+      expandedStorageKey: 'multipage-hotmail-list-expanded',
+    },
+    hotmailUtils: {},
+  });
+
+  manager.bindHotmailEvents();
+  await handlers.json();
+  await handlers.csv();
+  await handlers.txt();
+
+  assert.deepEqual(sentMessages.map((message) => ({
+    type: message.type,
+    payload: message.payload,
+  })), [
+    {
+      type: 'EXPORT_HOTMAIL007_LONG_LIVED_ACCOUNTS',
+      payload: { format: 'json' },
+    },
+    {
+      type: 'EXPORT_HOTMAIL007_LONG_LIVED_ACCOUNTS',
+      payload: { format: 'csv' },
+    },
+    {
+      type: 'EXPORT_HOTMAIL007_LONG_LIVED_ACCOUNTS',
+      payload: { format: 'txt' },
+    },
+  ]);
+  assert.deepEqual(downloads, [
+    {
+      content: 'content-json',
+      fileName: 'hotmail007-long-lived.json',
+      mimeType: 'application/json;charset=utf-8',
+    },
+    {
+      content: 'content-csv',
+      fileName: 'hotmail007-long-lived.csv',
+      mimeType: 'text/csv;charset=utf-8',
+    },
+    {
+      content: 'content-txt',
+      fileName: 'hotmail007-long-lived.txt',
+      mimeType: 'text/plain;charset=utf-8',
+    },
+  ]);
 });

@@ -2868,6 +2868,158 @@ async function exportSettingsBundle() {
   };
 }
 
+function buildHotmail007LongLivedExportFilename(format = 'json', date = new Date()) {
+  const pad = (value) => String(value).padStart(2, '0');
+  const normalizedFormat = normalizeHotmail007LongLivedExportFormat(format);
+  return `hotmail007-long-lived-accounts-${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}-${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}.${normalizedFormat}`;
+}
+
+function normalizeHotmail007LongLivedExportFormat(value = '') {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'csv' || normalized === 'txt') {
+    return normalized;
+  }
+  return 'json';
+}
+
+function isHotmail007LongLivedAccount(account = {}) {
+  const normalized = normalizeHotmailAccount(account);
+  if (String(normalized.source || '').trim().toLowerCase() !== HOTMAIL_ACCOUNT_SOURCE_HOTMAIL007) {
+    return false;
+  }
+
+  const catalogLive = String(normalized.catalogLive || '').trim();
+  if (/month/i.test(catalogLive)) {
+    return true;
+  }
+
+  return /trusted/i.test(String(normalized.purchaseType || '').trim());
+}
+
+function escapeCsvCell(value) {
+  const text = String(value ?? '');
+  if (/[",\r\n]/.test(text)) {
+    return `"${text.replace(/"/g, '""')}"`;
+  }
+  return text;
+}
+
+function serializeHotmail007LongLivedAccounts(accounts, format = 'json') {
+  const normalizedFormat = normalizeHotmail007LongLivedExportFormat(format);
+  if (normalizedFormat === 'json') {
+    return JSON.stringify(accounts, null, 2);
+  }
+
+  if (normalizedFormat === 'csv') {
+    const headers = [
+      'accountId',
+      'email',
+      'password',
+      'clientId',
+      'refreshToken',
+      'source',
+      'purchaseType',
+      'catalogLive',
+      'catalogAccess',
+      'catalogStockSnapshot',
+      'purchasePrice',
+      'purchaseCurrency',
+      'purchaseCostStatus',
+      'purchaseBatchId',
+      'purchasedAt',
+      'status',
+      'used',
+      'lastAuthAt',
+      'lastUsedAt',
+      'lastError',
+    ];
+    const rows = accounts.map((account) => headers.map((key) => escapeCsvCell(account?.[key] ?? '')).join(','));
+    return [headers.join(','), ...rows].join('\n');
+  }
+
+  const lines = [
+    'Hotmail007 长效邮箱导出',
+    `账号数量: ${accounts.length}`,
+    '',
+  ];
+  accounts.forEach((account, index) => {
+    lines.push(`账号 ${index + 1}`);
+    lines.push(`邮箱: ${account.email}`);
+    lines.push(`密码: ${account.password}`);
+    lines.push(`客户端ID: ${account.clientId}`);
+    lines.push(`刷新令牌: ${account.refreshToken}`);
+    lines.push(`来源: ${account.source}`);
+    lines.push(`采购类型: ${account.purchaseType}`);
+    lines.push(`有效期: ${account.catalogLive}`);
+    lines.push(`接入类型: ${account.catalogAccess}`);
+    lines.push(`库存快照: ${account.catalogStockSnapshot}`);
+    lines.push(`采购价格: ${account.purchasePrice}`);
+    lines.push(`采购币种: ${account.purchaseCurrency}`);
+    lines.push(`采购成本状态: ${account.purchaseCostStatus}`);
+    lines.push(`采购批次: ${account.purchaseBatchId}`);
+    lines.push(`采购时间: ${account.purchasedAt}`);
+    lines.push(`账号状态: ${account.status}`);
+    lines.push(`已用: ${account.used ? '是' : '否'}`);
+    lines.push(`上次校验: ${account.lastAuthAt}`);
+    lines.push(`上次使用: ${account.lastUsedAt}`);
+    lines.push(`最后错误: ${account.lastError}`);
+    lines.push('');
+  });
+  return lines.join('\n');
+}
+
+async function exportHotmail007LongLivedAccounts(options = {}) {
+  const normalizedFormat = normalizeHotmail007LongLivedExportFormat(options.format);
+  const settings = await getPersistedSettings();
+  const accounts = normalizeHotmailAccounts(settings?.hotmailAccounts)
+    .filter((account) => isHotmail007LongLivedAccount(account))
+    .map((account) => ({
+      accountId: String(account.id || '').trim(),
+      email: String(account.email || '').trim(),
+      password: String(account.password || ''),
+      clientId: String(account.clientId || '').trim(),
+      refreshToken: String(account.refreshToken || ''),
+      source: String(account.source || '').trim(),
+      purchaseType: String(account.purchaseType || '').trim(),
+      catalogLive: String(account.catalogLive || '').trim(),
+      catalogAccess: String(account.catalogAccess || '').trim(),
+      catalogStockSnapshot: Number.isFinite(Number(account.catalogStockSnapshot))
+        ? Number(account.catalogStockSnapshot)
+        : '',
+      purchasePrice: Number.isFinite(Number(account.purchasePrice))
+        ? Math.round(Number(account.purchasePrice) * 10000) / 10000
+        : '',
+      purchaseCurrency: String(account.purchaseCurrency || '').trim(),
+      purchaseCostStatus: String(account.purchaseCostStatus || '').trim(),
+      purchaseBatchId: String(account.purchaseBatchId || '').trim(),
+      purchasedAt: Number.isFinite(Number(account.purchasedAt)) ? Number(account.purchasedAt) : 0,
+      status: String(account.status || '').trim(),
+      used: Boolean(account.used),
+      lastAuthAt: Number.isFinite(Number(account.lastAuthAt)) ? Number(account.lastAuthAt) : 0,
+      lastUsedAt: Number.isFinite(Number(account.lastUsedAt)) ? Number(account.lastUsedAt) : 0,
+      lastError: String(account.lastError || ''),
+    }));
+
+  const payload = {
+    exportedAt: new Date().toISOString(),
+    extensionVersion: chrome.runtime.getManifest().version,
+    exportedCount: accounts.length,
+    accounts,
+  };
+  const fileContent = normalizedFormat === 'json'
+    ? JSON.stringify(payload, null, 2)
+    : serializeHotmail007LongLivedAccounts(accounts, normalizedFormat);
+
+  return {
+    fileName: buildHotmail007LongLivedExportFilename(normalizedFormat),
+    fileContent,
+    mimeType: normalizedFormat === 'csv'
+      ? 'text/csv;charset=utf-8'
+      : (normalizedFormat === 'txt' ? 'text/plain;charset=utf-8' : 'application/json;charset=utf-8'),
+    exportedCount: accounts.length,
+  };
+}
+
 async function importSettingsBundle(configBundle) {
   const state = await ensureManualInteractionAllowed('\u5bfc\u5165\u914d\u7f6e');
   if (Object.values(state.stepStatuses || {}).some((status) => status === 'running')) {
@@ -3519,6 +3671,7 @@ function normalizeHotmailAccount(account = {}) {
   );
   const purchasePrice = Number(account.purchasePrice);
   const purchasedAt = Number.isFinite(Number(account.purchasedAt)) ? Number(account.purchasedAt) : 0;
+  const catalogStockSnapshot = Number(account.catalogStockSnapshot);
   return {
     id: String(account.id || crypto.randomUUID()),
     email: String(account.email || '').trim(),
@@ -3540,6 +3693,11 @@ function normalizeHotmailAccount(account = {}) {
     purchaseCostStatus: String(account.purchaseCostStatus || '').trim().toLowerCase() === 'estimated'
       ? 'estimated'
       : (Number.isFinite(purchasePrice) && purchasePrice >= 0 ? 'exact' : ''),
+    catalogLive: String(account.catalogLive || '').trim(),
+    catalogAccess: String(account.catalogAccess || '').trim(),
+    ...(Number.isFinite(catalogStockSnapshot) && catalogStockSnapshot >= 0
+      ? { catalogStockSnapshot: Math.floor(catalogStockSnapshot) }
+      : {}),
     ...(purchasedAt > 0 ? { purchasedAt } : {}),
     purchaseBatchId: String(account.purchaseBatchId || '').trim(),
   };
@@ -4477,6 +4635,17 @@ async function purchaseHotmailAccountsFromHotmail007(options = {}) {
   const resolvedUnitPrice = Number.isFinite(result.exactTotalSpent)
     ? Math.round((Number(result.exactTotalSpent) / parsedAccounts.length) * 10000) / 10000
     : result.unitPrice;
+  let selectedCatalogEntry = null;
+  try {
+    const catalog = await fetchHotmail007MailPriceList({
+      timeoutMs: Math.min(Math.max(3000, Number(options.timeoutMs) || 10000), 10000),
+    });
+    selectedCatalogEntry = Array.isArray(catalog?.entries)
+      ? catalog.entries.find((entry) => normalizeHotmail007MailType(entry?.type) === normalizeHotmail007MailType(result.mailType)) || null
+      : null;
+  } catch {
+    selectedCatalogEntry = null;
+  }
   const purchaseBatchId = crypto.randomUUID();
   const purchasedAt = Date.now();
   const savedAccounts = await upsertHotmailAccounts(parsedAccounts.map((parsedAccount) => ({
@@ -4489,6 +4658,11 @@ async function purchaseHotmailAccountsFromHotmail007(options = {}) {
     ...(Number.isFinite(resolvedUnitPrice) ? { purchasePrice: resolvedUnitPrice } : {}),
     purchaseCurrency: String(result.currency || '').trim(),
     purchaseCostStatus: String(result.costStatus || '').trim(),
+    catalogLive: String(selectedCatalogEntry?.live || '').trim(),
+    catalogAccess: String(selectedCatalogEntry?.access || '').trim(),
+    ...(Number.isFinite(Number(selectedCatalogEntry?.stock))
+      ? { catalogStockSnapshot: Math.max(0, Math.floor(Number(selectedCatalogEntry.stock))) }
+      : {}),
     purchasedAt,
     purchaseBatchId,
   })));
@@ -12038,6 +12212,7 @@ const messageRouter = self.MultiPageBackgroundMessageRouter?.createMessageRouter
   executeStep,
   executeStepViaCompletionSignal,
   exportSettingsBundle,
+  exportHotmail007LongLivedAccounts,
   fetchGeneratedEmail,
   refreshGpcCardBalance,
   finalizePhoneActivationAfterSuccessfulFlow,

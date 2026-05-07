@@ -719,6 +719,48 @@
       }
     }
 
+    async function handleExportHotmail007LongLived(format = 'json', triggerButton = null) {
+      if (actionInFlight) return;
+
+      actionInFlight = true;
+      if (triggerButton) {
+        triggerButton.disabled = true;
+      }
+
+      try {
+        const response = await runtime.sendMessage({
+          type: 'EXPORT_HOTMAIL007_LONG_LIVED_ACCOUNTS',
+          source: 'sidepanel',
+          payload: {
+            format,
+          },
+        });
+        if (response?.error) {
+          throw new Error(response.error);
+        }
+        if (!response?.fileContent || !response?.fileName) {
+          throw new Error('未生成可下载的 Hotmail007 长效邮箱导出文件。');
+        }
+        if (typeof helpers.downloadTextFile !== 'function') {
+          throw new Error('下载能力未加载，请刷新扩展后重试。');
+        }
+
+        helpers.downloadTextFile(
+          response.fileContent,
+          response.fileName,
+          response.mimeType || 'application/json;charset=utf-8'
+        );
+        helpers.showToast(`已导出 ${response.exportedCount || 0} 个 Hotmail007 长效邮箱`, 'success', 2200);
+      } catch (err) {
+        helpers.showToast(err?.message || '导出 Hotmail007 长效邮箱失败', 'error');
+      } finally {
+        actionInFlight = false;
+        if (triggerButton) {
+          triggerButton.disabled = false;
+        }
+      }
+    }
+
     async function handleAccountListClick(event) {
       const actionButton = event.target.closest('[data-account-action]');
       if (!actionButton || actionInFlight) {
@@ -836,6 +878,15 @@
       dom.hotmailListShell?.addEventListener?.('mouseleave', persistHotmailListHeight);
       dom.btnHotmail007Balance?.addEventListener('click', () => {
         refreshHotmail007Balance().catch(() => { });
+      });
+      dom.btnExportHotmail007LongLivedJson?.addEventListener('click', () => {
+        handleExportHotmail007LongLived('json', dom.btnExportHotmail007LongLivedJson).catch(() => { });
+      });
+      dom.btnExportHotmail007LongLivedCsv?.addEventListener('click', () => {
+        handleExportHotmail007LongLived('csv', dom.btnExportHotmail007LongLivedCsv).catch(() => { });
+      });
+      dom.btnExportHotmail007LongLivedTxt?.addEventListener('click', () => {
+        handleExportHotmail007LongLived('txt', dom.btnExportHotmail007LongLivedTxt).catch(() => { });
       });
       dom.btnHotmail007PrefetchAccount?.addEventListener('click', handleHotmail007Prefetch);
       dom.btnHotmail007RefreshCatalog?.addEventListener('click', () => {

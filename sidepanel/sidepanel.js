@@ -318,6 +318,9 @@ const btnClearUsedHotmailAccounts = document.getElementById('btn-clear-used-hotm
 const btnDeleteAllHotmailAccounts = document.getElementById('btn-delete-all-hotmail-accounts');
 const btnToggleHotmailList = document.getElementById('btn-toggle-hotmail-list');
 const btnToggleHotmailView = document.getElementById('btn-toggle-hotmail-view');
+const btnExportHotmail007LongLivedJson = document.getElementById('btn-export-hotmail007-long-lived-json');
+const btnExportHotmail007LongLivedCsv = document.getElementById('btn-export-hotmail007-long-lived-csv');
+const btnExportHotmail007LongLivedTxt = document.getElementById('btn-export-hotmail007-long-lived-txt');
 const btnHotmail007Balance = document.getElementById('btn-hotmail007-balance');
 const btnHotmail007PrefetchAccount = document.getElementById('btn-hotmail007-prefetch-account');
 const btnHotmail007RefreshCatalog = document.getElementById('btn-hotmail007-refresh-catalog');
@@ -10689,6 +10692,9 @@ const hotmailManager = window.SidepanelHotmailManager?.createHotmailManager({
     btnAddHotmailAccount,
     btnClearUsedHotmailAccounts,
     btnDeleteAllHotmailAccounts,
+    btnExportHotmail007LongLivedJson,
+    btnExportHotmail007LongLivedCsv,
+    btnExportHotmail007LongLivedTxt,
     btnHotmail007Balance,
     btnHotmail007PrefetchAccount,
     btnHotmail007RefreshCatalog,
@@ -10719,6 +10725,7 @@ const hotmailManager = window.SidepanelHotmailManager?.createHotmailManager({
   },
   helpers: {
     copyTextToClipboard,
+    downloadTextFile,
     escapeHtml,
     getCurrentHotmailEmail,
     getHotmailAccounts,

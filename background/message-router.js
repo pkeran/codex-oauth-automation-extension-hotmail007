@@ -34,6 +34,7 @@
       executeStep,
       executeStepViaCompletionSignal,
       exportSettingsBundle,
+      exportHotmail007LongLivedAccounts,
       fetchGeneratedEmail,
       fetchHotmail007Balance,
       fetchHotmail007MailPriceList,
@@ -1143,6 +1144,12 @@
 
         case 'EXPORT_SETTINGS': {
           return { ok: true, ...(await exportSettingsBundle()) };
+        }
+
+        case 'EXPORT_HOTMAIL007_LONG_LIVED_ACCOUNTS': {
+          return { ok: true, ...(await exportHotmail007LongLivedAccounts({
+            format: message.payload?.format,
+          })) };
         }
 
         case 'IMPORT_SETTINGS': {

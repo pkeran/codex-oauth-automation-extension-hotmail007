@@ -59,6 +59,12 @@ function createRouter(overrides = {}) {
     },
     executeStepViaCompletionSignal: async () => {},
     exportSettingsBundle: async () => ({}),
+    exportHotmail007LongLivedAccounts: overrides.exportHotmail007LongLivedAccounts || (async (options) => ({
+      fileName: `hotmail007-long-lived.${options?.format || 'json'}`,
+      fileContent: 'demo',
+      mimeType: 'application/json;charset=utf-8',
+      exportedCount: 1,
+    })),
     fetchGeneratedEmail: async () => '',
     finalizePhoneActivationAfterSuccessfulFlow: overrides.finalizePhoneActivationAfterSuccessfulFlow || (async (state) => {
       events.phoneFinalizations.push(state);
@@ -599,4 +605,36 @@ test('message router forwards manual hotmail007 purchase quantity to bulk purcha
     mailType: 'hotmail-premium',
     quantity: 5,
   }]);
+});
+
+test('message router exports hotmail007 long-lived accounts through explicit sidepanel message', async () => {
+  const requestedFormats = [];
+  const { router } = createRouter({
+    exportHotmail007LongLivedAccounts: async (options) => {
+      requestedFormats.push(options);
+      return {
+        fileName: 'hotmail007-long-lived.csv',
+        fileContent: 'email,password',
+        mimeType: 'text/csv;charset=utf-8',
+        exportedCount: 2,
+      };
+    },
+  });
+
+  const response = await router.handleMessage({
+    type: 'EXPORT_HOTMAIL007_LONG_LIVED_ACCOUNTS',
+    source: 'sidepanel',
+    payload: {
+      format: 'csv',
+    },
+  }, {});
+
+  assert.deepStrictEqual(requestedFormats, [{ format: 'csv' }]);
+  assert.deepStrictEqual(response, {
+    ok: true,
+    fileName: 'hotmail007-long-lived.csv',
+    fileContent: 'email,password',
+    mimeType: 'text/csv;charset=utf-8',
+    exportedCount: 2,
+  });
 });
