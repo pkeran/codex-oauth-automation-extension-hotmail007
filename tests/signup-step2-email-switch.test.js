@@ -202,6 +202,8 @@ ${extractFunction('findSignupUseEmailTrigger')}
 ${extractFunction('findSignupUsePhoneTrigger')}
 ${extractFunction('findSignupMoreOptionsTrigger')}
 ${extractFunction('getSignupEmailContinueButton')}
+function getCookieConsentState() { return null; }
+async function dismissCookieConsentIfPresent() { return false; }
 ${extractFunction('inspectSignupEntryState')}
 ${extractFunction('waitForSignupEntryState')}
 
@@ -380,6 +382,8 @@ ${extractFunction('findSignupUseEmailTrigger')}
 ${extractFunction('findSignupUsePhoneTrigger')}
 ${extractFunction('findSignupMoreOptionsTrigger')}
 ${extractFunction('getSignupEmailContinueButton')}
+function getCookieConsentState() { return null; }
+async function dismissCookieConsentIfPresent() { return false; }
 ${extractFunction('inspectSignupEntryState')}
 ${extractFunction('waitForSignupEntryState')}
 
@@ -604,6 +608,8 @@ ${extractFunction('inspectSignupEntryState')}
 ${extractFunction('getSignupEntryStateSummary')}
 ${extractFunction('waitForSignupPhoneEntryState')}
 function getSignupEntryDiagnostics() { return {}; }
+function getCookieConsentState() { return null; }
+async function dismissCookieConsentIfPresent() { return false; }
 ${extractFunction('ensureSignupPhoneEntryReady')}
 
 return {
@@ -803,6 +809,8 @@ ${extractFunction('inspectSignupEntryState')}
 ${extractFunction('getSignupEntryStateSummary')}
 ${extractFunction('waitForSignupPhoneEntryState')}
 function getSignupEntryDiagnostics() { return {}; }
+function getCookieConsentState() { return null; }
+async function dismissCookieConsentIfPresent() { return false; }
 ${extractFunction('ensureSignupPhoneEntryReady')}
 
 return {
@@ -823,6 +831,338 @@ return {
     url: 'https://chatgpt.com/',
   });
   assert.deepEqual(api.getClicks(), ['Log in', 'Continue with phone number']);
+});
+
+test('ensureSignupEntryReady dismisses cookie consent before reporting entry_home', async () => {
+  const api = new Function(`
+const logs = [];
+const clicks = [];
+let phase = 'cookie';
+let now = 0;
+
+const rejectButton = {
+  textContent: '拒绝非必需',
+  value: '',
+  disabled: false,
+  getAttribute(name) {
+    if (name === 'type') return 'button';
+    return '';
+  },
+  getBoundingClientRect() {
+    return { width: 180, height: 40 };
+  },
+};
+
+const signupButton = {
+  textContent: '免费注册',
+  value: '',
+  disabled: false,
+  getAttribute(name) {
+    if (name === 'type') return 'button';
+    return '';
+  },
+  getBoundingClientRect() {
+    return { width: 120, height: 36 };
+  },
+};
+
+const document = {
+  querySelector(selector) {
+    if (selector === SIGNUP_EMAIL_INPUT_SELECTOR || selector === SIGNUP_PHONE_INPUT_SELECTOR) {
+      return null;
+    }
+    return null;
+  },
+  querySelectorAll(selector) {
+    if (selector === 'button, a, [role="button"], [role="link"], input[type="button"], input[type="submit"]') {
+      return phase === 'cookie' ? [rejectButton] : [];
+    }
+    if (selector === 'a, button, [role="button"], [role="link"]') {
+      return phase === 'entry' ? [signupButton] : [];
+    }
+    if (selector === 'input') {
+      return [];
+    }
+    return [];
+  },
+};
+
+const location = { href: 'https://chatgpt.com/' };
+const Date = { now() { return now; } };
+
+${extractConst('SIGNUP_ENTRY_TRIGGER_PATTERN')}
+${extractConst('SIGNUP_EMAIL_INPUT_SELECTOR')}
+${extractConst('SIGNUP_PHONE_INPUT_SELECTOR')}
+${extractConst('SIGNUP_SWITCH_TO_EMAIL_PATTERN')}
+${extractConst('SIGNUP_SWITCH_ACTION_PATTERN')}
+${extractConst('SIGNUP_EMAIL_ACTION_PATTERN')}
+${extractConst('SIGNUP_WORK_EMAIL_PATTERN')}
+${extractConst('SIGNUP_PHONE_ACTION_PATTERN')}
+${extractConst('SIGNUP_SWITCH_TO_PHONE_PATTERN')}
+${extractConst('SIGNUP_MORE_OPTIONS_PATTERN')}
+${extractConst('COOKIE_CONSENT_TEXT_PATTERN')}
+${extractConst('COOKIE_CONSENT_ACCEPT_PATTERN')}
+${extractConst('COOKIE_CONSENT_REJECT_PATTERN')}
+
+function isVisibleElement(el) {
+  return Boolean(el) && (!el.getBoundingClientRect || el.getBoundingClientRect().width > 0);
+}
+
+function isActionEnabled(el) {
+  return Boolean(el) && !el.disabled && el.getAttribute('aria-disabled') !== 'true';
+}
+
+function getActionText(el) {
+  return [el?.textContent, el?.value, el?.getAttribute?.('aria-label'), el?.getAttribute?.('title')]
+    .filter(Boolean)
+    .join(' ')
+    .replace(/\\s+/g, ' ')
+    .trim();
+}
+
+function getSignupPasswordInput() { return null; }
+function isSignupPasswordPage() { return false; }
+function getSignupPasswordSubmitButton() { return null; }
+function getSignupPasswordDisplayedEmail() { return ''; }
+function findSignupUseEmailTrigger() { return null; }
+
+function getPageTextSnapshot() {
+  return phase === 'cookie'
+    ? '我们使用 Cookie 全部接受 拒绝非必需'
+    : '登录 免费注册';
+}
+
+function throwIfStopped() {}
+function log(message, level = 'info') { logs.push({ message, level }); }
+async function humanPause() {}
+async function sleep(ms) { now += ms; }
+
+function simulateClick(target) {
+  clicks.push(getActionText(target));
+  if (target === rejectButton) {
+    phase = 'entry';
+  }
+}
+
+${extractFunction('getSignupEmailInput')}
+${extractFunction('getSignupPhoneInput')}
+${extractFunction('findSignupUsePhoneTrigger')}
+${extractFunction('findSignupMoreOptionsTrigger')}
+${extractFunction('getSignupEmailContinueButton')}
+${extractFunction('findSignupEntryTrigger')}
+${extractFunction('getCookieConsentState')}
+${extractFunction('dismissCookieConsentIfPresent')}
+${extractFunction('inspectSignupEntryState')}
+${extractFunction('getSignupEntryStateSummary')}
+function getSignupEntryDiagnostics() { return {}; }
+${extractFunction('waitForSignupEntryState')}
+${extractFunction('ensureSignupEntryReady')}
+
+return {
+  async run() {
+    return ensureSignupEntryReady();
+  },
+  getClicks() {
+    return clicks.slice();
+  },
+};
+`)();
+
+  const result = await api.run();
+
+  assert.deepEqual(result, {
+    ready: true,
+    state: 'entry_home',
+    url: 'https://chatgpt.com/',
+  });
+  assert.deepEqual(api.getClicks(), ['拒绝非必需']);
+});
+
+test('ensureSignupPhoneEntryReady dismisses cookie consent before opening phone signup entry', async () => {
+  const api = new Function(`
+const logs = [];
+const clicks = [];
+let phase = 'cookie';
+let now = 0;
+
+const rejectButton = {
+  textContent: '拒绝非必需',
+  value: '',
+  disabled: false,
+  getAttribute(name) {
+    if (name === 'type') return 'button';
+    return '';
+  },
+  getBoundingClientRect() {
+    return { width: 180, height: 40 };
+  },
+};
+
+const signupButton = {
+  textContent: '免费注册',
+  value: '',
+  disabled: false,
+  getAttribute(name) {
+    if (name === 'type') return 'button';
+    return '';
+  },
+  getBoundingClientRect() {
+    return { width: 120, height: 36 };
+  },
+};
+
+const switchButton = {
+  textContent: 'Continue with phone number',
+  value: '',
+  disabled: false,
+  getAttribute(name) {
+    if (name === 'type') return 'button';
+    return '';
+  },
+  getBoundingClientRect() {
+    return { width: 200, height: 48 };
+  },
+};
+
+const emailInput = {
+  kind: 'email',
+  getAttribute(name) {
+    if (name === 'type') return 'email';
+    return '';
+  },
+};
+
+const phoneInput = {
+  kind: 'phone',
+  getAttribute(name) {
+    if (name === 'type') return 'tel';
+    return '';
+  },
+};
+
+const document = {
+  querySelector(selector) {
+    if (selector === SIGNUP_EMAIL_INPUT_SELECTOR) {
+      return phase === 'email' ? emailInput : null;
+    }
+    if (selector === SIGNUP_PHONE_INPUT_SELECTOR) {
+      return phase === 'phone' ? phoneInput : null;
+    }
+    return null;
+  },
+  querySelectorAll(selector) {
+    if (selector === 'button, a, [role="button"], [role="link"], input[type="button"], input[type="submit"]') {
+      return phase === 'cookie' ? [rejectButton] : [];
+    }
+    if (selector === 'button, a, [role="button"], [role="link"]') {
+      if (phase === 'email') return [switchButton];
+      return [];
+    }
+    if (selector === 'a, button, [role="button"], [role="link"]') {
+      return phase === 'entry' ? [signupButton] : [];
+    }
+    if (selector === 'input') {
+      if (phase === 'email') return [emailInput];
+      if (phase === 'phone') return [phoneInput];
+      return [];
+    }
+    return [];
+  },
+};
+
+const location = { href: 'https://chatgpt.com/' };
+const Date = { now() { return now; } };
+
+${extractConst('SIGNUP_ENTRY_TRIGGER_PATTERN')}
+${extractConst('SIGNUP_EMAIL_INPUT_SELECTOR')}
+${extractConst('SIGNUP_PHONE_INPUT_SELECTOR')}
+${extractConst('SIGNUP_SWITCH_TO_EMAIL_PATTERN')}
+${extractConst('SIGNUP_SWITCH_ACTION_PATTERN')}
+${extractConst('SIGNUP_EMAIL_ACTION_PATTERN')}
+${extractConst('SIGNUP_WORK_EMAIL_PATTERN')}
+${extractConst('SIGNUP_PHONE_ACTION_PATTERN')}
+${extractConst('SIGNUP_SWITCH_TO_PHONE_PATTERN')}
+${extractConst('SIGNUP_MORE_OPTIONS_PATTERN')}
+${extractConst('COOKIE_CONSENT_TEXT_PATTERN')}
+${extractConst('COOKIE_CONSENT_ACCEPT_PATTERN')}
+${extractConst('COOKIE_CONSENT_REJECT_PATTERN')}
+
+function isVisibleElement(el) {
+  return Boolean(el) && (!el.getBoundingClientRect || el.getBoundingClientRect().width > 0);
+}
+
+function isActionEnabled(el) {
+  return Boolean(el) && !el.disabled && el.getAttribute('aria-disabled') !== 'true';
+}
+
+function getActionText(el) {
+  return [el?.textContent, el?.value, el?.getAttribute?.('aria-label'), el?.getAttribute?.('title')]
+    .filter(Boolean)
+    .join(' ')
+    .replace(/\\s+/g, ' ')
+    .trim();
+}
+
+function getSignupPasswordInput() { return null; }
+function isSignupPasswordPage() { return false; }
+function getSignupPasswordSubmitButton() { return null; }
+function getSignupPasswordDisplayedEmail() { return ''; }
+
+function getPageTextSnapshot() {
+  if (phase === 'cookie') return '我们使用 Cookie 全部接受 拒绝非必需';
+  if (phase === 'entry') return '登录 免费注册';
+  return '';
+}
+
+function throwIfStopped() {}
+function log(message, level = 'info') { logs.push({ message, level }); }
+async function humanPause() {}
+async function sleep(ms) { now += ms; }
+
+function simulateClick(target) {
+  clicks.push(getActionText(target));
+  if (target === rejectButton) {
+    phase = 'entry';
+  } else if (target === signupButton) {
+    phase = 'email';
+  } else if (target === switchButton) {
+    phase = 'phone';
+  }
+}
+
+${extractFunction('getSignupEmailInput')}
+${extractFunction('getSignupPhoneInput')}
+${extractFunction('findSignupUseEmailTrigger')}
+${extractFunction('findSignupUsePhoneTrigger')}
+${extractFunction('findSignupMoreOptionsTrigger')}
+${extractFunction('getSignupEmailContinueButton')}
+${extractFunction('findSignupEntryTrigger')}
+${extractFunction('getCookieConsentState')}
+${extractFunction('dismissCookieConsentIfPresent')}
+${extractFunction('inspectSignupEntryState')}
+${extractFunction('getSignupEntryStateSummary')}
+function getSignupEntryDiagnostics() { return {}; }
+${extractFunction('waitForSignupPhoneEntryState')}
+${extractFunction('ensureSignupPhoneEntryReady')}
+
+return {
+  async run() {
+    return ensureSignupPhoneEntryReady();
+  },
+  getClicks() {
+    return clicks.slice();
+  },
+};
+`)();
+
+  const result = await api.run();
+
+  assert.deepEqual(result, {
+    ready: true,
+    state: 'phone_entry',
+    url: 'https://chatgpt.com/',
+  });
+  assert.deepEqual(api.getClicks(), ['拒绝非必需', '免费注册', 'Continue with phone number']);
 });
 
 test('submitSignupPhoneNumberAndContinue auto-switches signup country before filling the local phone number', async () => {
@@ -1061,6 +1401,8 @@ ${extractFunction('getSignupEmailContinueButton')}
 ${extractFunction('inspectSignupEntryState')}
 ${extractFunction('getSignupEntryStateSummary')}
 function getSignupEntryDiagnostics() { return {}; }
+function getCookieConsentState() { return null; }
+async function dismissCookieConsentIfPresent() { return false; }
 ${extractFunction('normalizePhoneDigits')}
 ${extractFunction('extractDialCodeFromText')}
 ${extractFunction('dispatchSignupPhoneFieldEvents')}
@@ -1387,6 +1729,8 @@ ${extractFunction('getSignupEmailContinueButton')}
 ${extractFunction('inspectSignupEntryState')}
 ${extractFunction('getSignupEntryStateSummary')}
 function getSignupEntryDiagnostics() { return {}; }
+function getCookieConsentState() { return null; }
+async function dismissCookieConsentIfPresent() { return false; }
 ${extractFunction('normalizePhoneDigits')}
 ${extractFunction('extractDialCodeFromText')}
 ${extractFunction('dispatchSignupPhoneFieldEvents')}
@@ -1646,6 +1990,8 @@ ${extractFunction('getSignupEmailContinueButton')}
 ${extractFunction('inspectSignupEntryState')}
 ${extractFunction('getSignupEntryStateSummary')}
 function getSignupEntryDiagnostics() { return {}; }
+function getCookieConsentState() { return null; }
+async function dismissCookieConsentIfPresent() { return false; }
 ${extractFunction('normalizePhoneDigits')}
 ${extractFunction('extractDialCodeFromText')}
 ${extractFunction('dispatchSignupPhoneFieldEvents')}
@@ -1900,6 +2246,8 @@ ${extractFunction('getSignupEmailContinueButton')}
 ${extractFunction('inspectSignupEntryState')}
 ${extractFunction('getSignupEntryStateSummary')}
 function getSignupEntryDiagnostics() { return {}; }
+function getCookieConsentState() { return null; }
+async function dismissCookieConsentIfPresent() { return false; }
 ${extractFunction('normalizePhoneDigits')}
 ${extractFunction('extractDialCodeFromText')}
 ${extractFunction('dispatchSignupPhoneFieldEvents')}

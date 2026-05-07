@@ -465,6 +465,9 @@ const SIGNUP_SWITCH_TO_PHONE_PATTERN = new RegExp([
 ].join('|'), 'i');
 const SIGNUP_MORE_OPTIONS_PATTERN = /更多选项|其它方式|其他方式|more\s+options|show\s+more|other\s+(?:options|ways)/i;
 const SIGNUP_WORK_EMAIL_PATTERN = /\u5de5\u4f5c|business|work\s+email/i;
+const COOKIE_CONSENT_TEXT_PATTERN = /我们使用\s*Cookie|Cookie\s*首选项|Cookie\s*政策|we\s+use\s+cookies|cookie\s+preferences|cookie\s+policy/i;
+const COOKIE_CONSENT_ACCEPT_PATTERN = /全部接受|accept\s+all/i;
+const COOKIE_CONSENT_REJECT_PATTERN = /拒绝非必需|reject\s+non[-\s]*(?:essential|necessary)|decline\s+non[-\s]*essential/i;
 
 function getSignupEmailInput() {
   const input = document.querySelector(SIGNUP_EMAIL_INPUT_SELECTOR);
@@ -592,6 +595,56 @@ function findSignupEntryTrigger() {
     if (!isVisibleElement(el) || !isActionEnabled(el)) return false;
     return /登录|登陆|log\s*in|sign\s*in/i.test(getActionText(el));
   }) || null;
+}
+
+function getCookieConsentState() {
+  const pageText = getPageTextSnapshot();
+  if (!COOKIE_CONSENT_TEXT_PATTERN.test(pageText)) {
+    return null;
+  }
+
+  const candidates = document.querySelectorAll(
+    'button, a, [role="button"], [role="link"], input[type="button"], input[type="submit"]'
+  );
+  let acceptButton = null;
+  let rejectButton = null;
+
+  for (const el of candidates) {
+    if (!isVisibleElement(el) || !isActionEnabled(el)) continue;
+    const text = getActionText(el);
+    if (!text) continue;
+    if (!rejectButton && COOKIE_CONSENT_REJECT_PATTERN.test(text)) {
+      rejectButton = el;
+      continue;
+    }
+    if (!acceptButton && COOKIE_CONSENT_ACCEPT_PATTERN.test(text)) {
+      acceptButton = el;
+    }
+  }
+
+  if (!acceptButton && !rejectButton) {
+    return null;
+  }
+
+  return {
+    acceptButton,
+    rejectButton,
+  };
+}
+
+async function dismissCookieConsentIfPresent(step = 2) {
+  const consentState = getCookieConsentState();
+  const actionButton = consentState?.rejectButton || consentState?.acceptButton || null;
+  if (!actionButton) {
+    return false;
+  }
+
+  const actionText = getActionText(actionButton).slice(0, 80) || 'cookie-consent';
+  log(`步骤 ${step}：检测到 Cookie 弹窗，正在点击 "${actionText}" 以恢复注册入口...`, 'warn');
+  await humanPause(200, 500);
+  simulateClick(actionButton);
+  await sleep(300);
+  return true;
 }
 
 function getSignupPasswordDisplayedEmail() {
@@ -798,6 +851,9 @@ function getSignupEntryStateSummary(snapshot = inspectSignupEntryState()) {
 }
 
 function getSignupEntryDiagnostics() {
+  const cookieConsentState = typeof getCookieConsentState === 'function'
+    ? getCookieConsentState()
+    : null;
   const view = typeof window !== 'undefined' ? window : globalThis;
   const safeGetComputedStyle = (el) => {
     if (!el || typeof view?.getComputedStyle !== 'function') {
@@ -926,6 +982,9 @@ function getSignupEntryDiagnostics() {
     hasPhoneInput: Boolean(getSignupPhoneInput()),
     hasPasswordInput: Boolean(getSignupPasswordInput()),
     hasSwitchToEmailAction: Boolean(findSignupUseEmailTrigger()),
+    cookieConsentDetected: Boolean(cookieConsentState),
+    cookieRejectAction: cookieConsentState?.rejectButton ? getActionText(cookieConsentState.rejectButton).slice(0, 80) : '',
+    cookieAcceptAction: cookieConsentState?.acceptButton ? getActionText(cookieConsentState.acceptButton).slice(0, 80) : '',
     bodyContainsSignupText: SIGNUP_ENTRY_TRIGGER_PATTERN.test(getPageTextSnapshot()),
     signupLikeActionCounts: {
       total: signupLikeActions.length,
@@ -1058,9 +1117,19 @@ async function waitForSignupEntryState(options = {}) {
   let slowSnapshotLogged = false;
   let lastSwitchToEmailAt = 0;
   let loggedMissingSwitchToEmail = false;
+  let lastCookieDismissAt = 0;
 
   while (Date.now() - start < timeout) {
     throwIfStopped();
+    if (Date.now() - lastCookieDismissAt >= 1200) {
+      const dismissed = await dismissCookieConsentIfPresent(step);
+      if (dismissed) {
+        lastCookieDismissAt = Date.now();
+        slowSnapshotLogged = false;
+        await sleep(200);
+        continue;
+      }
+    }
     const snapshot = inspectSignupEntryState();
 
     if (logDiagnostics && snapshot.state !== lastState) {
@@ -2297,9 +2366,19 @@ async function waitForSignupPhoneEntryState(options = {}) {
   let lastSwitchToPhoneAt = 0;
   let lastMoreOptionsClickAt = 0;
   let slowSnapshotLogged = false;
+  let lastCookieDismissAt = 0;
 
   while (Date.now() - start < timeout) {
     throwIfStopped();
+    if (Date.now() - lastCookieDismissAt >= 1200) {
+      const dismissed = await dismissCookieConsentIfPresent(step);
+      if (dismissed) {
+        lastCookieDismissAt = Date.now();
+        slowSnapshotLogged = false;
+        await sleep(200);
+        continue;
+      }
+    }
     const snapshot = inspectSignupEntryState();
 
     if (snapshot.state === 'password_page') {
