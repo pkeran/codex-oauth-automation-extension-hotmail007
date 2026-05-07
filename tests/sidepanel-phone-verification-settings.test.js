@@ -150,6 +150,8 @@ test('sidepanel html exposes phone verification toggle and multi-provider SMS ro
   assert.match(html, /id="input-free-phone-reuse-enabled"/);
   assert.match(html, /id="row-free-phone-reuse-auto-enabled"/);
   assert.match(html, /id="input-free-phone-reuse-auto-enabled"/);
+  assert.match(html, /id="row-free-phone-reuse-prepare-failure-mode"/);
+  assert.match(html, /id="select-free-phone-reuse-prepare-failure-mode"/);
   assert.match(html, /id="row-free-reusable-phone"/);
   assert.match(html, /id="input-free-reusable-phone"/);
   assert.match(html, /id="btn-save-free-reusable-phone"/);
@@ -442,7 +444,11 @@ const rowHeroSmsPriceTiers = { style: { display: 'none' } };
 const rowHeroSmsCurrentCode = { style: { display: 'none' } };
 const rowFreePhoneReuseEnabled = { style: { display: 'none' } };
 const rowFreePhoneReuseAutoEnabled = { style: { display: 'none' } };
+const rowFreePhoneReusePrepareFailureMode = { style: { display: 'none' } };
 const rowFreeReusablePhone = { style: { display: 'none' } };
+const inputFreePhoneReuseEnabled = { checked: true };
+const inputFreePhoneReuseAutoEnabled = { checked: true };
+const selectFreePhoneReusePrepareFailureMode = { disabled: false };
 const rowHeroSmsPreferredActivation = { style: { display: 'none' } };
 const rowPhoneVerificationResendCount = { style: { display: 'none' } };
 const rowPhoneReplacementLimit = { style: { display: 'none' } };
@@ -455,6 +461,7 @@ const PHONE_SMS_PROVIDER_FIVE_SIM = '5sim';
 const PHONE_SMS_PROVIDER_NEXSMS = 'nexsms';
 function getSelectedPhoneSmsProvider() { return selectPhoneSmsProvider.value; }
 function isFiveSimProviderSelected() { return getSelectedPhoneSmsProvider() === PHONE_SMS_PROVIDER_FIVE_SIM; }
+function isAutoRunLockedPhase() { return false; }
 function updateHeroSmsPlatformDisplay() {}
 function updateSignupMethodUI() {
   rowSignupMethod.style.display = inputPhoneVerificationEnabled.checked ? '' : 'none';
@@ -667,7 +674,11 @@ const rowHeroSmsPriceTiers = { style: { display: 'none' } };
 const rowHeroSmsCurrentCode = { style: { display: 'none' } };
 const rowFreePhoneReuseEnabled = { style: { display: 'none' } };
 const rowFreePhoneReuseAutoEnabled = { style: { display: 'none' } };
+const rowFreePhoneReusePrepareFailureMode = { style: { display: 'none' } };
 const rowFreeReusablePhone = { style: { display: 'none' } };
+const inputFreePhoneReuseEnabled = { checked: true };
+const inputFreePhoneReuseAutoEnabled = { checked: true };
+const selectFreePhoneReusePrepareFailureMode = { disabled: false };
 const rowHeroSmsPreferredActivation = { style: { display: 'none' } };
 const rowPhoneVerificationResendCount = { style: { display: 'none' } };
 const rowPhoneReplacementLimit = { style: { display: 'none' } };
@@ -680,6 +691,7 @@ const PHONE_SMS_PROVIDER_FIVE_SIM = '5sim';
 const PHONE_SMS_PROVIDER_NEXSMS = 'nexsms';
 function getSelectedPhoneSmsProvider() { return selectPhoneSmsProvider.value; }
 function isFiveSimProviderSelected() { return getSelectedPhoneSmsProvider() === PHONE_SMS_PROVIDER_FIVE_SIM; }
+function isAutoRunLockedPhase() { return false; }
 function updateHeroSmsPlatformDisplay() {}
 function updateSignupMethodUI() { rowSignupMethod.style.display = inputPhoneVerificationEnabled.checked ? '' : 'none'; }
 function syncSignupPhoneInputFromState() { rowSignupPhone.style.display = inputPhoneVerificationEnabled.checked && latestState.signupPhoneNumber ? '' : 'none'; }
@@ -832,6 +844,7 @@ const inputNexSmsServiceCode = { value: 'ot' };
 const inputHeroSmsReuseEnabled = { checked: true };
 const inputFreePhoneReuseEnabled = { checked: true };
 const inputFreePhoneReuseAutoEnabled = { checked: true };
+const selectFreePhoneReusePrepareFailureMode = { value: 'stop' };
 const selectHeroSmsAcquirePriority = { value: 'price' };
 function getSelectedPhonePreferredActivation() {
   return {
@@ -869,6 +882,9 @@ const PHONE_CODE_POLL_MAX_ROUNDS_MAX = 120;
 const DEFAULT_HERO_SMS_REUSE_ENABLED = true;
 const DEFAULT_FREE_PHONE_REUSE_ENABLED = false;
 const DEFAULT_FREE_PHONE_REUSE_AUTO_ENABLED = false;
+const FREE_PHONE_REUSE_PREPARE_FAILURE_MODE_FALLBACK_BUY_NEW = 'fallback_buy_new';
+const FREE_PHONE_REUSE_PREPARE_FAILURE_MODE_STOP = 'stop';
+const DEFAULT_FREE_PHONE_REUSE_PREPARE_FAILURE_MODE = FREE_PHONE_REUSE_PREPARE_FAILURE_MODE_FALLBACK_BUY_NEW;
 const HERO_SMS_ACQUIRE_PRIORITY_COUNTRY = 'country';
 const HERO_SMS_ACQUIRE_PRIORITY_PRICE = 'price';
 const DEFAULT_HERO_SMS_ACQUIRE_PRIORITY = HERO_SMS_ACQUIRE_PRIORITY_COUNTRY;
@@ -951,6 +967,7 @@ function getSelectedFiveSimCountries() {
 function getSelectedNexSmsCountries() {
   return [{ id: 1, label: 'Country #1' }];
 }
+${extractFunction('normalizeFreePhoneReusePrepareFailureModeValue')}
 ${extractFunction('collectSettingsPayload')}
 return { collectSettingsPayload };
 `)(normalizeIcloudTargetMailboxType, normalizeIcloudForwardMailProvider);
@@ -976,6 +993,7 @@ return { collectSettingsPayload };
   assert.equal(payload.heroSmsReuseEnabled, true);
   assert.equal(payload.freePhoneReuseEnabled, true);
   assert.equal(payload.freePhoneReuseAutoEnabled, true);
+  assert.equal(payload.freePhoneReusePrepareFailureMode, 'stop');
   assert.equal(payload.heroSmsAcquirePriority, 'price');
   assert.equal(payload.heroSmsMaxPrice, '0.12');
   assert.equal(payload.heroSmsPreferredPrice, '0.0512');

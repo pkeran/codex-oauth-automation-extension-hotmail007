@@ -400,6 +400,9 @@ const DEFAULT_NEX_SMS_COUNTRY_ORDER = Object.freeze([1]);
 const DEFAULT_HERO_SMS_REUSE_ENABLED = true;
 const DEFAULT_FREE_PHONE_REUSE_ENABLED = false;
 const DEFAULT_FREE_PHONE_REUSE_AUTO_ENABLED = false;
+const FREE_PHONE_REUSE_PREPARE_FAILURE_MODE_FALLBACK_BUY_NEW = 'fallback_buy_new';
+const FREE_PHONE_REUSE_PREPARE_FAILURE_MODE_STOP = 'stop';
+const DEFAULT_FREE_PHONE_REUSE_PREPARE_FAILURE_MODE = FREE_PHONE_REUSE_PREPARE_FAILURE_MODE_FALLBACK_BUY_NEW;
 const HERO_SMS_ACQUIRE_PRIORITY_COUNTRY = 'country';
 const HERO_SMS_ACQUIRE_PRIORITY_PRICE = 'price';
 const HERO_SMS_ACQUIRE_PRIORITY_PRICE_HIGH = 'price_high';
@@ -729,6 +732,7 @@ const PERSISTED_SETTING_DEFAULTS = {
   heroSmsReuseEnabled: DEFAULT_HERO_SMS_REUSE_ENABLED,
   freePhoneReuseEnabled: DEFAULT_FREE_PHONE_REUSE_ENABLED,
   freePhoneReuseAutoEnabled: DEFAULT_FREE_PHONE_REUSE_AUTO_ENABLED,
+  freePhoneReusePrepareFailureMode: DEFAULT_FREE_PHONE_REUSE_PREPARE_FAILURE_MODE,
   heroSmsAcquirePriority: DEFAULT_HERO_SMS_ACQUIRE_PRIORITY,
   heroSmsMaxPrice: '',
   heroSmsPreferredPrice: '',
@@ -2225,6 +2229,14 @@ function normalizeSub2ApiAccountPriority(value, fallback = DEFAULT_SUB2API_ACCOU
   return numeric;
 }
 
+function normalizeFreePhoneReusePrepareFailureMode(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === FREE_PHONE_REUSE_PREPARE_FAILURE_MODE_STOP) {
+    return FREE_PHONE_REUSE_PREPARE_FAILURE_MODE_STOP;
+  }
+  return DEFAULT_FREE_PHONE_REUSE_PREPARE_FAILURE_MODE;
+}
+
 function normalizePersistentSettingValue(key, value) {
   switch (key) {
     case 'panelMode':
@@ -2520,6 +2532,8 @@ function normalizePersistentSettingValue(key, value) {
       return Boolean(value);
     case 'freePhoneReuseAutoEnabled':
       return Boolean(value);
+    case 'freePhoneReusePrepareFailureMode':
+      return normalizeFreePhoneReusePrepareFailureMode(value);
     case 'heroSmsAcquirePriority':
       return normalizeHeroSmsAcquirePriority(value);
     case 'heroSmsMaxPrice':

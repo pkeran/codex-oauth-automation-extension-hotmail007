@@ -78,6 +78,9 @@
     const PHONE_ACTIVATION_RETRY_ROUNDS_MAX = 10;
     const DEFAULT_PHONE_ACTIVATION_RETRY_DELAY_MS = 2000;
     const HERO_SMS_CANCEL_GRACE_MS = 2 * 60 * 1000;
+    const FREE_PHONE_REUSE_PREPARE_FAILURE_MODE_FALLBACK_BUY_NEW = 'fallback_buy_new';
+    const FREE_PHONE_REUSE_PREPARE_FAILURE_MODE_STOP = 'stop';
+    const DEFAULT_FREE_PHONE_REUSE_PREPARE_FAILURE_MODE = FREE_PHONE_REUSE_PREPARE_FAILURE_MODE_FALLBACK_BUY_NEW;
     const HERO_SMS_ACQUIRE_PRIORITY_COUNTRY = 'country';
     const HERO_SMS_ACQUIRE_PRIORITY_PRICE = 'price';
     const HERO_SMS_ACQUIRE_PRIORITY_PRICE_HIGH = 'price_high';
@@ -106,6 +109,7 @@
     const PHONE_ERROR_CODE_ADD_PHONE_NUMBER_USED = 'PHONE_ADD_PHONE_NUMBER_USED';
     const PHONE_ERROR_CODE_ADD_PHONE_NUMBER_INVALID = 'PHONE_ADD_PHONE_NUMBER_INVALID';
     const PHONE_ERROR_CODE_ADD_PHONE_REJECT_UNKNOWN = 'PHONE_ADD_PHONE_REJECT_UNKNOWN';
+    const PHONE_ERROR_CODE_FREE_REUSE_PREPARE_FAILED = 'PHONE_FREE_REUSE_PREPARE_FAILED';
     const PHONE_SMS_RATE_LIMIT_ERROR_PREFIX = 'PHONE_SMS_RATE_LIMIT::';
     const PHONE_CODE_TIMEOUT_ERROR_PREFIX = 'PHONE_CODE_TIMEOUT::';
     const PHONE_RESTART_STEP7_ERROR_PREFIX = 'PHONE_RESTART_STEP7::';
@@ -131,6 +135,13 @@
     const PHONE_SMS_TRANSIENT_POLL_RETRY_DELAY_MS = 1000;
     const PHONE_UNKNOWN_ADD_PHONE_REJECT_RETRY_LIMIT = 2;
     const PHONE_UNKNOWN_ADD_PHONE_REJECT_RETRY_DELAY_MS = 1000;
+    const FREE_REUSE_PREPARE_REASON_DISABLED = 'disabled';
+    const FREE_REUSE_PREPARE_REASON_MISSING_RECORD = 'missing_free_reusable_activation';
+    const FREE_REUSE_PREPARE_REASON_UNSUPPORTED_PROVIDER = 'unsupported_provider';
+    const FREE_REUSE_PREPARE_REASON_USAGE_LIMIT_REACHED = 'usage_limit_reached';
+    const FREE_REUSE_PREPARE_REASON_MISSING_ACTIVATION_ID = 'missing_activation_id';
+    const FREE_REUSE_PREPARE_REASON_ACTIVATION_CANCELLED = 'activation_cancelled';
+    const FREE_REUSE_PREPARE_REASON_SET_STATUS_FAILED = 'set_status_failed';
     const activationPriceHintsByKey = new Map();
     let activePhoneVerificationLogStep = null;
     let activePhoneVerificationLogStepKey = null;
@@ -642,6 +653,12 @@
         return Boolean(DEFAULT_FREE_PHONE_REUSE_AUTO_ENABLED);
       }
       return Boolean(value);
+    }
+
+    function normalizeFreePhoneReusePrepareFailureMode(value = '') {
+      return String(value || '').trim().toLowerCase() === FREE_PHONE_REUSE_PREPARE_FAILURE_MODE_STOP
+        ? FREE_PHONE_REUSE_PREPARE_FAILURE_MODE_STOP
+        : DEFAULT_FREE_PHONE_REUSE_PREPARE_FAILURE_MODE;
     }
 
     function normalizeHeroSmsAcquirePriority(value = '') {
@@ -4041,38 +4058,74 @@
       return describeHeroSmsPayload(payload);
     }
 
-    async function retireFreeReusableActivation(reason = '') {
+    function buildFreeReusablePreparationResult(ok, options = {}) {
+      return {
+        ok: Boolean(ok),
+        activation: ok ? options.activation || null : null,
+        reason: String(options.reason || '').trim(),
+        message: String(options.message || '').trim(),
+      };
+    }
+
+    async function retireFreeReusableActivation(reason = '', options = {}) {
+      const level = String(options?.level || '').trim() || 'warn';
       const suffix = reason ? ` ${reason}` : '';
-      await addLog(`步骤 9：已清除白嫖复用手机号记录。${suffix}`, 'warn');
+      await addLog(`步骤 9：已清除白嫖复用手机号记录。${suffix}`, level);
       await clearFreeReusableActivation();
+    }
+
+    async function retireFreeReusableActivationIfMatching(activation, reason = '', options = {}) {
+      if (!isFreeAutoReuseActivation(activation)) {
+        return false;
+      }
+      await retireFreeReusableActivation(reason, options);
+      return true;
+    }
+
+    function shouldStopAfterFreeReusablePrepareFailure(state = {}, result = null) {
+      if (!result || result.ok) {
+        return false;
+      }
+      return normalizeFreePhoneReusePrepareFailureMode(state?.freePhoneReusePrepareFailureMode)
+        === FREE_PHONE_REUSE_PREPARE_FAILURE_MODE_STOP
+        && result.reason === FREE_REUSE_PREPARE_REASON_SET_STATUS_FAILED;
     }
 
     async function prepareFreeReusablePhoneActivation(state = {}) {
       if (!normalizeFreePhoneReuseEnabled(state?.freePhoneReuseEnabled) || !normalizeFreePhoneReuseAutoEnabled(state?.freePhoneReuseAutoEnabled)) {
-        return null;
+        return buildFreeReusablePreparationResult(false, {
+          reason: FREE_REUSE_PREPARE_REASON_DISABLED,
+        });
       }
       const savedActivation = normalizeFreeReusablePhoneActivation(
         state[FREE_REUSABLE_PHONE_ACTIVATION_STATE_KEY]
       );
       if (!savedActivation) {
-        return null;
+        return buildFreeReusablePreparationResult(false, {
+          reason: FREE_REUSE_PREPARE_REASON_MISSING_RECORD,
+        });
       }
       if (savedActivation.provider !== PHONE_SMS_PROVIDER_HERO) {
-        return null;
+        return buildFreeReusablePreparationResult(false, {
+          reason: FREE_REUSE_PREPARE_REASON_UNSUPPORTED_PROVIDER,
+        });
       }
       if (savedActivation.successfulUses >= savedActivation.maxUses) {
-        await retireFreeReusableActivation(
-          `保存的手机号 ${savedActivation.phoneNumber} 已达到 ${savedActivation.successfulUses}/${savedActivation.maxUses} 次。`
-        );
-        return null;
+        const message = `保存的手机号 ${savedActivation.phoneNumber} 已达到 ${savedActivation.successfulUses}/${savedActivation.maxUses} 次。`;
+        await retireFreeReusableActivation(message);
+        return buildFreeReusablePreparationResult(false, {
+          reason: FREE_REUSE_PREPARE_REASON_USAGE_LIMIT_REACHED,
+          message,
+        });
       }
       const activationOrderId = resolveActivationOrderId(savedActivation);
       if (!activationOrderId) {
-        await addLog(
-          `步骤 9：已保存白嫖复用手机号 ${savedActivation.phoneNumber} 缺少 HeroSMS 激活 ID，无法自动复用，将跳过自动白嫖复用。`,
-          'warn'
-        );
-        return null;
+        const message = `步骤 9：已保存白嫖复用手机号 ${savedActivation.phoneNumber} 缺少 HeroSMS 激活 ID，无法自动复用，将跳过自动白嫖复用。`;
+        await addLog(message, 'warn');
+        return buildFreeReusablePreparationResult(false, {
+          reason: FREE_REUSE_PREPARE_REASON_MISSING_ACTIVATION_ID,
+          message,
+        });
       }
       await addLog(
         `步骤 9：准备自动白嫖复用已保存手机号 ${savedActivation.phoneNumber}（${savedActivation.successfulUses + 1}/${savedActivation.maxUses}）。`,
@@ -4081,22 +4134,31 @@
       try {
         await setPhoneActivationStatus(state, savedActivation, 3, 'HeroSMS setStatus(3) for automatic free reuse');
       } catch (error) {
+        const message = String(error?.message || error || 'unknown error');
         if (isPhoneActivationOrderMissingError(error, savedActivation.provider)) {
           await retireFreeReusableActivation(`自动白嫖复用号码 ${savedActivation.phoneNumber} 已失效。`);
-          return null;
+          return buildFreeReusablePreparationResult(false, {
+            reason: FREE_REUSE_PREPARE_REASON_ACTIVATION_CANCELLED,
+            message,
+          });
         }
         await addLog(
-          `步骤 9：自动白嫖复用准备失败，将回退到正常购买新号码。${error.message || error}`,
+          `步骤 9：自动白嫖复用准备失败，将回退到正常购买新号码。${message}`,
           'warn'
         );
-        return null;
+        return buildFreeReusablePreparationResult(false, {
+          reason: FREE_REUSE_PREPARE_REASON_SET_STATUS_FAILED,
+          message,
+        });
       }
-      return {
-        ...savedActivation,
-        latestActivationId: activationOrderId,
-        source: 'free-manual-reuse',
-        manualOnly: false,
-      };
+      return buildFreeReusablePreparationResult(true, {
+        activation: {
+          ...savedActivation,
+          latestActivationId: activationOrderId,
+          source: 'free-manual-reuse',
+          manualOnly: false,
+        },
+      });
     }
 
     async function completePhoneActivation(state = {}, activation) {
@@ -5434,10 +5496,9 @@
       const successfulUses = savedActivation.successfulUses + 1;
       const maxUses = Math.max(1, Math.floor(Number(savedActivation.maxUses) || DEFAULT_PHONE_NUMBER_MAX_USES));
       if (successfulUses >= maxUses) {
-        await clearFreeReusableActivation();
-        await addLog(
-          `步骤 9：自动白嫖复用手机号 ${savedActivation.phoneNumber} 已达到 ${successfulUses}/${maxUses} 次，已清除本地记录。`,
-          'info'
+        await retireFreeReusableActivation(
+          `自动白嫖复用手机号 ${savedActivation.phoneNumber} 已达到 ${successfulUses}/${maxUses} 次，已清除本地记录。`,
+          { level: 'info' }
         );
         return;
       }
@@ -6425,9 +6486,10 @@
         if (shouldCancelActivation && activation) {
           await cancelPhoneActivation(state, activation);
         }
-        if (isFreeAutoReuseActivation(activation)) {
-          await clearFreeReusableActivation();
-        }
+        await retireFreeReusableActivationIfMatching(
+          activation,
+          activation ? `自动白嫖复用号码 ${activation.phoneNumber} 在 add-phone 失败后已退役。` : ''
+        );
         await clearCurrentActivation();
         activation = null;
         shouldCancelActivation = false;
@@ -6530,10 +6592,22 @@
               );
             }
             if (!activation) {
-              activation = await prepareFreeReusablePhoneActivation(state);
-              if (activation) {
+              const freeReusablePreparation = await prepareFreeReusablePhoneActivation(state);
+              if (freeReusablePreparation?.ok) {
+                activation = freeReusablePreparation.activation;
                 shouldCancelActivation = false;
               } else {
+                if (shouldStopAfterFreeReusablePrepareFailure(state, freeReusablePreparation)) {
+                  throw createPhoneFlowError(
+                    PHONE_ERROR_CODE_FREE_REUSE_PREPARE_FAILED,
+                    `Step 9: automatic free reuse preparation failed and stop mode is enabled. ${freeReusablePreparation?.message || freeReusablePreparation?.reason || 'unknown error'}`,
+                    {
+                      provider: PHONE_SMS_PROVIDER_HERO,
+                      reason: freeReusablePreparation?.reason || FREE_REUSE_PREPARE_REASON_SET_STATUS_FAILED,
+                      payload: freeReusablePreparation || null,
+                    }
+                  );
+                }
                 activation = await acquirePhoneActivation(state, {
                   blockedCountryIds: getBlockedCountryIds(),
                   countryPriceFloorByCountryId: getCountryPriceFloorById(),
@@ -6557,6 +6631,10 @@
                 if (shouldCancelActivation && activation) {
                   await cancelPhoneActivation(state, activation);
                 }
+                await retireFreeReusableActivationIfMatching(
+                  activation,
+                  `自动白嫖复用号码 ${activation.phoneNumber} 连续返回 add-phone 页面，已退役该复用记录。`
+                );
                 await clearCurrentActivation();
                 activation = null;
                 shouldCancelActivation = false;
@@ -6611,9 +6689,10 @@
                 if (shouldCancelActivation && activation) {
                   await banPhoneActivation(state, activation);
                 }
-                if (isFreeAutoReuseActivation(activation)) {
-                  await clearFreeReusableActivation();
-                }
+                await retireFreeReusableActivationIfMatching(
+                  activation,
+                  activation ? `自动白嫖复用号码 ${activation.phoneNumber} 在 add-phone 提示已使用后已退役。` : ''
+                );
                 await clearCurrentActivation();
                 activation = null;
                 shouldCancelActivation = false;
@@ -6772,8 +6851,10 @@
               addPhonePage: false,
               phoneVerificationPage: true,
             };
+            if (!preferReuseExistingActivationOnAddPhone) {
+              addPhoneReentryWithSameActivation = 0;
+            }
             preferReuseExistingActivationOnAddPhone = false;
-            addPhoneReentryWithSameActivation = 0;
           }
 
           if (!pageState?.phoneVerificationPage) {
@@ -6925,9 +7006,10 @@
           if (shouldCancelActivation && activation) {
             await cancelPhoneActivation(state, activation);
           }
-          if (isFreeAutoReuseActivation(activation)) {
-            await clearFreeReusableActivation();
-          }
+          await retireFreeReusableActivationIfMatching(
+            activation,
+            activation ? `自动白嫖复用号码 ${activation.phoneNumber} 在更换号码时已退役。` : ''
+          );
           await clearCurrentActivation();
           activation = null;
           shouldCancelActivation = false;
@@ -6989,9 +7071,10 @@
         if (shouldCancelActivation && activation) {
           await cancelPhoneActivation(state, activation);
         }
-        if (isFreeAutoReuseActivation(activation)) {
-          await clearFreeReusableActivation();
-        }
+        await retireFreeReusableActivationIfMatching(
+          activation,
+          activation ? `自动白嫖复用号码 ${activation.phoneNumber} 因流程异常已退役。` : ''
+        );
         await clearCurrentActivation();
         throw sanitizePhoneRestartStep7Error(sanitizePhoneCodeTimeoutError(error));
       } finally {

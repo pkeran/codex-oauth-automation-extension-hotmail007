@@ -71,6 +71,7 @@ test('background account history settings are normalized independently from hotm
     extractFunction('normalizePhoneCodePollMaxRounds'),
     extractFunction('normalizeHeroSmsMaxPrice'),
     extractFunction('normalizeHeroSmsCountryFallback'),
+    extractFunction('normalizeFreePhoneReusePrepareFailureMode'),
     extractFunction('normalizePhoneSmsProvider'),
     extractFunction('normalizeFiveSimCountryId'),
     extractFunction('normalizeFiveSimCountryLabel'),
@@ -105,6 +106,9 @@ const PHONE_CODE_POLL_ROUNDS_MAX = 120;
 const DEFAULT_PHONE_CODE_POLL_ROUNDS = 4;
 const DEFAULT_SUB2API_PROXY_NAME = '';
 const DEFAULT_SUB2API_ACCOUNT_PRIORITY = 1;
+const FREE_PHONE_REUSE_PREPARE_FAILURE_MODE_FALLBACK_BUY_NEW = 'fallback_buy_new';
+const FREE_PHONE_REUSE_PREPARE_FAILURE_MODE_STOP = 'stop';
+const DEFAULT_FREE_PHONE_REUSE_PREPARE_FAILURE_MODE = FREE_PHONE_REUSE_PREPARE_FAILURE_MODE_FALLBACK_BUY_NEW;
 const HOTMAIL_SERVICE_MODE_REMOTE = 'remote';
 const HOTMAIL_SERVICE_MODE_LOCAL = 'local';
 const VERIFICATION_RESEND_COUNT_MIN = 0;
@@ -210,6 +214,8 @@ return {
   assert.equal(api.normalizePersistentSettingValue('heroSmsMaxPrice', '0.123456'), '0.1235');
   assert.equal(api.normalizePersistentSettingValue('heroSmsMaxPrice', '0'), '');
   assert.equal(api.normalizePersistentSettingValue('heroSmsPreferredPrice', '0.051234'), '0.0512');
+  assert.equal(api.normalizePersistentSettingValue('freePhoneReusePrepareFailureMode', 'stop'), 'stop');
+  assert.equal(api.normalizePersistentSettingValue('freePhoneReusePrepareFailureMode', 'unexpected'), 'fallback_buy_new');
   assert.equal(api.normalizePersistentSettingValue('signupMethod', 'phone'), 'phone');
   assert.equal(api.normalizePersistentSettingValue('signupMethod', 'unknown'), 'email');
   assert.equal(api.normalizePersistentSettingValue('phoneSmsProvider', '5SIM'), '5sim');
