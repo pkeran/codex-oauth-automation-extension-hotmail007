@@ -403,6 +403,154 @@ return {
   assert.deepEqual(api.getClicks(), ['继续使用电子邮件地址登录']);
 });
 
+test('ensureSignupPhoneEntryReady recognizes 使用电话号码继续 on the signup dialog', async () => {
+  const api = new Function(`
+const logs = [];
+const clicks = [];
+let phase = 'email';
+let now = 0;
+
+const phoneCta = {
+  textContent: '使用电话号码继续',
+  value: '',
+  disabled: false,
+  getAttribute(name) {
+    if (name === 'type') return 'button';
+    return '';
+  },
+  getBoundingClientRect() {
+    return { width: 240, height: 52 };
+  },
+};
+
+const emailInput = {
+  kind: 'email',
+  getAttribute(name) {
+    if (name === 'type') return 'email';
+    return '';
+  },
+};
+
+const phoneInput = {
+  kind: 'phone',
+  getAttribute(name) {
+    if (name === 'type') return 'tel';
+    return '';
+  },
+};
+
+const document = {
+  querySelector(selector) {
+    if (selector === SIGNUP_EMAIL_INPUT_SELECTOR) {
+      return phase === 'email' ? emailInput : null;
+    }
+    if (selector === SIGNUP_PHONE_INPUT_SELECTOR) {
+      return phase === 'phone' ? phoneInput : null;
+    }
+    return null;
+  },
+  querySelectorAll(selector) {
+    if (selector === 'button, a, [role="button"], [role="link"]') {
+      return phase === 'email' ? [phoneCta] : [];
+    }
+    if (selector === 'a, button, [role="button"], [role="link"]') {
+      return [];
+    }
+    if (selector === 'input') {
+      if (phase === 'email') return [emailInput];
+      if (phase === 'phone') return [phoneInput];
+      return [];
+    }
+    return [];
+  },
+};
+
+const location = { href: 'https://chatgpt.com/' };
+const Date = { now() { return now; } };
+
+${extractConst('SIGNUP_ENTRY_TRIGGER_PATTERN')}
+${extractConst('SIGNUP_EMAIL_INPUT_SELECTOR')}
+${extractConst('SIGNUP_PHONE_INPUT_SELECTOR')}
+${extractConst('SIGNUP_SWITCH_TO_EMAIL_PATTERN')}
+${extractConst('SIGNUP_SWITCH_ACTION_PATTERN')}
+${extractConst('SIGNUP_EMAIL_ACTION_PATTERN')}
+${extractConst('SIGNUP_WORK_EMAIL_PATTERN')}
+${extractConst('SIGNUP_PHONE_ACTION_PATTERN')}
+${extractConst('SIGNUP_SWITCH_TO_PHONE_PATTERN')}
+${extractConst('SIGNUP_MORE_OPTIONS_PATTERN')}
+
+function isVisibleElement(el) {
+  return Boolean(el) && (!el.getBoundingClientRect || el.getBoundingClientRect().width > 0);
+}
+
+function isActionEnabled(el) {
+  return Boolean(el) && !el.disabled && el.getAttribute('aria-disabled') !== 'true';
+}
+
+function getActionText(el) {
+  return [el?.textContent, el?.value, el?.getAttribute?.('aria-label'), el?.getAttribute?.('title')]
+    .filter(Boolean)
+    .join(' ')
+    .replace(/\\s+/g, ' ')
+    .trim();
+}
+
+function getSignupPasswordInput() { return null; }
+function isSignupPasswordPage() { return false; }
+function getSignupPasswordSubmitButton() { return null; }
+function getSignupPasswordDisplayedEmail() { return ''; }
+function getSignupEntryDiagnostics() { return {}; }
+function getCookieConsentState() { return null; }
+async function dismissCookieConsentIfPresent() { return false; }
+
+function getPageTextSnapshot() {
+  return phase === 'email' ? '登录或注册 使用电话号码继续 电子邮件地址 继续' : '';
+}
+
+function throwIfStopped() {}
+function log(message, level = 'info') { logs.push({ message, level }); }
+async function humanPause() {}
+async function sleep(ms) { now += ms; }
+
+function simulateClick(target) {
+  clicks.push(getActionText(target));
+  if (target === phoneCta) {
+    phase = 'phone';
+  }
+}
+
+${extractFunction('getSignupEmailInput')}
+${extractFunction('getSignupPhoneInput')}
+${extractFunction('findSignupUseEmailTrigger')}
+${extractFunction('findSignupUsePhoneTrigger')}
+${extractFunction('findSignupMoreOptionsTrigger')}
+${extractFunction('getSignupEmailContinueButton')}
+${extractFunction('findSignupEntryTrigger')}
+${extractFunction('inspectSignupEntryState')}
+${extractFunction('getSignupEntryStateSummary')}
+${extractFunction('waitForSignupPhoneEntryState')}
+${extractFunction('ensureSignupPhoneEntryReady')}
+
+return {
+  async run() {
+    return ensureSignupPhoneEntryReady();
+  },
+  getClicks() {
+    return clicks.slice();
+  },
+};
+`)();
+
+  const result = await api.run();
+
+  assert.deepEqual(result, {
+    ready: true,
+    state: 'phone_entry',
+    url: 'https://chatgpt.com/',
+  });
+  assert.deepEqual(api.getClicks(), ['使用电话号码继续']);
+});
+
 test('getSignupEmailInput recognizes localized email placeholders in text inputs', () => {
   const api = new Function(`
 const localizedEmailInput = {

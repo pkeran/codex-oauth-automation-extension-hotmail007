@@ -459,6 +459,9 @@ const SIGNUP_PHONE_ACTION_PATTERN = /手机|手机号|电话号码|phone|telepho
 const SIGNUP_SWITCH_TO_PHONE_PATTERN = new RegExp([
   String.raw`\u7ee7\u7eed\u4f7f\u7528(?:\u624b\u673a|\u624b\u673a\u53f7|\u7535\u8bdd\u53f7\u7801)(?:\u53f7\u7801)?\u767b\u5f55`,
   String.raw`\u6539\u7528(?:\u624b\u673a|\u624b\u673a\u53f7|\u7535\u8bdd\u53f7\u7801)(?:\u53f7\u7801)?\u767b\u5f55`,
+  String.raw`\u7ee7\u7eed\u4f7f\u7528(?:\u624b\u673a|\u624b\u673a\u53f7|\u624b\u673a\u53f7\u7801|\u7535\u8bdd\u53f7\u7801)(?:\u53f7\u7801)?`,
+  String.raw`\u6539\u7528(?:\u624b\u673a|\u624b\u673a\u53f7|\u624b\u673a\u53f7\u7801|\u7535\u8bdd\u53f7\u7801)(?:\u53f7\u7801)?`,
+  String.raw`\u4f7f\u7528(?:\u624b\u673a|\u624b\u673a\u53f7|\u624b\u673a\u53f7\u7801|\u7535\u8bdd\u53f7\u7801)(?:\u53f7\u7801)?`,
   String.raw`continue\s+(?:with|using)\s+(?:a\s+)?phone(?:\s+number)?`,
   String.raw`use\s+(?:a\s+)?phone(?:\s+number)?(?:\s+instead)?`,
   String.raw`sign\s*(?:in|up)\s+with\s+(?:a\s+)?phone`,
@@ -537,7 +540,8 @@ function findSignupUsePhoneTrigger() {
     const text = getActionText(el);
     if (!text) return false;
     return SIGNUP_SWITCH_TO_PHONE_PATTERN.test(text)
-      || (SIGNUP_SWITCH_ACTION_PATTERN.test(text) && SIGNUP_PHONE_ACTION_PATTERN.test(text));
+      || (SIGNUP_SWITCH_ACTION_PATTERN.test(text) && SIGNUP_PHONE_ACTION_PATTERN.test(text))
+      || ((/使用|继续/.test(text)) && SIGNUP_PHONE_ACTION_PATTERN.test(text));
   }) || null;
 }
 
