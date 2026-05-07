@@ -567,9 +567,30 @@ function getSignupEmailContinueButton({ allowDisabled = false } = {}) {
 
 function findSignupEntryTrigger() {
   const candidates = document.querySelectorAll('a, button, [role="button"], [role="link"]');
-  return Array.from(candidates).find((el) => {
+  const visibleSignupTrigger = Array.from(candidates).find((el) => {
     if (!isVisibleElement(el) || !isActionEnabled(el)) return false;
     return SIGNUP_ENTRY_TRIGGER_PATTERN.test(getActionText(el));
+  }) || null;
+  if (visibleSignupTrigger) {
+    return visibleSignupTrigger;
+  }
+
+  const currentUrl = String(location?.href || '').trim().toLowerCase();
+  if (!/^https:\/\/(?:www\.)?chatgpt\.com(?:[/?#]|$)/i.test(currentUrl)) {
+    return null;
+  }
+
+  const hasCollapsedSignupTrigger = Array.from(candidates).some((el) => {
+    if (!isActionEnabled(el) || isVisibleElement(el)) return false;
+    return SIGNUP_ENTRY_TRIGGER_PATTERN.test(getActionText(el));
+  });
+  if (!hasCollapsedSignupTrigger) {
+    return null;
+  }
+
+  return Array.from(candidates).find((el) => {
+    if (!isVisibleElement(el) || !isActionEnabled(el)) return false;
+    return /登录|登陆|log\s*in|sign\s*in/i.test(getActionText(el));
   }) || null;
 }
 
