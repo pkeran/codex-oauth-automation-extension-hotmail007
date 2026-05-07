@@ -1224,6 +1224,7 @@
             ? normalizeNexSmsCountryId(rawCountryId, 0)
             : normalizeCountryId(rawCountryId, fallbackCountryId)
         );
+      const phoneVerificationSuccessCount = normalizeUseCount(record.phoneVerificationSuccessCount);
       return {
         activationId,
         ...(explicitLatestActivationId ? { latestActivationId: explicitLatestActivationId } : {}),
@@ -1244,6 +1245,7 @@
           ? { costLedgerEntryKey: String(record.costLedgerEntryKey || record.latestCostLedgerEntryKey || '').trim() }
           : {}),
         ...(String(record?.costSettledAt || '').trim() ? { costSettledAt: String(record.costSettledAt || '').trim() } : {}),
+        ...(phoneVerificationSuccessCount > 0 ? { phoneVerificationSuccessCount } : {}),
         ...(expiresAt > 0 ? { expiresAt } : {}),
         ...(statusAction ? { statusAction } : {}),
       };
@@ -5686,14 +5688,35 @@
     }
 
     function buildCompletedActivationSnapshot(activation) {
+      return buildCompletedActivationSnapshotForMode(activation);
+    }
+
+    function buildCompletedActivationSnapshotForMode(activation, options = {}) {
       const trackedActivation = buildTrackedActivationSnapshot(activation);
       if (!trackedActivation) {
         return null;
+      }
+      if (options.phoneSignupMode) {
+        const phoneVerificationSuccessCount = normalizeUseCount(
+          options.priorPhoneVerificationSuccessCount ?? trackedActivation.phoneVerificationSuccessCount
+        ) + 1;
+        return {
+          ...trackedActivation,
+          phoneVerificationSuccessCount,
+        };
       }
       return {
         ...trackedActivation,
         successfulUses: trackedActivation.successfulUses + 1,
       };
+    }
+
+    async function markPhoneSignupActivationNonReusable(state = {}, activation = null) {
+      const normalizedActivation = normalizeActivation(activation);
+      if (!normalizedActivation) {
+        return [];
+      }
+      return rememberPhoneCredentialInvalidBlockedActivation(state, normalizedActivation);
     }
 
     async function waitForScopedPhoneCode(state = {}, activation, options = {}) {
@@ -5844,9 +5867,11 @@
         return null;
       }
       await completePhoneActivation(state, normalizedActivation);
-      await markActivationReusableAfterSuccess(state, normalizedActivation);
+      await markPhoneSignupActivationNonReusable(state, normalizedActivation);
       await clearSignupPhoneRuntimeState({
-        signupPhoneCompletedActivation: buildCompletedActivationSnapshot(normalizedActivation),
+        signupPhoneCompletedActivation: buildCompletedActivationSnapshotForMode(normalizedActivation, {
+          phoneSignupMode: true,
+        }),
         signupPhoneNumber: normalizedActivation.phoneNumber,
         accountIdentifierType: 'phone',
         accountIdentifier: normalizedActivation.phoneNumber,
@@ -6074,9 +6099,13 @@
 
       return withPhoneVerificationLogContext({ step: visibleStep, stepKey: 'fetch-login-code' }, async () => {
         await completePhoneActivation(state, normalizedActivation);
+        await markPhoneSignupActivationNonReusable(state, normalizedActivation);
         await setPhoneRuntimeState({
           signupPhoneActivation: null,
-          signupPhoneCompletedActivation: buildCompletedActivationSnapshot(normalizedActivation),
+          signupPhoneCompletedActivation: buildCompletedActivationSnapshotForMode(normalizedActivation, {
+            phoneSignupMode: true,
+            priorPhoneVerificationSuccessCount: state?.signupPhoneCompletedActivation?.phoneVerificationSuccessCount,
+          }),
           signupPhoneNumber: normalizedActivation.phoneNumber,
           signupPhoneVerificationRequestedAt: null,
           signupPhoneVerificationPurpose: '',
@@ -6482,6 +6511,16 @@
         );
       };
 
+      const quarantineDeterministicBadActivation = async (activationCandidate, reason = '') => {
+        const normalizedActivation = normalizeActivation(activationCandidate);
+        if (!normalizedActivation) {
+          return;
+        }
+        await rememberPhoneCredentialInvalidBlockedActivation(state, normalizedActivation).catch(() => {});
+        await retireFreeReusableActivationIfMatching(normalizedActivation, reason);
+        state = await getState();
+      };
+
       const abandonCurrentActivationAfterAddPhoneFailure = async (submitState = {}, options = {}) => {
         if (shouldCancelActivation && activation) {
           await cancelPhoneActivation(state, activation);
@@ -6662,6 +6701,12 @@
                 const submitFailureCode = isPhoneNumberInvalidError(submitErrorText)
                   ? PHONE_ERROR_CODE_ADD_PHONE_NUMBER_INVALID
                   : 'add_phone_submit_failed';
+                if (submitFailureCode === PHONE_ERROR_CODE_ADD_PHONE_NUMBER_INVALID) {
+                  await quarantineDeterministicBadActivation(
+                    activation,
+                    activation ? `自动复用号码 ${activation.phoneNumber} 在 add-phone 提交阶段被判定为无效，已移出复用池。` : ''
+                  );
+                }
                 await rotateActivationAfterAddPhoneFailure(
                   submitErrorText,
                   submitFailureCode,
@@ -6689,6 +6734,10 @@
                 if (shouldCancelActivation && activation) {
                   await banPhoneActivation(state, activation);
                 }
+                await quarantineDeterministicBadActivation(
+                  activation,
+                  activation ? `自动复用号码 ${activation.phoneNumber} 在 add-phone 提示已被使用后，已移出复用池。` : ''
+                );
                 await retireFreeReusableActivationIfMatching(
                   activation,
                   activation ? `自动白嫖复用号码 ${activation.phoneNumber} 在 add-phone 提示已使用后已退役。` : ''
@@ -6773,6 +6822,12 @@
                   { cooldownMs: getPageRateLimitCooldownMs() }
                 );
                 continue;
+              }
+              if (addPhoneRejectCode === PHONE_ERROR_CODE_ADD_PHONE_NUMBER_INVALID) {
+                await quarantineDeterministicBadActivation(
+                  activation,
+                  activation ? `自动复用号码 ${activation.phoneNumber} 在 add-phone 被判定为无效后，已移出复用池。` : ''
+                );
               }
               await rotateActivationAfterAddPhoneFailure(
                 `add-phone rejected ${activation.phoneNumber} (${addPhoneRejectText})`,
@@ -6913,6 +6968,10 @@
                   await banPhoneActivation(state, activation);
                   shouldCancelActivation = false;
                 }
+                await quarantineDeterministicBadActivation(
+                  activation,
+                  activation ? `自动复用号码 ${activation.phoneNumber} 在验证码提交后被判定已被使用，已移出复用池。` : ''
+                );
                 await addLog(
                   `步骤 9：手机号被提示已使用（${invalidErrorText}），立即更换新号码。`,
                   'warn'
