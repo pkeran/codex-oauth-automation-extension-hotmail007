@@ -178,7 +178,13 @@
           if (isStep6RecoverableResult(result)) {
             const reasonMessage = result.message
               || `当前停留在${getLoginAuthStateLabel(result.state)}，准备重新执行步骤 ${completionStep}。`;
-            throw new Error(reasonMessage);
+            const recoverableError = new Error(reasonMessage);
+            const recoverableCode = String(result?.reason || result?.code || '').trim();
+            if (recoverableCode) {
+              recoverableError.code = recoverableCode;
+              recoverableError.restartReasonCode = recoverableCode;
+            }
+            throw recoverableError;
           }
 
           throw new Error(`步骤 ${completionStep}：认证页未返回可识别的登录结果。`);
@@ -197,7 +203,13 @@
           }
           lastError = err;
           if (attempt >= STEP6_MAX_ATTEMPTS) {
-            break;
+            const finalError = new Error(`步骤 ${completionStep}：判断失败后已重试 ${STEP6_MAX_ATTEMPTS - 1} 次，仍未成功。最后原因：${getErrorMessage(lastError)}`);
+            const lastStructuredCode = String(lastError?.restartReasonCode || lastError?.code || '').trim();
+            if (lastStructuredCode) {
+              finalError.code = lastStructuredCode;
+              finalError.restartReasonCode = lastStructuredCode;
+            }
+            throw finalError;
           }
 
           await addLog(`第 ${attempt} 次尝试失败，原因：${getErrorMessage(err)}；准备重试...`, 'warn', {

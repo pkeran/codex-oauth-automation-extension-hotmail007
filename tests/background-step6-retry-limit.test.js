@@ -90,6 +90,37 @@ test('step 7 retries up to configured limit and then fails', async () => {
   assert.equal(events.completed, 0);
 });
 
+test('step 7 preserves the last recoverable structured code after exhausting internal retries', async () => {
+  const source = fs.readFileSync('background/steps/oauth-login.js', 'utf8');
+  const globalScope = {};
+  const api = new Function('self', `${source}; return self.MultiPageBackgroundStep7;`)(globalScope);
+
+  const executor = api.createStep7Executor({
+    addLog: async () => {},
+    completeStepFromBackground: async () => {},
+    getErrorMessage: (error) => error?.message || String(error || ''),
+    getLoginAuthStateLabel: (state) => state || 'unknown',
+    getState: async () => ({ email: 'user@example.com', password: 'secret' }),
+    isStep6RecoverableResult: (result) => result?.step6Outcome === 'recoverable',
+    isStep6SuccessResult: (result) => result?.step6Outcome === 'success',
+    refreshOAuthUrlBeforeStep6: async () => 'https://oauth.example/latest',
+    reuseOrCreateTab: async () => {},
+    sendToContentScriptResilient: async () => ({
+      step6Outcome: 'recoverable',
+      state: 'login_password_invalid',
+      reason: 'login_password_invalid',
+      message: 'Incorrect email address or password.',
+    }),
+    STEP6_MAX_ATTEMPTS: 2,
+    throwIfStopped: () => {},
+  });
+
+  const error = await executor.executeStep7({ email: 'user@example.com', password: 'secret' }).catch((err) => err);
+
+  assert.equal(error?.code, 'login_password_invalid');
+  assert.match(String(error?.message || ''), /Incorrect email address or password/);
+});
+
 test('step 7 exits internal retry loop immediately when add-phone is detected', async () => {
   const source = fs.readFileSync('background/steps/oauth-login.js', 'utf8');
   const globalScope = {};

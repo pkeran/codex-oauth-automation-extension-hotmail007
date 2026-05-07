@@ -338,6 +338,38 @@ test('auto-run controller retries STEP3_PHONE_CREDENTIAL_INVALID in the same rou
   assert.equal(events.accountRecords.some(({ status }) => status === 'failed'), false);
 });
 
+test('auto-run controller retries RESTART_CURRENT_ATTEMPT in the same round even when auto retry is disabled', async () => {
+  let attempts = 0;
+  const { controller, events } = createHarness({
+    totalRuns: 1,
+    autoRunSkipFailures: false,
+    runImpl: async () => {
+      attempts += 1;
+      if (attempts === 1) {
+        const error = new Error('RESTART_CURRENT_ATTEMPT::step7 repeated structured recoverable failure');
+        error.code = 'RESTART_CURRENT_ATTEMPT';
+        error.restartReasonCode = 'login_password_invalid';
+        throw error;
+      }
+      return {};
+    },
+    extraDeps: {
+      isRestartCurrentAttemptError: (error) => String(error?.code || '').trim() === 'RESTART_CURRENT_ATTEMPT'
+        || /^RESTART_CURRENT_ATTEMPT::/.test(String(error?.message || error || '')),
+    },
+  });
+
+  await controller.autoRunLoop(1, {
+    autoRunSkipFailures: false,
+    mode: 'restart',
+  });
+
+  assert.equal(attempts, 2);
+  assert.deepEqual(events.runTargets, [1, 1]);
+  assert.equal(events.broadcasts.some(({ phase }) => phase === 'retrying'), true);
+  assert.equal(events.accountRecords.some(({ status }) => status === 'failed'), false);
+});
+
 test('auto-run controller does not let STEP3_PHONE_CREDENTIAL_INVALID fall into add-phone fatal handling', async () => {
   let attempts = 0;
   const { controller, events } = createHarness({

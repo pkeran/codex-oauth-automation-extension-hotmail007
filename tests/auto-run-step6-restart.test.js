@@ -65,6 +65,8 @@ function createHarness(options = {}) {
     startStep = 7,
     failureStep = 10,
     failureBudget = 1,
+    failureMessages = [],
+    failureCodes = [],
     failureMessage = '认证失败: Request failed with status code 502',
     authState = { state: 'password_page', url: 'https://auth.openai.com/log-in' },
     customState = {},
@@ -83,6 +85,9 @@ const chrome = {
 };
 
 let remainingFailures = ${JSON.stringify(failureBudget)};
+const failureMessages = ${JSON.stringify(failureMessages)};
+const failureCodes = ${JSON.stringify(failureCodes)};
+let failureIndex = 0;
 const events = {
   steps: [],
   logs: [],
@@ -134,7 +139,13 @@ async function executeStepAndWait(step) {
   events.steps.push(step);
   if (step === ${JSON.stringify(failureStep)} && remainingFailures > 0) {
     remainingFailures -= 1;
-    throw new Error(${JSON.stringify(failureMessage)});
+    const error = new Error(failureMessages[failureIndex] || ${JSON.stringify(failureMessage)});
+    const errorCode = String(failureCodes[failureIndex] || '').trim();
+    failureIndex += 1;
+    if (errorCode) {
+      error.code = errorCode;
+    }
+    throw error;
   }
 }
 async function getTabId() {
@@ -210,6 +221,56 @@ test('auto-run keeps restarting from step 7 after post-login failures without a 
     ]
   );
   assert.ok(events.logs.some(({ message }) => /回到步骤 7 重新开始授权流程/.test(message)));
+});
+
+test('auto-run escalates repeated login_password_invalid in the same round into a fresh attempt restart', async () => {
+  const harness = createHarness({
+    failureStep: 7,
+    failureBudget: 2,
+    failureMessages: [
+      'Incorrect email address or password.',
+      'Incorrect email address or password.',
+    ],
+    failureCodes: [
+      'login_password_invalid',
+      'login_password_invalid',
+    ],
+    authState: { state: 'password_page', url: 'https://auth.openai.com/log-in/password' },
+  });
+
+  const result = await harness.runAndCaptureError();
+
+  assert.equal(result?.error?.code, 'RESTART_CURRENT_ATTEMPT');
+  assert.equal(result?.error?.restartReasonCode, 'login_password_invalid');
+  assert.deepStrictEqual(result.events.steps, [7, 7]);
+  assert.equal(result.events.invalidations.length, 1);
+  assert.ok(result.events.logs.some(({ message }) => /login_password_invalid/.test(String(message || ''))));
+  assert.ok(result.events.logs.some(({ message }) => /fresh attempt|整轮/.test(String(message || ''))));
+});
+
+test('auto-run escalates repeated one_time_code_switch_unexpected_state in the same round into a fresh attempt restart', async () => {
+  const harness = createHarness({
+    failureStep: 7,
+    failureBudget: 2,
+    failureMessages: [
+      '切换到一次性验证码登录后仍停留在密码页。',
+      '切换到一次性验证码登录后仍停留在密码页。',
+    ],
+    failureCodes: [
+      'one_time_code_switch_unexpected_state',
+      'one_time_code_switch_unexpected_state',
+    ],
+    authState: { state: 'password_page', url: 'https://auth.openai.com/log-in/password' },
+  });
+
+  const result = await harness.runAndCaptureError();
+
+  assert.equal(result?.error?.code, 'RESTART_CURRENT_ATTEMPT');
+  assert.equal(result?.error?.restartReasonCode, 'one_time_code_switch_unexpected_state');
+  assert.deepStrictEqual(result.events.steps, [7, 7]);
+  assert.equal(result.events.invalidations.length, 1);
+  assert.ok(result.events.logs.some(({ message }) => /one_time_code_switch_unexpected_state/.test(String(message || ''))));
+  assert.ok(result.events.logs.some(({ message }) => /fresh attempt|整轮/.test(String(message || ''))));
 });
 
 test('auto-run stops restarting once add-phone is detected', async () => {

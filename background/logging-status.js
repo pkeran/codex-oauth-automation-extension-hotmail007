@@ -111,7 +111,14 @@
     }
 
     function isRestartCurrentAttemptError(error) {
+      const structuredCode = String(error?.code || '').trim();
+      if (structuredCode === 'RESTART_CURRENT_ATTEMPT') {
+        return true;
+      }
       const message = String(typeof error === 'string' ? error : error?.message || '');
+      if (/RESTART_CURRENT_ATTEMPT::/i.test(message)) {
+        return true;
+      }
       return /当前邮箱已存在，需要重新开始新一轮/.test(message);
     }
 

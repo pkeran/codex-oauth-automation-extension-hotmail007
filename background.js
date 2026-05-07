@@ -8835,8 +8835,12 @@ function isRestartCurrentAttemptError(error) {
   if (typeof loggingStatus !== 'undefined' && loggingStatus?.isRestartCurrentAttemptError) {
     return loggingStatus.isRestartCurrentAttemptError(error);
   }
+  const structuredCode = String(error?.code || '').trim();
+  if (structuredCode === 'RESTART_CURRENT_ATTEMPT') {
+    return true;
+  }
   const message = String(typeof error === 'string' ? error : error?.message || '');
-  return /当前邮箱已存在，需要重新开始新一轮/.test(message);
+  return /当前邮箱已存在，需要重新开始新一轮|RESTART_CURRENT_ATTEMPT::/i.test(message);
 }
 
 function isSignupUserAlreadyExistsFailure(error) {
@@ -11530,6 +11534,11 @@ async function ensureAutoEmailReady(targetRun, totalRuns, attemptRuns) {
 async function runAutoSequenceFromStep(startStep, context = {}) {
   const { targetRun, totalRuns, attemptRuns, continued = false } = context;
   let postStep7RestartCount = 0;
+  const structuredStep7FreshAttemptCodes = new Set([
+    'login_password_invalid',
+    'one_time_code_switch_unexpected_state',
+  ]);
+  const structuredStep7RestartHits = new Map();
   let goPayCheckoutRestartCount = 0;
   let step4RestartCount = 0;
   let currentStartStep = startStep;
@@ -11655,6 +11664,29 @@ async function runAutoSequenceFromStep(startStep, context = {}) {
 
       const restartDecision = await getPostStep6AutoRestartDecision(step, err);
       if (restartDecision.shouldRestart) {
+        const restartReasonCode = String(
+          restartDecision.restartReasonCode
+          || restartDecision.structuredCode
+          || err?.restartReasonCode
+          || err?.code
+          || ''
+        ).trim().toLowerCase();
+        if (structuredStep7FreshAttemptCodes.has(restartReasonCode)) {
+          const hitCount = (structuredStep7RestartHits.get(restartReasonCode) || 0) + 1;
+          structuredStep7RestartHits.set(restartReasonCode, hitCount);
+          if (hitCount >= 2) {
+            await addLog(
+              `步骤 ${step}：同轮再次命中 ${restartReasonCode}，停止当前 attempt 内的 Step 7 重开，改为抛出整轮 fresh attempt。`,
+              'warn'
+            );
+            const restartCurrentAttemptError = new Error(
+              `RESTART_CURRENT_ATTEMPT::Step 7 repeated structured recoverable failure (${restartReasonCode})`
+            );
+            restartCurrentAttemptError.code = 'RESTART_CURRENT_ATTEMPT';
+            restartCurrentAttemptError.restartReasonCode = restartReasonCode;
+            throw restartCurrentAttemptError;
+          }
+        }
         postStep7RestartCount += 1;
         const restartStep = restartDecision.restartStep
           || (typeof getAuthChainStartStepId === 'function'

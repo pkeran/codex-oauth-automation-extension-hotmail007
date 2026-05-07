@@ -590,6 +590,8 @@
               && isStep4Route405RecoveryLimitFailure(err);
             const mailboxProviderTransient = typeof isMailboxProviderTransientFailure === 'function'
               && isMailboxProviderTransientFailure(err);
+            const restartCurrentAttemptRequired = typeof isRestartCurrentAttemptError === 'function'
+              && isRestartCurrentAttemptError(err);
             const forceCurrentRoundRetry = autoRunNeverStop
               && !blockedBySecurity
               && !blockedByBrowserSwitch
@@ -598,6 +600,8 @@
               && !blockedByBrowserSwitch
               && !blockedByConfigurationFatal
               && (
+                (restartCurrentAttemptRequired && attemptRun < maxAttemptsForRound)
+                ||
                 (forceCurrentRoundRetry && attemptRun < maxAttemptsForRound)
                 || (blockedByStep3PhoneCredentialInvalid && attemptRun < maxAttemptsForRound)
                 || (
