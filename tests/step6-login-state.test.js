@@ -52,9 +52,14 @@ function extractFunction(name) {
 
 const bundle = [
   extractFunction('getPageTextSnapshot'),
+  extractFunction('normalizePhoneDigits'),
   extractFunction('getLoginVerificationDisplayedEmail'),
   extractFunction('getPhoneVerificationDisplayedPhone'),
   extractFunction('isPhoneVerificationPageReady'),
+  extractFunction('getExistingSessionButtonVisibleText'),
+  extractFunction('extractExistingSessionButtonPhoneDigits'),
+  extractFunction('collectExistingSessionButtons'),
+  extractFunction('getExistingSessionSelectSnapshot'),
   extractFunction('inspectLoginAuthState'),
   extractFunction('normalizeStep6Snapshot'),
 ].join('\n');
@@ -66,6 +71,19 @@ const location = {
   pathname: ${JSON.stringify(overrides.pathname || '/log-in')},
 };
 
+const actionDescriptors = ${JSON.stringify(overrides.actions || [])};
+const actions = actionDescriptors.map((descriptor) => ({
+  textContent: descriptor.textContent || '',
+  innerText: descriptor.innerText || descriptor.textContent || '',
+  value: descriptor.value || '',
+  disabled: Boolean(descriptor.disabled),
+  hidden: Boolean(descriptor.hidden),
+  attributes: descriptor.attributes || {},
+  getAttribute(name) {
+    return Object.prototype.hasOwnProperty.call(this.attributes, name) ? this.attributes[name] : '';
+  },
+}));
+
 const document = {
   body: {
     innerText: ${JSON.stringify(overrides.pageText || '')},
@@ -73,6 +91,18 @@ const document = {
   },
   querySelector() {
     return null;
+  },
+  querySelectorAll(selector) {
+    const text = String(selector || '');
+    if (
+      text.includes('button')
+      || text.includes('[role="button"]')
+      || text.includes('input[type="button"]')
+      || text.includes('input[type="submit"]')
+    ) {
+      return actions;
+    }
+    return [];
   },
 };
 
@@ -130,6 +160,12 @@ function isAddEmailPageReady() {
 
 function isVisibleElement() {
   return true;
+}
+
+function isActionEnabled(element) {
+  return Boolean(element)
+    && !element.disabled
+    && element.getAttribute('aria-disabled') !== 'true';
 }
 
 function isStep8Ready() {
@@ -291,6 +327,24 @@ return {
   assert.match(String(snapshot.errorText || ''), /Incorrect email address or password/i);
 }
 
+{
+  const api = createApi({
+    pageText: '选择帐户 Matthew Martinez +56 9 5467 3883 登录至另一个帐户 创建帐户',
+    actions: [
+      {
+        textContent: '选择帐户 Matthew Martinez +56 9 5467 3883',
+        attributes: {
+          name: 'session_id',
+          'data-dd-action-name': 'Select existing session',
+        },
+      },
+    ],
+  });
+
+  const snapshot = api.inspectLoginAuthState();
+  assert.strictEqual(snapshot.state, 'existing_session_select_page');
+}
+
 assert.ok(
   extractFunction('inspectLoginAuthState').includes("state: 'oauth_consent_page'"),
   'inspectLoginAuthState 应产出 oauth_consent_page 状态'
@@ -304,6 +358,11 @@ assert.ok(
 assert.ok(
   extractFunction('inspectLoginAuthState').includes("state: 'add_email_page'"),
   'inspectLoginAuthState 应产出 add_email_page 状态'
+);
+
+assert.ok(
+  extractFunction('inspectLoginAuthState').includes("state: 'existing_session_select_page'"),
+  'inspectLoginAuthState should produce existing_session_select_page state'
 );
 
 console.log('step6 login state tests passed');
