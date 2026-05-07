@@ -245,6 +245,26 @@ test('auto-run rethrows RESTART_CURRENT_ATTEMPT immediately without page-level s
   assert.ok(!result.events.logs.some(({ message }) => /回到步骤 7 重新开始授权流程/.test(String(message || ''))));
 });
 
+test('auto-run allows one page-level step7 restart for first one_time_code_switch_unexpected_state hit', async () => {
+  const harness = createHarness({
+    failureStep: 7,
+    failureBudget: 1,
+    failureMessages: [
+      'Clicked one-time-code login but landed back on password page.',
+    ],
+    failureCodes: [
+      'one_time_code_switch_unexpected_state',
+    ],
+    authState: { state: 'password_page', url: 'https://auth.openai.com/log-in/password' },
+  });
+
+  const events = await harness.run();
+
+  assert.deepStrictEqual(events.steps, [7, 7, 8, 9, 10]);
+  assert.equal(events.invalidations.length, 1);
+  assert.ok(events.logs.some(({ message }) => String(message || '').includes('回到步骤 7')));
+});
+
 test('auto-run escalates repeated one_time_code_switch_unexpected_state in the same round into a fresh attempt restart', async () => {
   const harness = createHarness({
     failureStep: 7,

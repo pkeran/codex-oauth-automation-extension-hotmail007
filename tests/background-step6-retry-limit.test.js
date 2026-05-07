@@ -90,7 +90,52 @@ test('step 7 retries up to configured limit and then fails', async () => {
   assert.equal(events.completed, 0);
 });
 
-test('step 7 immediately upgrades login_password_invalid to RESTART_CURRENT_ATTEMPT without internal retry', async () => {
+test('step 7 does not internally retry one_time_code_switch_unexpected_state and preserves the structured code', async () => {
+  const source = fs.readFileSync('background/steps/oauth-login.js', 'utf8');
+  const globalScope = {};
+  const api = new Function('self', `${source}; return self.MultiPageBackgroundStep7;`)(globalScope);
+
+  const events = {
+    refreshCalls: 0,
+    sendCalls: 0,
+  };
+
+  const executor = api.createStep7Executor({
+    addLog: async () => {},
+    completeStepFromBackground: async () => {},
+    getErrorMessage: (error) => error?.message || String(error || ''),
+    getLoginAuthStateLabel: (state) => state || 'unknown',
+    getState: async () => ({ email: 'user@example.com', password: 'secret' }),
+    isStep6RecoverableResult: (result) => result?.step6Outcome === 'recoverable',
+    isStep6SuccessResult: (result) => result?.step6Outcome === 'success',
+    refreshOAuthUrlBeforeStep6: async () => {
+      events.refreshCalls += 1;
+      return 'https://oauth.example/latest';
+    },
+    reuseOrCreateTab: async () => {},
+    sendToContentScriptResilient: async () => {
+      events.sendCalls += 1;
+      return {
+        step6Outcome: 'recoverable',
+        state: 'password_page',
+        reason: 'one_time_code_switch_unexpected_state',
+        message: 'Clicked one-time-code login but landed back on password page.',
+      };
+    },
+    STEP6_MAX_ATTEMPTS: 3,
+    throwIfStopped: () => {},
+  });
+
+  const error = await executor.executeStep7({ email: 'user@example.com', password: 'secret' }).catch((err) => err);
+
+  assert.equal(error?.code, 'one_time_code_switch_unexpected_state');
+  assert.equal(error?.restartReasonCode, 'one_time_code_switch_unexpected_state');
+  assert.match(String(error?.message || ''), /one-time-code login/i);
+  assert.equal(events.refreshCalls, 1);
+  assert.equal(events.sendCalls, 1);
+});
+
+test('step 7 still upgrades bare login_password_invalid to RESTART_CURRENT_ATTEMPT when OTP fallback is unavailable', async () => {
   const source = fs.readFileSync('background/steps/oauth-login.js', 'utf8');
   const globalScope = {};
   const api = new Function('self', `${source}; return self.MultiPageBackgroundStep7;`)(globalScope);

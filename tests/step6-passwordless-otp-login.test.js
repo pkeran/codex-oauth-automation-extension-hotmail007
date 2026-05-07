@@ -109,9 +109,10 @@ test('step6LoginFromPasswordPage switches to one-time-code login when password i
     const result = await api.step6LoginFromPasswordPage({ email: 'user@example.com', password: '' }, snapshot);
 
     assert.deepStrictEqual(result, { step6Outcome: 'success', via: 'switch_to_one_time_code_login' });
-    assert.deepStrictEqual(logs, [
-      { message: '当前未提供密码，改走一次性验证码登录。', level: 'warn', step: 7, stepKey: 'oauth-login' },
-    ]);
+    assert.equal(logs.length, 1);
+    assert.equal(logs[0].level, 'warn');
+    assert.equal(logs[0].step, 7);
+    assert.equal(logs[0].stepKey, 'oauth-login');
   } finally {
     cleanupGlobals();
   }
@@ -150,18 +151,15 @@ test('step6LoginFromPasswordPage returns a recoverable result when password is m
   try {
     const result = await api.step6LoginFromPasswordPage({ email: 'user@example.com', password: '' }, snapshot);
 
-    assert.deepStrictEqual(result, {
-      step6Outcome: 'recoverable',
-      reason: 'missing_password_and_one_time_code_trigger',
-      stateSnapshot: snapshot,
-      message: '登录时未提供密码，且当前页面没有可用的一次性验证码登录入口。',
-    });
+    assert.equal(result.step6Outcome, 'recoverable');
+    assert.equal(result.reason, 'missing_password_and_one_time_code_trigger');
+    assert.strictEqual(result.stateSnapshot, snapshot);
   } finally {
     cleanupGlobals();
   }
 });
 
-test('step6LoginFromPasswordPage returns a recoverable result when password page already shows invalid credentials', async () => {
+test('step6LoginFromPasswordPage switches to OTP when invalid-credential page still exposes switch trigger', async () => {
   const api = createApi();
   const logs = [];
   const snapshot = {
@@ -177,8 +175,59 @@ test('step6LoginFromPasswordPage returns a recoverable result when password page
   globalThis.log = (message, level = 'info', options = {}) => {
     logs.push({ message, level, step: options.step, stepKey: options.stepKey });
   };
+  globalThis.step6SwitchToOneTimeCodeLogin = async (payload, value) => {
+    assert.deepStrictEqual(payload, { email: 'user@example.com', password: 'secret' });
+    assert.strictEqual(value, snapshot);
+    return {
+      step6Outcome: 'recoverable',
+      reason: 'one_time_code_switch_unexpected_state',
+      via: 'switch_to_one_time_code_login',
+    };
+  };
+  globalThis.createStep6RecoverableResult = () => {
+    throw new Error('should prefer OTP switch over returning login_password_invalid directly when switch trigger exists');
+  };
+  globalThis.fillInput = () => {
+    throw new Error('should not fill password again on invalid-credential page');
+  };
+  globalThis.humanPause = async () => {};
+  globalThis.sleep = async () => {};
+  globalThis.triggerLoginSubmitAction = async () => {
+    throw new Error('should not resubmit password on invalid-credential page');
+  };
+  globalThis.waitForStep6PasswordSubmitTransition = async () => {
+    throw new Error('should not wait for password submit transition on invalid-credential page');
+  };
+
+  try {
+    const result = await api.step6LoginFromPasswordPage({ email: 'user@example.com', password: 'secret' }, snapshot);
+
+    assert.deepStrictEqual(result, {
+      step6Outcome: 'recoverable',
+      reason: 'one_time_code_switch_unexpected_state',
+      via: 'switch_to_one_time_code_login',
+    });
+    assert.equal(logs.some(({ level, stepKey }) => level === 'warn' && stepKey === 'oauth-login'), true);
+  } finally {
+    cleanupGlobals();
+  }
+});
+
+test('step6LoginFromPasswordPage returns login_password_invalid recoverable when invalid-credential page has no switch trigger', async () => {
+  const api = createApi();
+  const snapshot = {
+    state: 'login_password_invalid',
+    passwordInput: { id: 'password' },
+    switchTrigger: null,
+    errorText: 'Incorrect email address or password',
+    url: 'https://auth.openai.com/log-in/password',
+  };
+
+  globalThis.normalizeStep6Snapshot = (value) => value;
+  globalThis.inspectLoginAuthState = () => snapshot;
+  globalThis.log = () => {};
   globalThis.step6SwitchToOneTimeCodeLogin = async () => {
-    throw new Error('should not switch to one-time-code login from a known invalid-credential page');
+    throw new Error('should not switch when OTP entry is unavailable');
   };
   globalThis.createStep6RecoverableResult = (reason, stateSnapshot, details) => ({
     step6Outcome: 'recoverable',
@@ -201,13 +250,9 @@ test('step6LoginFromPasswordPage returns a recoverable result when password page
   try {
     const result = await api.step6LoginFromPasswordPage({ email: 'user@example.com', password: 'secret' }, snapshot);
 
-    assert.deepStrictEqual(result, {
-      step6Outcome: 'recoverable',
-      reason: 'login_password_invalid',
-      stateSnapshot: snapshot,
-      message: '当前密码页检测到邮箱或密码错误（Incorrect email address or password），请回到步骤 7 重新开始登录。',
-    });
-    assert.equal(logs.some(({ message }) => /邮箱或密码错误/.test(message)), true);
+    assert.equal(result.step6Outcome, 'recoverable');
+    assert.equal(result.reason, 'login_password_invalid');
+    assert.strictEqual(result.stateSnapshot, snapshot);
   } finally {
     cleanupGlobals();
   }

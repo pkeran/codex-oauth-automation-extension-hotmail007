@@ -5552,6 +5552,22 @@ async function step6LoginFromPasswordPage(payload, snapshot) {
 
   if (currentSnapshot.state === 'login_password_invalid') {
     const detail = String(currentSnapshot.errorText || '').trim();
+    if (currentSnapshot.switchTrigger) {
+      /*
+      log(`褰撳墠瀵嗙爜椤垫娴嬪埌閭鎴栧瘑鐮侀敊璇?{detail ? `锛?{detail}` : ''}锛屼紭鍏堝皾璇曞垏鎹㈠埌涓€娆℃€ч獙璇佺爜鐧诲綍銆俙, 'warn', {
+        step: visibleStep,
+        stepKey: 'oauth-login',
+      });
+      */
+      const otpFallbackMessage = detail
+        ? `Invalid credentials detected; trying one-time-code login first (${detail}).`
+        : 'Invalid credentials detected; trying one-time-code login first.';
+      log(otpFallbackMessage, 'warn', {
+        step: visibleStep,
+        stepKey: 'oauth-login',
+      });
+      return step6SwitchToOneTimeCodeLogin(payload, currentSnapshot);
+    }
     log(`当前密码页检测到邮箱或密码错误${detail ? `：${detail}` : ''}，准备回到步骤 ${visibleStep} 重新开始登录。`, 'warn', {
       step: visibleStep,
       stepKey: 'oauth-login',

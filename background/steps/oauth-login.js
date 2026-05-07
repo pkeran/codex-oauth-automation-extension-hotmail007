@@ -194,7 +194,7 @@
           throw new Error(`步骤 ${completionStep}：认证页未返回可识别的登录结果。`);
         } catch (err) {
           throwIfStopped(err);
-          if (String(err?.code || '').trim() === 'RESTART_CURRENT_ATTEMPT') {
+          if (['RESTART_CURRENT_ATTEMPT', 'one_time_code_switch_unexpected_state'].includes(String(err?.code || '').trim())) {
             throw err;
           }
           if (isAddPhoneAuthFailure(err)) {
