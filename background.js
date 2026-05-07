@@ -11612,6 +11612,9 @@ async function runAutoSequenceFromStep(startStep, context = {}) {
       if (isStopError(err)) {
         throw err;
       }
+      if (isRestartCurrentAttemptError(err)) {
+        throw err;
+      }
 
       if (step === 8 && isGoPayCheckoutRestartRequiredFailure(err)) {
         goPayCheckoutRestartCount += 1;

@@ -184,12 +184,19 @@
               recoverableError.code = recoverableCode;
               recoverableError.restartReasonCode = recoverableCode;
             }
+            if (recoverableCode === 'login_password_invalid') {
+              recoverableError.code = 'RESTART_CURRENT_ATTEMPT';
+              recoverableError.restartReasonCode = 'login_password_invalid';
+            }
             throw recoverableError;
           }
 
           throw new Error(`步骤 ${completionStep}：认证页未返回可识别的登录结果。`);
         } catch (err) {
           throwIfStopped(err);
+          if (String(err?.code || '').trim() === 'RESTART_CURRENT_ATTEMPT') {
+            throw err;
+          }
           if (isAddPhoneAuthFailure(err)) {
             throw err;
           }

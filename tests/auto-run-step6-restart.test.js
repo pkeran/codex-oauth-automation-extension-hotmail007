@@ -53,6 +53,7 @@ function extractFunction(name) {
 }
 
 const bundle = [
+  extractFunction('isRestartCurrentAttemptError'),
   extractFunction('isAddPhoneAuthFailure'),
   extractFunction('isAddPhoneAuthUrl'),
   extractFunction('isAddPhoneAuthState'),
@@ -223,17 +224,15 @@ test('auto-run keeps restarting from step 7 after post-login failures without a 
   assert.ok(events.logs.some(({ message }) => /回到步骤 7 重新开始授权流程/.test(message)));
 });
 
-test('auto-run escalates repeated login_password_invalid in the same round into a fresh attempt restart', async () => {
+test('auto-run rethrows RESTART_CURRENT_ATTEMPT immediately without page-level step7 restart', async () => {
   const harness = createHarness({
     failureStep: 7,
-    failureBudget: 2,
+    failureBudget: 1,
     failureMessages: [
-      'Incorrect email address or password.',
-      'Incorrect email address or password.',
+      'RESTART_CURRENT_ATTEMPT::step7 repeated structured recoverable failure',
     ],
     failureCodes: [
-      'login_password_invalid',
-      'login_password_invalid',
+      'RESTART_CURRENT_ATTEMPT',
     ],
     authState: { state: 'password_page', url: 'https://auth.openai.com/log-in/password' },
   });
@@ -241,11 +240,9 @@ test('auto-run escalates repeated login_password_invalid in the same round into 
   const result = await harness.runAndCaptureError();
 
   assert.equal(result?.error?.code, 'RESTART_CURRENT_ATTEMPT');
-  assert.equal(result?.error?.restartReasonCode, 'login_password_invalid');
-  assert.deepStrictEqual(result.events.steps, [7, 7]);
-  assert.equal(result.events.invalidations.length, 1);
-  assert.ok(result.events.logs.some(({ message }) => /login_password_invalid/.test(String(message || ''))));
-  assert.ok(result.events.logs.some(({ message }) => /fresh attempt|整轮/.test(String(message || ''))));
+  assert.deepStrictEqual(result.events.steps, [7]);
+  assert.equal(result.events.invalidations.length, 0);
+  assert.ok(!result.events.logs.some(({ message }) => /回到步骤 7 重新开始授权流程/.test(String(message || ''))));
 });
 
 test('auto-run escalates repeated one_time_code_switch_unexpected_state in the same round into a fresh attempt restart', async () => {

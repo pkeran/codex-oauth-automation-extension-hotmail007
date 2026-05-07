@@ -53,6 +53,7 @@ function extractFunction(name) {
 }
 
 const bundle = [
+  extractFunction('isRestartCurrentAttemptError'),
   extractFunction('isAddPhoneAuthUrl'),
   extractFunction('isAddPhoneAuthState'),
   extractFunction('isMail2925ThreadTerminatedError'),
