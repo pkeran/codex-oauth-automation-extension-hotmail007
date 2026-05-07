@@ -22,6 +22,11 @@ test('panel bridge requests oauth url with step 7 log label payload', () => {
   assert.doesNotMatch(source, /logStep:\s*6/);
 });
 
+test('panel bridge forwards configured SUB2API account priority when requesting oauth url', () => {
+  const source = fs.readFileSync('background/panel-bridge.js', 'utf8');
+  assert.match(source, /sub2apiAccountPriority:\s*state\.sub2apiAccountPriority/);
+});
+
 test('panel bridge can request codex2api oauth url via protocol', async () => {
   const source = fs.readFileSync('background/panel-bridge.js', 'utf8');
   const originalFetch = globalThis.fetch;

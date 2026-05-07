@@ -28,6 +28,8 @@
       DEFAULT_NEX_SMS_COUNTRY_ORDER = [1],
       DEFAULT_NEX_SMS_SERVICE_CODE = 'ot',
       DEFAULT_HERO_SMS_REUSE_ENABLED = true,
+      DEFAULT_FREE_PHONE_REUSE_ENABLED = false,
+      DEFAULT_FREE_PHONE_REUSE_AUTO_ENABLED = false,
       createFiveSimProvider = null,
       HERO_SMS_COUNTRY_ID = 52,
       HERO_SMS_COUNTRY_LABEL = 'Thailand',
@@ -41,6 +43,7 @@
 
     const PHONE_ACTIVATION_STATE_KEY = 'currentPhoneActivation';
     const PHONE_VERIFICATION_CODE_STATE_KEY = 'currentPhoneVerificationCode';
+    const FREE_REUSABLE_PHONE_ACTIVATION_STATE_KEY = 'freeReusablePhoneActivation';
     const REUSABLE_PHONE_ACTIVATION_STATE_KEY = 'reusablePhoneActivation';
     const REUSABLE_PHONE_ACTIVATION_POOL_STATE_KEY = 'phoneReusableActivationPool';
     const PREFERRED_PHONE_ACTIVATION_STATE_KEY = 'phonePreferredActivation';
@@ -623,6 +626,20 @@
     function normalizeHeroSmsReuseEnabled(value) {
       if (value === undefined || value === null) {
         return Boolean(DEFAULT_HERO_SMS_REUSE_ENABLED);
+      }
+      return Boolean(value);
+    }
+
+    function normalizeFreePhoneReuseEnabled(value) {
+      if (value === undefined || value === null) {
+        return Boolean(DEFAULT_FREE_PHONE_REUSE_ENABLED);
+      }
+      return Boolean(value);
+    }
+
+    function normalizeFreePhoneReuseAutoEnabled(value) {
+      if (value === undefined || value === null) {
+        return Boolean(DEFAULT_FREE_PHONE_REUSE_AUTO_ENABLED);
       }
       return Boolean(value);
     }
@@ -1361,6 +1378,61 @@
         ...normalized,
         latestActivationId: resolveActivationOrderId(normalized) || normalized.activationId,
       };
+    }
+
+    function normalizeManualFreeReusablePhoneActivation(record) {
+      if (!record || typeof record !== 'object' || Array.isArray(record)) {
+        return null;
+      }
+      const phoneNumber = String(
+        record.phoneNumber ?? record.number ?? record.phone ?? ''
+      ).trim();
+      if (!phoneNumber) {
+        return null;
+      }
+      const activationId = String(
+        record.activationId ?? record.id ?? record.activation ?? ''
+      ).trim();
+      const latestActivationId = String(
+        record.latestActivationId ?? record.latestActivation ?? activationId
+      ).trim();
+      const countryLabel = String(record.countryLabel || '').trim();
+      return {
+        ...(activationId ? { activationId } : {}),
+        ...(latestActivationId ? { latestActivationId } : {}),
+        phoneNumber,
+        provider: PHONE_SMS_PROVIDER_HERO,
+        serviceCode: String(record.serviceCode || HERO_SMS_SERVICE_CODE).trim() || HERO_SMS_SERVICE_CODE,
+        countryId: normalizeCountryId(record.countryId, HERO_SMS_COUNTRY_ID),
+        ...(countryLabel ? { countryLabel } : {}),
+        successfulUses: normalizeUseCount(record.successfulUses),
+        maxUses: Math.max(1, Math.floor(Number(record.maxUses) || DEFAULT_PHONE_NUMBER_MAX_USES)),
+        source: 'free-manual-reuse',
+        recordedAt: Math.max(0, Number(record.recordedAt) || Date.now()),
+        manualOnly: !latestActivationId,
+      };
+    }
+
+    function normalizeFreeReusablePhoneActivation(record) {
+      const normalized = normalizeActivation(record) || normalizeManualFreeReusablePhoneActivation(record);
+      if (!normalized) {
+        return null;
+      }
+      const recordedAt = Math.max(0, Number(record?.recordedAt) || Date.now());
+      return {
+        ...normalized,
+        source: 'free-manual-reuse',
+        recordedAt,
+        manualOnly: Boolean(record?.manualOnly) || !resolveActivationOrderId(normalized),
+      };
+    }
+
+    function isFreeAutoReuseActivation(activation) {
+      return Boolean(
+        activation
+        && String(activation.source || '').trim() === 'free-manual-reuse'
+        && !Boolean(activation.manualOnly)
+      );
     }
 
     function isSameReusableActivationPoolEntry(left, right) {
@@ -3969,6 +4041,64 @@
       return describeHeroSmsPayload(payload);
     }
 
+    async function retireFreeReusableActivation(reason = '') {
+      const suffix = reason ? ` ${reason}` : '';
+      await addLog(`步骤 9：已清除白嫖复用手机号记录。${suffix}`, 'warn');
+      await clearFreeReusableActivation();
+    }
+
+    async function prepareFreeReusablePhoneActivation(state = {}) {
+      if (!normalizeFreePhoneReuseEnabled(state?.freePhoneReuseEnabled) || !normalizeFreePhoneReuseAutoEnabled(state?.freePhoneReuseAutoEnabled)) {
+        return null;
+      }
+      const savedActivation = normalizeFreeReusablePhoneActivation(
+        state[FREE_REUSABLE_PHONE_ACTIVATION_STATE_KEY]
+      );
+      if (!savedActivation) {
+        return null;
+      }
+      if (savedActivation.provider !== PHONE_SMS_PROVIDER_HERO) {
+        return null;
+      }
+      if (savedActivation.successfulUses >= savedActivation.maxUses) {
+        await retireFreeReusableActivation(
+          `保存的手机号 ${savedActivation.phoneNumber} 已达到 ${savedActivation.successfulUses}/${savedActivation.maxUses} 次。`
+        );
+        return null;
+      }
+      const activationOrderId = resolveActivationOrderId(savedActivation);
+      if (!activationOrderId) {
+        await addLog(
+          `步骤 9：已保存白嫖复用手机号 ${savedActivation.phoneNumber} 缺少 HeroSMS 激活 ID，无法自动复用，将跳过自动白嫖复用。`,
+          'warn'
+        );
+        return null;
+      }
+      await addLog(
+        `步骤 9：准备自动白嫖复用已保存手机号 ${savedActivation.phoneNumber}（${savedActivation.successfulUses + 1}/${savedActivation.maxUses}）。`,
+        'info'
+      );
+      try {
+        await setPhoneActivationStatus(state, savedActivation, 3, 'HeroSMS setStatus(3) for automatic free reuse');
+      } catch (error) {
+        if (isPhoneActivationOrderMissingError(error, savedActivation.provider)) {
+          await retireFreeReusableActivation(`自动白嫖复用号码 ${savedActivation.phoneNumber} 已失效。`);
+          return null;
+        }
+        await addLog(
+          `步骤 9：自动白嫖复用准备失败，将回退到正常购买新号码。${error.message || error}`,
+          'warn'
+        );
+        return null;
+      }
+      return {
+        ...savedActivation,
+        latestActivationId: activationOrderId,
+        source: 'free-manual-reuse',
+        manualOnly: false,
+      };
+    }
+
     async function completePhoneActivation(state = {}, activation) {
       if (getActivationProviderId(activation, state) === PHONE_SMS_PROVIDER_FIVE_SIM) {
         const provider = getFiveSimProviderForState(state);
@@ -4595,6 +4725,18 @@
     async function persistReusableActivation(activation) {
       await setPhoneRuntimeState({
         [REUSABLE_PHONE_ACTIVATION_STATE_KEY]: buildReusableActivationSnapshot(activation) || normalizeActivation(activation) || null,
+      });
+    }
+
+    async function persistFreeReusableActivation(activation) {
+      await setPhoneRuntimeState({
+        [FREE_REUSABLE_PHONE_ACTIVATION_STATE_KEY]: normalizeFreeReusablePhoneActivation(activation),
+      });
+    }
+
+    async function clearFreeReusableActivation() {
+      await setPhoneRuntimeState({
+        [FREE_REUSABLE_PHONE_ACTIVATION_STATE_KEY]: null,
       });
     }
 
@@ -5251,6 +5393,63 @@
       }
 
       await persistReusableActivation(nextReusableActivation);
+    }
+
+    async function markFreeReusableActivationAfterSuccess(state, activation) {
+      if (!normalizeFreePhoneReuseEnabled(state?.freePhoneReuseEnabled)) {
+        return;
+      }
+      const normalizedActivation = normalizeActivation(activation);
+      if (!normalizedActivation || normalizedActivation.provider !== PHONE_SMS_PROVIDER_HERO) {
+        return;
+      }
+      const savedActivation = normalizeFreeReusablePhoneActivation(
+        state?.[FREE_REUSABLE_PHONE_ACTIVATION_STATE_KEY]
+      );
+      if (savedActivation && !isSameReusableActivationPoolEntry(savedActivation, normalizedActivation)) {
+        return;
+      }
+      await persistFreeReusableActivation({
+        ...normalizedActivation,
+        latestActivationId: resolveActivationOrderId(normalizedActivation) || normalizedActivation.activationId,
+        successfulUses: savedActivation && isSameReusableActivationPoolEntry(savedActivation, normalizedActivation)
+          ? Math.max(1, savedActivation.successfulUses)
+          : 1,
+        maxUses: savedActivation?.maxUses ?? normalizedActivation.maxUses ?? DEFAULT_PHONE_NUMBER_MAX_USES,
+        source: 'free-manual-reuse',
+        recordedAt: Date.now(),
+        manualOnly: false,
+      });
+    }
+
+    async function markFreeReusableActivationAfterAutoSuccess(state, activation) {
+      const normalizedActivation = normalizeActivation(activation);
+      const savedActivation = normalizeFreeReusablePhoneActivation(
+        state?.[FREE_REUSABLE_PHONE_ACTIVATION_STATE_KEY]
+        || activation
+      );
+      if (!normalizedActivation || !savedActivation || !isSameReusableActivationPoolEntry(savedActivation, normalizedActivation)) {
+        return;
+      }
+      const successfulUses = savedActivation.successfulUses + 1;
+      const maxUses = Math.max(1, Math.floor(Number(savedActivation.maxUses) || DEFAULT_PHONE_NUMBER_MAX_USES));
+      if (successfulUses >= maxUses) {
+        await clearFreeReusableActivation();
+        await addLog(
+          `步骤 9：自动白嫖复用手机号 ${savedActivation.phoneNumber} 已达到 ${successfulUses}/${maxUses} 次，已清除本地记录。`,
+          'info'
+        );
+        return;
+      }
+      await persistFreeReusableActivation({
+        ...savedActivation,
+        latestActivationId: resolveActivationOrderId(normalizedActivation) || savedActivation.latestActivationId || savedActivation.activationId,
+        successfulUses,
+        maxUses,
+        source: 'free-manual-reuse',
+        recordedAt: Date.now(),
+        manualOnly: false,
+      });
     }
 
     async function waitForPhoneCodeOrRotateNumber(tabId, state, activation) {
@@ -6226,6 +6425,9 @@
         if (shouldCancelActivation && activation) {
           await cancelPhoneActivation(state, activation);
         }
+        if (isFreeAutoReuseActivation(activation)) {
+          await clearFreeReusableActivation();
+        }
         await clearCurrentActivation();
         activation = null;
         shouldCancelActivation = false;
@@ -6328,12 +6530,17 @@
               );
             }
             if (!activation) {
-              activation = await acquirePhoneActivation(state, {
-                blockedCountryIds: getBlockedCountryIds(),
-                countryPriceFloorByCountryId: getCountryPriceFloorById(),
-                skipPreferredActivation: preferredActivationExhausted,
-              });
-              shouldCancelActivation = true;
+              activation = await prepareFreeReusablePhoneActivation(state);
+              if (activation) {
+                shouldCancelActivation = false;
+              } else {
+                activation = await acquirePhoneActivation(state, {
+                  blockedCountryIds: getBlockedCountryIds(),
+                  countryPriceFloorByCountryId: getCountryPriceFloorById(),
+                  skipPreferredActivation: preferredActivationExhausted,
+                });
+                shouldCancelActivation = true;
+              }
               await persistCurrentActivation(activation);
               addPhoneReentryWithSameActivation = 0;
             } else if (preferReuseExistingActivationOnAddPhone) {
@@ -6403,6 +6610,9 @@
                 );
                 if (shouldCancelActivation && activation) {
                   await banPhoneActivation(state, activation);
+                }
+                if (isFreeAutoReuseActivation(activation)) {
+                  await clearFreeReusableActivation();
                 }
                 await clearCurrentActivation();
                 activation = null;
@@ -6669,7 +6879,12 @@
             }
 
             await completePhoneActivation(state, activation);
-            await markActivationReusableAfterSuccess(state, activation);
+            if (isFreeAutoReuseActivation(activation)) {
+              await markFreeReusableActivationAfterAutoSuccess(state, activation);
+            } else {
+              await markFreeReusableActivationAfterSuccess(state, activation);
+              await markActivationReusableAfterSuccess(state, activation);
+            }
             clearCountrySmsFailure(activation.countryId, activation.provider);
             shouldCancelActivation = false;
             await clearCurrentActivation();
@@ -6709,6 +6924,9 @@
 
           if (shouldCancelActivation && activation) {
             await cancelPhoneActivation(state, activation);
+          }
+          if (isFreeAutoReuseActivation(activation)) {
+            await clearFreeReusableActivation();
           }
           await clearCurrentActivation();
           activation = null;
@@ -6770,6 +6988,9 @@
       } catch (error) {
         if (shouldCancelActivation && activation) {
           await cancelPhoneActivation(state, activation);
+        }
+        if (isFreeAutoReuseActivation(activation)) {
+          await clearFreeReusableActivation();
         }
         await clearCurrentActivation();
         throw sanitizePhoneRestartStep7Error(sanitizePhoneCodeTimeoutError(error));

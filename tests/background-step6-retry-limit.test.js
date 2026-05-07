@@ -2,28 +2,43 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 
-test('step 6 runs cookie cleanup and completes from background', async () => {
-  const source = fs.readFileSync('background/steps/clear-login-cookies.js', 'utf8');
+test('step 6 waits for registration success and completes from background', async () => {
+  const source = fs.readFileSync('background/steps/wait-registration-success.js', 'utf8');
   const globalScope = {};
   const api = new Function('self', `${source}; return self.MultiPageBackgroundStep6;`)(globalScope);
 
   const events = {
-    cleanupCalls: 0,
+    logs: [],
+    slept: [],
     completedSteps: [],
   };
 
   const executor = api.createStep6Executor({
+    addLog: async (message, level = 'info') => {
+      events.logs.push({ message, level });
+    },
     completeStepFromBackground: async (step) => {
       events.completedSteps.push(step);
     },
-    runPreStep6CookieCleanup: async () => {
-      events.cleanupCalls += 1;
+    registrationSuccessWaitMs: 20000,
+    sleepWithStop: async (ms) => {
+      events.slept.push(ms);
     },
   });
 
   await executor.executeStep6();
 
-  assert.equal(events.cleanupCalls, 1);
+  assert.deepStrictEqual(events.slept, [20000]);
+  assert.deepStrictEqual(events.logs, [
+    {
+      message: '步骤 6：等待 20 秒，确认注册成功并让页面稳定...',
+      level: 'info',
+    },
+    {
+      message: '步骤 6：注册成功等待完成，准备继续获取 OAuth 链接并登录。',
+      level: 'ok',
+    },
+  ]);
   assert.deepStrictEqual(events.completedSteps, [6]);
 });
 

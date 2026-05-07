@@ -32,7 +32,7 @@ importScripts(
   'background/steps/fill-password.js',
   'background/steps/fetch-signup-code.js',
   'background/steps/fill-profile.js',
-  'background/steps/clear-login-cookies.js',
+  'background/steps/wait-registration-success.js',
   'background/steps/create-plus-checkout.js',
   'background/steps/fill-plus-checkout.js',
   'background/steps/gopay-manual-confirm.js',
@@ -255,6 +255,7 @@ const DEFAULT_CODEX2API_URL = 'http://localhost:8080/admin/accounts';
 const DEFAULT_GPC_HELPER_API_URL = 'https://gopay.hwork.pro';
 const DEFAULT_SUB2API_GROUP_NAME = 'codex';
 const DEFAULT_SUB2API_PROXY_NAME = '';
+const DEFAULT_SUB2API_ACCOUNT_PRIORITY = 1;
 const CONTRIBUTION_SOURCE_CPA = 'cpa';
 const CONTRIBUTION_SOURCE_SUB2API = 'sub2api';
 const CONTRIBUTION_SUB2API_DEFAULT_GROUP_NAME = 'codex号池';
@@ -397,6 +398,8 @@ const DEFAULT_NEX_SMS_BASE_URL = 'https://api.nexsms.net';
 const DEFAULT_NEX_SMS_SERVICE_CODE = 'ot';
 const DEFAULT_NEX_SMS_COUNTRY_ORDER = Object.freeze([1]);
 const DEFAULT_HERO_SMS_REUSE_ENABLED = true;
+const DEFAULT_FREE_PHONE_REUSE_ENABLED = false;
+const DEFAULT_FREE_PHONE_REUSE_AUTO_ENABLED = false;
 const HERO_SMS_ACQUIRE_PRIORITY_COUNTRY = 'country';
 const HERO_SMS_ACQUIRE_PRIORITY_PRICE = 'price';
 const HERO_SMS_ACQUIRE_PRIORITY_PRICE_HIGH = 'price_high';
@@ -603,6 +606,7 @@ const PERSISTED_SETTING_DEFAULTS = {
   sub2apiPassword: '',
   sub2apiGroupName: DEFAULT_SUB2API_GROUP_NAME,
   sub2apiGroupNames: DEFAULT_SUB2API_GROUP_NAMES,
+  sub2apiAccountPriority: DEFAULT_SUB2API_ACCOUNT_PRIORITY,
   sub2apiDefaultProxyName: DEFAULT_SUB2API_PROXY_NAME,
   ipProxyEnabled: false,
   ipProxyService: DEFAULT_IP_PROXY_SERVICE,
@@ -723,6 +727,8 @@ const PERSISTED_SETTING_DEFAULTS = {
   phoneSmsProvider: DEFAULT_PHONE_SMS_PROVIDER,
   heroSmsApiKey: '',
   heroSmsReuseEnabled: DEFAULT_HERO_SMS_REUSE_ENABLED,
+  freePhoneReuseEnabled: DEFAULT_FREE_PHONE_REUSE_ENABLED,
+  freePhoneReuseAutoEnabled: DEFAULT_FREE_PHONE_REUSE_AUTO_ENABLED,
   heroSmsAcquirePriority: DEFAULT_HERO_SMS_ACQUIRE_PRIORITY,
   heroSmsMaxPrice: '',
   heroSmsPreferredPrice: '',
@@ -746,23 +752,7 @@ const PERSISTED_SETTING_DEFAULTS = {
 const PERSISTED_SETTING_KEYS = Object.keys(PERSISTED_SETTING_DEFAULTS);
 const SETTINGS_EXPORT_SCHEMA_VERSION = 1;
 const SETTINGS_EXPORT_FILENAME_PREFIX = 'multipage-settings';
-const STEP6_PRE_LOGIN_COOKIE_CLEAR_DELAY_MS = 25000;
-const PRE_LOGIN_COOKIE_CLEAR_DOMAINS = [
-  'chatgpt.com',
-  'chat.openai.com',
-  'openai.com',
-  'auth.openai.com',
-  'auth0.openai.com',
-  'accounts.openai.com',
-];
-const PRE_LOGIN_COOKIE_CLEAR_ORIGINS = [
-  'https://chatgpt.com',
-  'https://chat.openai.com',
-  'https://auth.openai.com',
-  'https://auth0.openai.com',
-  'https://accounts.openai.com',
-  'https://openai.com',
-];
+const STEP6_REGISTRATION_SUCCESS_WAIT_MS = 20000;
 
 const DEFAULT_STATE = {
   currentStep: 0, // 当前流程执行到的步骤编号。
@@ -851,6 +841,7 @@ const DEFAULT_STATE = {
   currentPhoneVerificationCountdownEndsAt: 0,
   currentPhoneVerificationCountdownWindowIndex: 0,
   currentPhoneVerificationCountdownWindowTotal: 0,
+  freeReusablePhoneActivation: null,
   reusablePhoneActivation: null,
   phoneReusableActivationPool: [],
   signupPhoneNumber: '',
@@ -2222,6 +2213,18 @@ function normalizeSub2ApiGroupNames(value = '') {
   return names;
 }
 
+function normalizeSub2ApiAccountPriority(value, fallback = DEFAULT_SUB2API_ACCOUNT_PRIORITY) {
+  const rawValue = String(value ?? '').trim();
+  const numeric = Number(rawValue);
+  if (!rawValue || !Number.isSafeInteger(numeric) || numeric < 1) {
+    const fallbackNumber = Number(fallback);
+    return Number.isSafeInteger(fallbackNumber) && fallbackNumber >= 1
+      ? fallbackNumber
+      : DEFAULT_SUB2API_ACCOUNT_PRIORITY;
+  }
+  return numeric;
+}
+
 function normalizePersistentSettingValue(key, value) {
   switch (key) {
     case 'panelMode':
@@ -2242,6 +2245,8 @@ function normalizePersistentSettingValue(key, value) {
       return String(value || '').trim();
     case 'sub2apiGroupNames':
       return normalizeSub2ApiGroupNames(value);
+    case 'sub2apiAccountPriority':
+      return normalizeSub2ApiAccountPriority(value);
     case 'sub2apiDefaultProxyName':
       return String(value || '').trim();
     case 'ipProxyEnabled':
@@ -2511,6 +2516,10 @@ function normalizePersistentSettingValue(key, value) {
       return String(value || '');
     case 'heroSmsReuseEnabled':
       return Boolean(value);
+    case 'freePhoneReuseEnabled':
+      return Boolean(value);
+    case 'freePhoneReuseAutoEnabled':
+      return Boolean(value);
     case 'heroSmsAcquirePriority':
       return normalizeHeroSmsAcquirePriority(value);
     case 'heroSmsMaxPrice':
@@ -2712,6 +2721,48 @@ async function getState() {
     accountRunHistory,
     accountCostLedger,
   };
+}
+
+function normalizeFreeReusablePhoneActivation(record = {}, state = {}) {
+  if (!record || typeof record !== 'object' || Array.isArray(record)) {
+    return null;
+  }
+  const phoneNumber = String(record.phoneNumber ?? record.number ?? record.phone ?? '').trim();
+  if (!phoneNumber) {
+    return null;
+  }
+  const provider = normalizePhoneSmsProvider(record.provider || state?.phoneSmsProvider || DEFAULT_PHONE_SMS_PROVIDER);
+  const activationId = String(record.activationId || record.id || record.activation || '').trim();
+  const latestActivationId = String(record.latestActivationId || record.latestActivation || activationId).trim();
+  const countryLabel = String(record.countryLabel || '').trim();
+  const normalized = {
+    provider,
+    phoneNumber,
+    serviceCode: String(
+      record.serviceCode
+      || (provider === '5sim' ? DEFAULT_FIVE_SIM_PRODUCT : (provider === 'nexsms' ? DEFAULT_NEX_SMS_SERVICE_CODE : HERO_SMS_SERVICE_CODE))
+    ).trim(),
+    successfulUses: Math.max(0, Math.floor(Number(record.successfulUses) || 0)),
+    maxUses: Math.max(1, Math.floor(Number(record.maxUses) || 3)),
+    source: 'free-manual-reuse',
+    recordedAt: Math.max(0, Number(record.recordedAt) || Date.now()),
+    manualOnly: !latestActivationId,
+  };
+  if (provider === '5sim') {
+    normalized.countryId = normalizeFiveSimCountryId(record.countryCode ?? record.countryId ?? record.country ?? '', DEFAULT_FIVE_SIM_COUNTRY_ID);
+  } else if (provider === 'nexsms') {
+    normalized.countryId = normalizeNexSmsCountryId(record.countryId ?? record.country ?? 0, 0);
+  } else {
+    normalized.countryId = normalizeCountryId(record.countryId ?? record.country ?? state?.heroSmsCountryId ?? HERO_SMS_COUNTRY_ID, HERO_SMS_COUNTRY_ID);
+  }
+  if (countryLabel) {
+    normalized.countryLabel = countryLabel;
+  }
+  if (activationId) {
+    normalized.activationId = activationId;
+    normalized.latestActivationId = latestActivationId || activationId;
+  }
+  return normalized;
 }
 
 async function initializeSessionStorageAccess() {
@@ -3237,6 +3288,7 @@ async function resetState() {
       'accounts',
       'tabRegistry',
       'sourceLastUrls',
+      'freeReusablePhoneActivation',
       'reusablePhoneActivation',
       'phoneReusableActivationPool',
       'luckmailApiKey',
@@ -3272,6 +3324,21 @@ async function resetState() {
   )
     ? prev.reusablePhoneActivation
     : null;
+  const freeReusablePhoneActivation = typeof normalizeFreeReusablePhoneActivation === 'function'
+    ? normalizeFreeReusablePhoneActivation(prev.freeReusablePhoneActivation, persistedSettings)
+    : (
+      prev.freeReusablePhoneActivation
+      && typeof prev.freeReusablePhoneActivation === 'object'
+      && !Array.isArray(prev.freeReusablePhoneActivation)
+      && String(
+        prev.freeReusablePhoneActivation.phoneNumber
+        ?? prev.freeReusablePhoneActivation.number
+        ?? prev.freeReusablePhoneActivation.phone
+        ?? ''
+      ).trim()
+        ? prev.freeReusablePhoneActivation
+        : null
+    );
   const phoneReusableActivationPool = Array.isArray(prev.phoneReusableActivationPool)
     ? prev.phoneReusableActivationPool
       .map((entry) => normalizePhonePreferredActivation(entry))
@@ -3297,11 +3364,48 @@ async function resetState() {
     luckmailPreserveTagName: String(prev.luckmailPreserveTagName || '').trim() || DEFAULT_LUCKMAIL_PRESERVE_TAG_NAME,
     currentLuckmailPurchase: null,
     currentLuckmailMailCursor: null,
+    freeReusablePhoneActivation,
     // Keep reusable phone activation across round resets so the same number can be reactivated up to maxUses.
     reusablePhoneActivation,
     phoneReusableActivationPool,
     preferredIcloudHost: prev.preferredIcloudHost || '',
   });
+}
+
+async function clearFreeReusablePhoneActivation() {
+  await setState({ freeReusablePhoneActivation: null });
+  broadcastDataUpdate({ freeReusablePhoneActivation: null });
+  await addLog('已清除白嫖复用手机号记录。', 'ok');
+  return { ok: true, freeReusablePhoneActivation: null };
+}
+
+async function setFreeReusablePhoneActivation(record = {}) {
+  const state = await getState();
+  const fallbackActivation = normalizePhonePreferredActivation(record)
+    || normalizePhonePreferredActivation(state?.currentPhoneActivation)
+    || normalizePhonePreferredActivation(state?.reusablePhoneActivation)
+    || normalizePhonePreferredActivation(state?.freeReusablePhoneActivation);
+  const phoneNumber = String(record.phoneNumber || record.number || record.phone || fallbackActivation?.phoneNumber || '').trim();
+  if (!phoneNumber) {
+    throw new Error('请先填写白嫖复用手机号。');
+  }
+  const normalized = normalizeFreeReusablePhoneActivation({
+    ...(fallbackActivation || {}),
+    ...(record || {}),
+    phoneNumber,
+  }, state);
+  if (!normalized) {
+    throw new Error('白嫖复用手机号记录无效。');
+  }
+  await setState({ freeReusablePhoneActivation: normalized });
+  broadcastDataUpdate({ freeReusablePhoneActivation: normalized });
+  await addLog(
+    normalized.activationId
+      ? `已手动记录白嫖复用手机号 ${normalized.phoneNumber}（#${normalized.latestActivationId || normalized.activationId}）。`
+      : `已手动记录白嫖复用手机号 ${normalized.phoneNumber}。未填写 HeroSMS 激活 ID，仅支持后续手动补全。`,
+    'ok'
+  );
+  return { ok: true, freeReusablePhoneActivation: normalized };
 }
 
 /**
@@ -9616,7 +9720,7 @@ const AUTO_RUN_BACKGROUND_COMPLETED_STEP_KEYS = new Set([
   'open-chatgpt',
   'submit-signup-email',
   'fetch-signup-code',
-  'clear-login-cookies',
+  'wait-registration-success',
   'plus-checkout-create',
   'plus-checkout-billing',
   'paypal-approve',
@@ -11691,8 +11795,10 @@ const step5Executor = self.MultiPageBackgroundStep5?.createStep5Executor({
   sendToContentScript,
 });
 const step6Executor = self.MultiPageBackgroundStep6?.createStep6Executor({
+  addLog,
   completeStepFromBackground,
-  runPreStep6CookieCleanup,
+  registrationSuccessWaitMs: STEP6_REGISTRATION_SUCCESS_WAIT_MS,
+  sleepWithStop,
 });
 const step7Executor = self.MultiPageBackgroundStep7?.createStep7Executor({
   addLog,
@@ -11853,7 +11959,7 @@ const stepExecutorsByKey = {
   'fill-password': (state) => step3Executor.executeStep3(state),
   'fetch-signup-code': (state) => step4Executor.executeStep4(state),
   'fill-profile': (state) => step5Executor.executeStep5(state),
-  'clear-login-cookies': () => step6Executor.executeStep6(),
+  'wait-registration-success': () => step6Executor.executeStep6(),
   'plus-checkout-create': (state) => plusCheckoutCreateExecutor.executePlusCheckoutCreate(state),
   'plus-checkout-billing': (state) => plusCheckoutBillingExecutor.executePlusCheckoutBilling(state),
   'gopay-subscription-confirm': (state) => goPayManualConfirmExecutor.executeGoPayManualConfirm(state),
@@ -11879,6 +11985,7 @@ const messageRouter = self.MultiPageBackgroundMessageRouter?.createMessageRouter
   checkIcloudSession,
   clearAccountCostLedger: (...args) => clearAndBroadcastAccountCostLedger(...args),
   clearAccountRunHistory: (...args) => clearAndBroadcastAccountRunHistory(...args),
+  clearFreeReusablePhoneActivation,
   deleteAccountRunHistoryRecords: (...args) => deleteAndBroadcastAccountRunHistoryRecords(...args),
   clearAutoRunTimerAlarm,
   clearLuckmailRuntimeState,
@@ -11973,6 +12080,7 @@ const messageRouter = self.MultiPageBackgroundMessageRouter?.createMessageRouter
   setContributionMode,
   setEmailState,
   setEmailStateSilently,
+  setFreeReusablePhoneActivation,
   setSignupPhoneState,
   setSignupPhoneStateSilently,
   setIcloudAliasPreservedState,
@@ -12235,125 +12343,6 @@ async function executeStep4(state) {
 
 async function executeStep5(state) {
   return step5Executor.executeStep5(state);
-}
-
-// ============================================================
-// Step 6 Cookie Cleanup
-// ============================================================
-
-function normalizeCookieDomainForMatch(domain) {
-  return String(domain || '').trim().replace(/^\.+/, '').toLowerCase();
-}
-
-function shouldClearPreLoginCookie(cookie) {
-  const domain = normalizeCookieDomainForMatch(cookie?.domain);
-  if (!domain) return false;
-  return PRE_LOGIN_COOKIE_CLEAR_DOMAINS.some((target) => (
-    domain === target || domain.endsWith(`.${target}`)
-  ));
-}
-
-function buildCookieRemovalUrl(cookie) {
-  const host = normalizeCookieDomainForMatch(cookie?.domain);
-  const path = String(cookie?.path || '/').startsWith('/')
-    ? String(cookie?.path || '/')
-    : `/${String(cookie?.path || '')}`;
-  return `https://${host}${path}`;
-}
-
-async function collectCookiesForPreLoginCleanup() {
-  if (!chrome.cookies?.getAll) {
-    return [];
-  }
-
-  const stores = chrome.cookies.getAllCookieStores
-    ? await chrome.cookies.getAllCookieStores()
-    : [{ id: undefined }];
-  const cookies = [];
-  const seen = new Set();
-
-  for (const store of stores) {
-    const storeId = store?.id;
-    const batch = await chrome.cookies.getAll(storeId ? { storeId } : {});
-    for (const cookie of batch || []) {
-      if (!shouldClearPreLoginCookie(cookie)) continue;
-      const key = [
-        cookie.storeId || storeId || '',
-        cookie.domain || '',
-        cookie.path || '',
-        cookie.name || '',
-        cookie.partitionKey ? JSON.stringify(cookie.partitionKey) : '',
-      ].join('|');
-      if (seen.has(key)) continue;
-      seen.add(key);
-      cookies.push(cookie);
-    }
-  }
-
-  return cookies;
-}
-
-async function removeCookieDirectly(cookie) {
-  const details = {
-    url: buildCookieRemovalUrl(cookie),
-    name: cookie.name,
-  };
-
-  if (cookie.storeId) {
-    details.storeId = cookie.storeId;
-  }
-  if (cookie.partitionKey) {
-    details.partitionKey = cookie.partitionKey;
-  }
-
-  try {
-    const result = await chrome.cookies.remove(details);
-    return Boolean(result);
-  } catch (err) {
-    console.warn(LOG_PREFIX, '[removeCookieDirectly] failed', {
-      domain: cookie?.domain,
-      name: cookie?.name,
-      message: getErrorMessage(err),
-    });
-    return false;
-  }
-}
-
-async function runPreStep6CookieCleanup() {
-  await addLog(
-    `步骤 6：开始前等待 ${Math.round(STEP6_PRE_LOGIN_COOKIE_CLEAR_DELAY_MS / 1000)} 秒，然后直接删除 ChatGPT / OpenAI cookies...`,
-    'info'
-  );
-
-  await sleepWithStop(STEP6_PRE_LOGIN_COOKIE_CLEAR_DELAY_MS);
-
-  if (!chrome.cookies?.getAll || !chrome.cookies?.remove) {
-    await addLog('步骤 6：当前浏览器不支持 cookies API，无法直接删除 cookies。', 'warn');
-    return;
-  }
-
-  const cookies = await collectCookiesForPreLoginCleanup();
-  let removedCount = 0;
-
-  for (const cookie of cookies) {
-    throwIfStopped();
-    if (await removeCookieDirectly(cookie)) {
-      removedCount += 1;
-    }
-  }
-
-  if (chrome.browsingData?.removeCookies) {
-    try {
-      await chrome.browsingData.removeCookies({
-        since: 0,
-        origins: PRE_LOGIN_COOKIE_CLEAR_ORIGINS,
-      });
-    } catch (err) {
-      await addLog(`步骤 6：browsingData 补扫 cookies 失败：${getErrorMessage(err)}`, 'warn');
-    }
-  }
-
-  await addLog(`步骤 6：已直接删除 ${removedCount} 个 ChatGPT / OpenAI cookies，准备继续获取链接并登录。`, 'ok');
 }
 
 // ============================================================

@@ -15,6 +15,7 @@
       checkIcloudSession,
       clearAccountCostLedger,
       clearAccountRunHistory,
+      clearFreeReusablePhoneActivation,
       deleteAccountRunHistoryRecords,
       clearAutoRunTimerAlarm,
       clearLuckmailRuntimeState,
@@ -108,6 +109,7 @@
       setContributionMode,
       setEmailState,
       setEmailStateSilently,
+      setFreeReusablePhoneActivation,
       setSignupPhoneState,
       setSignupPhoneStateSilently,
       setIcloudAliasPreservedState,
@@ -1350,6 +1352,22 @@
           const phoneNumber = resolveSignupPhonePayload(message.payload) || null;
           await setSignupPhoneState(phoneNumber);
           return { ok: true, phoneNumber };
+        }
+
+        case 'SAVE_FREE_REUSABLE_PHONE': {
+          const state = await getState();
+          if (isAutoRunLockedState(state)) {
+            throw new Error('自动流程运行中，当前不能手动修改白嫖复用手机号。');
+          }
+          return await setFreeReusablePhoneActivation(message.payload || {});
+        }
+
+        case 'CLEAR_FREE_REUSABLE_PHONE': {
+          const state = await getState();
+          if (isAutoRunLockedState(state)) {
+            throw new Error('自动流程运行中，当前不能手动清除白嫖复用手机号。');
+          }
+          return await clearFreeReusablePhoneActivation();
         }
 
         case 'FETCH_GENERATED_EMAIL': {

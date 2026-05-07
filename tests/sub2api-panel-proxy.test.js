@@ -180,6 +180,50 @@ test('SUB2API step 10 uses the same proxy for code exchange and account creation
   assert.equal(context.completed[0].step, 10);
 });
 
+test('SUB2API step 10 writes configured account priority into create-account payload', async () => {
+  const fetchCalls = [];
+  const context = createSub2ApiPanelContext(fetchCalls);
+
+  await vm.runInContext(`
+    step9_submitOpenAiCallback({
+      localhostUrl: 'http://localhost:1455/auth/callback?code=callback-code&state=oauth-state',
+      sub2apiUrl: 'https://sub.example/admin/accounts',
+      sub2apiEmail: 'admin@example.com',
+      sub2apiPassword: 'secret',
+      sub2apiGroupName: 'codex',
+      sub2apiSessionId: 'session-1',
+      sub2apiOAuthState: 'oauth-state',
+      sub2apiGroupId: 5,
+      sub2apiAccountPriority: 9
+    })
+  `, context);
+
+  const createCall = fetchCalls.find((call) => call.path === '/api/v1/admin/accounts');
+  assert.equal(createCall.body.priority, 9);
+});
+
+test('SUB2API step 10 rejects invalid account priority values', async () => {
+  const fetchCalls = [];
+  const context = createSub2ApiPanelContext(fetchCalls);
+
+  await assert.rejects(
+    () => vm.runInContext(`
+      step9_submitOpenAiCallback({
+        localhostUrl: 'http://localhost:1455/auth/callback?code=callback-code&state=oauth-state',
+        sub2apiUrl: 'https://sub.example/admin/accounts',
+        sub2apiEmail: 'admin@example.com',
+        sub2apiPassword: 'secret',
+        sub2apiGroupName: 'codex',
+        sub2apiSessionId: 'session-1',
+        sub2apiOAuthState: 'oauth-state',
+        sub2apiGroupId: 5,
+        sub2apiAccountPriority: 0
+      })
+    `, context),
+    /优先级必须是大于等于 1 的整数/
+  );
+});
+
 test('SUB2API panel accepts Plus platform verify step 13', async () => {
   const fetchCalls = [];
   const context = createSub2ApiPanelContext(fetchCalls);

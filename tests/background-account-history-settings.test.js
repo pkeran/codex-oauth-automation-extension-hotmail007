@@ -78,6 +78,7 @@ test('background account history settings are normalized independently from hotm
     extractFunction('normalizeFiveSimMaxPrice'),
     extractFunction('normalizeFiveSimCountryFallback'),
     extractFunction('normalizeSub2ApiGroupNames'),
+    extractFunction('normalizeSub2ApiAccountPriority'),
     extractFunction('normalizePersistentSettingValue'),
   ].join('\n');
 
@@ -103,6 +104,7 @@ const PHONE_CODE_POLL_ROUNDS_MIN = 1;
 const PHONE_CODE_POLL_ROUNDS_MAX = 120;
 const DEFAULT_PHONE_CODE_POLL_ROUNDS = 4;
 const DEFAULT_SUB2API_PROXY_NAME = '';
+const DEFAULT_SUB2API_ACCOUNT_PRIORITY = 1;
 const HOTMAIL_SERVICE_MODE_REMOTE = 'remote';
 const HOTMAIL_SERVICE_MODE_LOCAL = 'local';
 const VERIFICATION_RESEND_COUNT_MIN = 0;
@@ -249,6 +251,14 @@ return {
   assert.equal(
     api.normalizePersistentSettingValue('sub2apiDefaultProxyName', ' proxy-a '),
     'proxy-a'
+  );
+  assert.equal(
+    api.normalizePersistentSettingValue('sub2apiAccountPriority', '9'),
+    9
+  );
+  assert.equal(
+    api.normalizePersistentSettingValue('sub2apiAccountPriority', '0'),
+    1
   );
   assert.deepStrictEqual(
     api.normalizePersistentSettingValue('sub2apiGroupNames', [' codex ', 'openai-plus', 'CODEX']),

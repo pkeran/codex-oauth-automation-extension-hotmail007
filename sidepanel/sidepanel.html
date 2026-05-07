@@ -210,6 +210,10 @@
           <button id="btn-add-sub2api-group" class="btn btn-outline btn-sm data-inline-btn" type="button">添加</button>
         </div>
       </div>
+      <div class="data-row" id="row-sub2api-account-priority" style="display:none;">
+        <span class="data-label">优先级</span>
+        <input type="number" id="input-sub2api-account-priority" class="data-input mono" value="1" min="1" step="1" />
+      </div>
       <div class="data-row" id="row-sub2api-default-proxy" style="display:none;">
         <span class="data-label">默认代理</span>
         <input type="text" id="input-sub2api-default-proxy" class="data-input" placeholder="留空则不使用代理；或填写代理名称 / ID" />
@@ -1479,6 +1483,28 @@
                             </label>
                           </div>
                         </div>
+                        <div id="row-free-phone-reuse-enabled" class="hero-sms-price-control hero-sms-price-control-reuse">
+                          <span class="hero-sms-settings-caption">白嫖复用</span>
+                          <div class="setting-controls hero-sms-toggle-controls">
+                            <label class="toggle-switch" for="input-free-phone-reuse-enabled" title="开启后允许保存 HeroSMS 白嫖复用手机号">
+                              <input type="checkbox" id="input-free-phone-reuse-enabled" />
+                              <span class="toggle-switch-track" aria-hidden="true">
+                                <span class="toggle-switch-thumb"></span>
+                              </span>
+                            </label>
+                          </div>
+                        </div>
+                        <div id="row-free-phone-reuse-auto-enabled" class="hero-sms-price-control hero-sms-price-control-reuse">
+                          <span class="hero-sms-settings-caption">自动白嫖复用</span>
+                          <div class="setting-controls hero-sms-toggle-controls">
+                            <label class="toggle-switch" for="input-free-phone-reuse-auto-enabled" title="开启后优先自动复用已保存的 HeroSMS 白嫖号码">
+                              <input type="checkbox" id="input-free-phone-reuse-auto-enabled" />
+                              <span class="toggle-switch-track" aria-hidden="true">
+                                <span class="toggle-switch-thumb"></span>
+                              </span>
+                            </label>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -1689,6 +1715,16 @@
             </div>
           </div>
           <div id="row-phone-runtime-fold" class="phone-verification-subfold-row" style="display:none;">
+            <div class="data-row" id="row-free-reusable-phone" style="display:none;">
+              <span class="data-label">白嫖号码</span>
+              <div class="data-inline signup-phone-runtime-inline">
+                <input type="text" id="input-free-reusable-phone" class="data-input mono signup-phone-runtime-input" placeholder="复用手机号" />
+                <span id="display-free-reusable-phone-country" class="data-value">地区：未保存</span>
+                <span id="display-free-reusable-phone" class="data-value mono">未保存</span>
+                <button id="btn-save-free-reusable-phone" class="btn btn-outline btn-xs" type="button">记录</button>
+                <button id="btn-clear-free-reusable-phone" class="btn btn-ghost btn-xs" type="button">清除</button>
+              </div>
+            </div>
             <div class="data-row" id="row-hero-sms-preferred-activation" style="display:none;">
               <span class="data-label">优先号码</span>
               <div class="data-inline">

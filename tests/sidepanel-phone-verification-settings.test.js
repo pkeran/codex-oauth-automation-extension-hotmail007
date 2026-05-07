@@ -146,6 +146,14 @@ test('sidepanel html exposes phone verification toggle and multi-provider SMS ro
   assert.match(html, /id="row-hero-sms-current-code"/);
   assert.match(html, /id="row-hero-sms-preferred-activation"/);
   assert.match(html, /id="select-hero-sms-preferred-activation"/);
+  assert.match(html, /id="row-free-phone-reuse-enabled"/);
+  assert.match(html, /id="input-free-phone-reuse-enabled"/);
+  assert.match(html, /id="row-free-phone-reuse-auto-enabled"/);
+  assert.match(html, /id="input-free-phone-reuse-auto-enabled"/);
+  assert.match(html, /id="row-free-reusable-phone"/);
+  assert.match(html, /id="input-free-reusable-phone"/);
+  assert.match(html, /id="btn-save-free-reusable-phone"/);
+  assert.match(html, /id="btn-clear-free-reusable-phone"/);
   assert.match(html, /id="row-phone-replacement-limit"/);
   assert.match(html, /id="row-phone-verification-resend-count"/);
   assert.match(html, /id="row-phone-code-wait-seconds"/);
@@ -432,6 +440,9 @@ const rowHeroSmsCurrentNumber = { style: { display: 'none' } };
 const rowHeroSmsCurrentCountdown = { style: { display: 'none' } };
 const rowHeroSmsPriceTiers = { style: { display: 'none' } };
 const rowHeroSmsCurrentCode = { style: { display: 'none' } };
+const rowFreePhoneReuseEnabled = { style: { display: 'none' } };
+const rowFreePhoneReuseAutoEnabled = { style: { display: 'none' } };
+const rowFreeReusablePhone = { style: { display: 'none' } };
 const rowHeroSmsPreferredActivation = { style: { display: 'none' } };
 const rowPhoneVerificationResendCount = { style: { display: 'none' } };
 const rowPhoneReplacementLimit = { style: { display: 'none' } };
@@ -654,6 +665,9 @@ const rowHeroSmsCurrentNumber = { style: { display: 'none' } };
 const rowHeroSmsCurrentCountdown = { style: { display: 'none' } };
 const rowHeroSmsPriceTiers = { style: { display: 'none' } };
 const rowHeroSmsCurrentCode = { style: { display: 'none' } };
+const rowFreePhoneReuseEnabled = { style: { display: 'none' } };
+const rowFreePhoneReuseAutoEnabled = { style: { display: 'none' } };
+const rowFreeReusablePhone = { style: { display: 'none' } };
 const rowHeroSmsPreferredActivation = { style: { display: 'none' } };
 const rowPhoneVerificationResendCount = { style: { display: 'none' } };
 const rowPhoneReplacementLimit = { style: { display: 'none' } };
@@ -777,6 +791,7 @@ const inputSub2ApiUrl = { value: '' };
 const inputSub2ApiEmail = { value: '' };
 const inputSub2ApiPassword = { value: '' };
 const inputSub2ApiGroup = { value: '' };
+const inputSub2ApiAccountPriority = { value: '9' };
 const inputSub2ApiDefaultProxy = { value: '' };
 const inputCodex2ApiUrl = { value: '' };
 const inputCodex2ApiAdminKey = { value: '' };
@@ -815,6 +830,8 @@ const inputFiveSimProduct = { value: 'openai' };
 const inputNexSmsApiKey = { value: 'nex-key' };
 const inputNexSmsServiceCode = { value: 'ot' };
 const inputHeroSmsReuseEnabled = { checked: true };
+const inputFreePhoneReuseEnabled = { checked: true };
+const inputFreePhoneReuseAutoEnabled = { checked: true };
 const selectHeroSmsAcquirePriority = { value: 'price' };
 function getSelectedPhonePreferredActivation() {
   return {
@@ -850,6 +867,8 @@ const PHONE_CODE_POLL_INTERVAL_SECONDS_MAX = 30;
 const PHONE_CODE_POLL_MAX_ROUNDS_MIN = 1;
 const PHONE_CODE_POLL_MAX_ROUNDS_MAX = 120;
 const DEFAULT_HERO_SMS_REUSE_ENABLED = true;
+const DEFAULT_FREE_PHONE_REUSE_ENABLED = false;
+const DEFAULT_FREE_PHONE_REUSE_AUTO_ENABLED = false;
 const HERO_SMS_ACQUIRE_PRIORITY_COUNTRY = 'country';
 const HERO_SMS_ACQUIRE_PRIORITY_PRICE = 'price';
 const DEFAULT_HERO_SMS_ACQUIRE_PRIORITY = HERO_SMS_ACQUIRE_PRIORITY_COUNTRY;
@@ -915,6 +934,9 @@ ${extractFunction('normalizePhoneCodeTimeoutWindowsValue')}
 ${extractFunction('normalizePhoneCodePollIntervalSecondsValue')}
 ${extractFunction('normalizePhoneCodePollMaxRoundsValue')}
 ${extractFunction('normalizeHeroSmsReuseEnabledValue')}
+${extractFunction('normalizeFreePhoneReuseEnabledValue')}
+${extractFunction('normalizeFreePhoneReuseAutoEnabledValue')}
+${extractFunction('normalizeSub2ApiAccountPriorityValue')}
 ${extractFunction('normalizeHeroSmsAcquirePriority')}
 ${extractFunction('normalizeHeroSmsCountryId')}
 ${extractFunction('normalizeHeroSmsCountryLabel')}
@@ -948,9 +970,12 @@ return { collectSettingsPayload };
   assert.equal(payload.fiveSimProduct, 'openai');
   assert.equal(payload.nexSmsApiKey, 'nex-key');
   assert.equal(payload.autoRunNeverStop, true);
+  assert.equal(payload.sub2apiAccountPriority, 9);
   assert.deepStrictEqual(payload.nexSmsCountryOrder, [1]);
   assert.equal(payload.nexSmsServiceCode, 'ot');
   assert.equal(payload.heroSmsReuseEnabled, true);
+  assert.equal(payload.freePhoneReuseEnabled, true);
+  assert.equal(payload.freePhoneReuseAutoEnabled, true);
   assert.equal(payload.heroSmsAcquirePriority, 'price');
   assert.equal(payload.heroSmsMaxPrice, '0.12');
   assert.equal(payload.heroSmsPreferredPrice, '0.0512');
