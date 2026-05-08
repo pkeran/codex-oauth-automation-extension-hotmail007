@@ -50,6 +50,14 @@ function extractFunction(name) {
   return source.slice(start, end);
 }
 
+function extractConst(name) {
+  const match = source.match(new RegExp(`const\\s+${name}\\s*=\\s*(/[^\\n]+/[a-z]*)\\s*;`));
+  if (!match) {
+    throw new Error(`missing const ${name}`);
+  }
+  return `const ${name} = ${match[1]};`;
+}
+
 const bundle = [
   extractFunction('getPageTextSnapshot'),
   extractFunction('normalizePhoneDigits'),
@@ -303,6 +311,23 @@ return {
 
 {
   const api = createApi({
+    href: 'https://auth.openai.com/log-in',
+    pathname: '/log-in',
+    pageText: '欢迎回来 电子邮件地址 使用电话号码继续 使用 Google 账户继续',
+    emailInput: { id: 'email', type: 'email', name: 'username' },
+    submitButton: { id: 'submit' },
+  });
+
+  const snapshot = api.inspectLoginAuthState();
+  assert.strictEqual(
+    snapshot.state,
+    'email_page',
+    '混合登录页存在可见邮箱输入框时，应优先识别为 email_page，而不是 unknown/phone_entry_page'
+  );
+}
+
+{
+  const api = createApi({
     pathname: '/add-email',
     href: 'https://auth.openai.com/add-email',
     emailInput: { id: 'email' },
@@ -364,5 +389,174 @@ assert.ok(
   extractFunction('inspectLoginAuthState').includes("state: 'existing_session_select_page'"),
   'inspectLoginAuthState should produce existing_session_select_page state'
 );
+
+function createMixedLoginStateApi() {
+  return new Function(`
+${extractConst('LOGIN_PHONE_ENTRY_PAGE_PATTERN')}
+${extractFunction('getPageTextSnapshot')}
+${extractFunction('isLoginPhoneUsernameKind')}
+${extractFunction('isLoginPhoneEntryPageText')}
+${extractFunction('getLoginInputAttributeText')}
+${extractFunction('isLoginEmailLikeInput')}
+${extractFunction('getLoginEmailInput')}
+${extractFunction('inspectLoginAuthState')}
+
+const location = {
+  href: 'https://auth.openai.com/log-in',
+  pathname: '/log-in',
+};
+
+const emailInput = {
+  type: 'email',
+  name: 'username',
+  id: 'login-email',
+  placeholder: 'Email address',
+  getAttribute(name) {
+    if (name === 'type') return this.type;
+    if (name === 'name') return this.name;
+    if (name === 'id') return this.id;
+    if (name === 'placeholder') return this.placeholder;
+    return '';
+  },
+};
+
+const document = {
+  body: {
+    innerText: 'Welcome back Email address Continue with phone number Continue with Google',
+    textContent: 'Welcome back Email address Continue with phone number Continue with Google',
+  },
+  querySelector(selector) {
+    if (String(selector || '').includes('input[type="email"]')) {
+      return emailInput;
+    }
+    return null;
+  },
+  querySelectorAll(selector) {
+    if (String(selector || '').includes('input[type="email"]')) {
+      return [emailInput];
+    }
+    return [];
+  },
+};
+
+function getLoginTimeoutErrorPageState() { return null; }
+function getVerificationCodeTarget() { return null; }
+function getLoginPasswordInput() { return null; }
+function getLoginPhoneInput() { return null; }
+function getLoginVerificationDisplayedEmail() { return ''; }
+function getPhoneVerificationDisplayedPhone() { return ''; }
+function findOneTimeCodeLoginTrigger() { return null; }
+function findLoginEntryTrigger() { return null; }
+function findLoginPhoneEntryTrigger() { return null; }
+function findLoginMoreOptionsTrigger() { return null; }
+function getLoginSubmitButton() { return { id: 'submit' }; }
+function isVerificationPageStillVisible() { return false; }
+function isAddPhonePageReady() { return false; }
+function isAddEmailPageReady() { return false; }
+function isPhoneVerificationPageReady() { return false; }
+function isStep8Ready() { return false; }
+function isOAuthConsentPage() { return false; }
+function getExistingSessionSelectSnapshot() { return null; }
+function isVisibleElement() { return true; }
+function isActionEnabled() { return true; }
+
+return {
+  isLoginPhoneEntryPageText,
+  getLoginEmailInput,
+  inspectLoginAuthState,
+};
+`)();
+}
+
+{
+  const api = createMixedLoginStateApi();
+  assert.strictEqual(Boolean(api.isLoginPhoneEntryPageText()), true);
+  assert.ok(api.getLoginEmailInput(), 'mixed log-in page should keep the visible email input');
+  assert.strictEqual(
+    api.inspectLoginAuthState().state,
+    'email_page',
+    'mixed log-in page should resolve to email_page instead of unknown'
+  );
+}
+
+function createAmbiguousMixedLoginStateApi() {
+  return new Function(`
+${extractConst('LOGIN_PHONE_ENTRY_PAGE_PATTERN')}
+${extractFunction('getPageTextSnapshot')}
+${extractFunction('isLoginPhoneUsernameKind')}
+${extractFunction('isLoginPhoneEntryPageText')}
+${extractFunction('getLoginInputAttributeText')}
+${extractFunction('isLoginEmailLikeInput')}
+${extractFunction('getLoginEmailInput')}
+
+const location = {
+  href: 'https://auth.openai.com/log-in',
+  pathname: '/log-in',
+};
+
+const genericUsernameInput = {
+  type: 'text',
+  name: 'username',
+  id: 'login-username',
+  autocomplete: 'username',
+  placeholder: '',
+  getAttribute(name) {
+    if (name === 'type') return this.type;
+    if (name === 'name') return this.name;
+    if (name === 'id') return this.id;
+    if (name === 'autocomplete') return this.autocomplete;
+    if (name === 'placeholder') return this.placeholder;
+    return '';
+  },
+};
+
+const explicitEmailInput = {
+  type: 'email',
+  name: 'email',
+  id: 'secondary-email',
+  placeholder: 'Email address',
+  getAttribute(name) {
+    if (name === 'type') return this.type;
+    if (name === 'name') return this.name;
+    if (name === 'id') return this.id;
+    if (name === 'placeholder') return this.placeholder;
+    return '';
+  },
+};
+
+const document = {
+  body: {
+    innerText: 'Welcome back Continue with phone number',
+    textContent: 'Welcome back Continue with phone number',
+  },
+  querySelectorAll(selector) {
+    if (String(selector || '').includes('input[type="email"]')) {
+      return [genericUsernameInput, explicitEmailInput];
+    }
+    return [];
+  },
+  querySelector() {
+    return null;
+  },
+};
+
+function isAddPhonePageReady() { return false; }
+function isPhoneVerificationPageReady() { return false; }
+function isVisibleElement() { return true; }
+
+return {
+  getLoginEmailInput,
+};
+`)();
+}
+
+{
+  const api = createAmbiguousMixedLoginStateApi();
+  assert.strictEqual(
+    api.getLoginEmailInput(),
+    null,
+    'when mixed log-in page resolves the first visible candidate to a generic username field, it should stay suppressed to match Ultra7.3'
+  );
+}
 
 console.log('step6 login state tests passed');
