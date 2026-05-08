@@ -3838,6 +3838,7 @@ function buildRunCostSnapshotFromState(state = {}) {
   function resolvePhoneCost() {
     const activation = state?.completedPhoneActivation
       || state?.signupPhoneCompletedActivation
+      || state?.signupPhoneActivation
       || state?.currentPhoneActivation
       || null;
     if (!activation || typeof activation !== 'object') {

@@ -365,3 +365,93 @@ return {
     },
   });
 });
+
+test('appendAndBroadcastAccountRunRecord keeps consumed signup phone activation cost for failed phone-signup runs before activation is completed', async () => {
+  const bundle = [
+    extractFunction('getRunningSteps'),
+    extractFunction('inferStoppedRecordStep'),
+    extractFunction('resolveAccountRunRecordStatusForStop'),
+    extractFunction('extractStoppedStepFromRecordStatus'),
+    extractFunction('resolveAccountRunRecordReasonForStop'),
+    extractFunction('buildRunCostSnapshotFromState'),
+    extractFunction('appendAndBroadcastAccountRunRecord'),
+  ].join('\n');
+
+  const api = new Function(`
+const STEP_IDS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+const HOTMAIL_PROVIDER = 'hotmail-api';
+const LUCKMAIL_PROVIDER = 'luckmail-api';
+const STOP_ERROR_MESSAGE = '流程已被用户停止。';
+const DEFAULT_STATE = {
+  stepStatuses: Object.fromEntries(STEP_IDS.map((step) => [step, 'pending'])),
+};
+let captured = null;
+const latestState = {
+  accountIdentifierType: 'phone',
+  accountIdentifier: '66959916439',
+  signupMethod: 'phone',
+  resolvedSignupMethod: 'phone',
+  signupPhoneNumber: '66959916439',
+  signupPhoneActivation: {
+    activationId: 'signup-verify-123',
+    latestActivationId: 'signup-verify-123',
+    phoneNumber: '66959916439',
+    provider: 'hero-sms',
+    countryId: 52,
+    price: 0.05,
+    priceCurrency: 'USD',
+    priceStatus: 'exact',
+    costOutcome: 'consumed',
+  },
+};
+const accountRunHistoryHelpers = {
+  appendAccountRunRecord: async (status, state, reason) => {
+    captured = { status, state, reason };
+    return { status, state, reason };
+  },
+};
+async function broadcastAccountRunHistoryUpdate() {}
+async function getState() {
+  return latestState;
+}
+function isHotmailProvider(state) {
+  return String(state?.mailProvider || '').trim() === HOTMAIL_PROVIDER;
+}
+function isLuckmailProvider(state) {
+  return String(state?.mailProvider || '').trim() === LUCKMAIL_PROVIDER;
+}
+function findHotmailAccount(accounts, accountId) {
+  return (Array.isArray(accounts) ? accounts : []).find((account) => account?.id === accountId) || null;
+}
+function getCurrentLuckmailPurchase(state = {}) {
+  return state.currentLuckmailPurchase || null;
+}
+${bundle}
+return {
+  appendAndBroadcastAccountRunRecord,
+  getCaptured() {
+    return captured;
+  },
+};
+`)();
+
+  await api.appendAndBroadcastAccountRunRecord('step4_failed', null, '步骤 4：手机号验证码通过后流程失败。');
+
+  const captured = api.getCaptured();
+  assert.equal(captured.status, 'step4_failed');
+  assert.equal(captured.state.signupPhoneActivation?.activationId, 'signup-verify-123');
+  assert.deepStrictEqual(captured.state.runCosts, {
+    phone: {
+      provider: 'hero-sms',
+      countryId: 52,
+      amount: 0.05,
+      currency: 'USD',
+      status: 'exact',
+    },
+    total: {
+      amount: 0.05,
+      currency: 'USD',
+      status: 'exact',
+    },
+  });
+});
