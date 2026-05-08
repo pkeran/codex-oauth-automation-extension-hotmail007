@@ -1,4 +1,4 @@
-const test = require('node:test');
+﻿const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 
@@ -52,7 +52,20 @@ test('throwIfStopped rethrows an explicit stop error even when stopRequested has
   const api = new Function(`
 const STOP_ERROR_MESSAGE = '流程已被用户停止。';
 let stopRequested = false;
+const AUTO_RUN_STAGE_STALLED_TIMEOUT_MS = 600000;
+const AUTO_RUN_STAGE_STALLED_EXEMPT_STEPS = new Set([12]);
+let autoRunStageWatchdogEnabled = false;
+let autoRunStageWatchdogPhase = 'idle';
+let autoRunStageWatchdogStep = 0;
+let autoRunStageWatchdogSessionId = 0;
+let autoRunStageWatchdogLastProgressAt = 0;
+let autoRunStageWatchdogLastProgressReason = '';
+function normalizeAutoRunSessionId(value) { return Number(value) || 0; }
 ${extractFunction('isStopError')}
+${extractFunction('isAutoRunStageWatchdogPhase')}
+${extractFunction('isAutoRunStageWatchdogExemptStep')}
+${extractFunction('buildAutoRunStageStalledError')}
+${extractFunction('throwIfAutoRunStageStalled')}
 ${extractFunction('throwIfStopped')}
 return {
   run(error) {
@@ -65,6 +78,72 @@ return {
     () => api.run(new Error('流程已被用户停止。')),
     /流程已被用户停止。/
   );
+});
+
+test('throwIfStopped surfaces AUTO_RUN_STAGE_STALLED when never-stop watchdog sees no progress for 10 minutes', () => {
+  const api = new Function(`
+const STOP_ERROR_MESSAGE = '流程已被用户停止。';
+const AUTO_RUN_STAGE_STALLED_TIMEOUT_MS = 600000;
+const AUTO_RUN_STAGE_STALLED_EXEMPT_STEPS = new Set([12]);
+let stopRequested = false;
+let autoRunStageWatchdogEnabled = true;
+let autoRunStageWatchdogPhase = 'running';
+let autoRunStageWatchdogStep = 4;
+let autoRunStageWatchdogSessionId = 0;
+let autoRunStageWatchdogLastProgressAt = 1000;
+let autoRunStageWatchdogLastProgressReason = 'step4 polling';
+const Date = { now: () => 602000 };
+function normalizeAutoRunSessionId(value) { return Number(value) || 0; }
+${extractFunction('isStopError')}
+${extractFunction('isAutoRunStageWatchdogPhase')}
+${extractFunction('isAutoRunStageWatchdogExemptStep')}
+${extractFunction('buildAutoRunStageStalledError')}
+${extractFunction('throwIfAutoRunStageStalled')}
+${extractFunction('throwIfStopped')}
+return {
+  run() {
+    throwIfStopped();
+  },
+};
+`)();
+
+  assert.throws(
+    () => api.run(),
+    (error) => String(error?.code || '') === 'AUTO_RUN_STAGE_STALLED'
+      && /AUTO_RUN_STAGE_STALLED::/.test(String(error?.message || ''))
+      && Number(error?.step) === 4
+  );
+});
+
+test('throwIfStopped does not stall-watchdog Step 12 even after 10 minutes without progress', () => {
+  const api = new Function(`
+const STOP_ERROR_MESSAGE = '流程已被用户停止。';
+const AUTO_RUN_STAGE_STALLED_TIMEOUT_MS = 600000;
+const AUTO_RUN_STAGE_STALLED_EXEMPT_STEPS = new Set([12]);
+let stopRequested = false;
+let autoRunStageWatchdogEnabled = true;
+let autoRunStageWatchdogPhase = 'running';
+let autoRunStageWatchdogStep = 12;
+let autoRunStageWatchdogSessionId = 0;
+let autoRunStageWatchdogLastProgressAt = 1000;
+let autoRunStageWatchdogLastProgressReason = 'manual confirm';
+const Date = { now: () => 602000 };
+function normalizeAutoRunSessionId(value) { return Number(value) || 0; }
+${extractFunction('isStopError')}
+${extractFunction('isAutoRunStageWatchdogPhase')}
+${extractFunction('isAutoRunStageWatchdogExemptStep')}
+${extractFunction('buildAutoRunStageStalledError')}
+${extractFunction('throwIfAutoRunStageStalled')}
+${extractFunction('throwIfStopped')}
+return {
+  run() {
+    throwIfStopped();
+    return 'ok';
+  },
+};
+`)();
+
+  assert.equal(api.run(), 'ok');
 });
 
 test('executeStep reuses the active top-level auth chain instead of starting a duplicate step', async () => {

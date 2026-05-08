@@ -8547,6 +8547,7 @@ async function addLog(message, level = 'info', options = {}) {
   logs.push(entry);
   if (logs.length > 500) logs.splice(0, logs.length - 500);
   await setState({ logs });
+  touchAutoRunStageProgress(entry.message, { step: entry.step || undefined });
   chrome.runtime.sendMessage({ type: 'LOG_ENTRY', payload: entry }).catch(() => { });
 }
 
@@ -8608,6 +8609,7 @@ async function setStepStatus(step, status) {
   const statuses = { ...state.stepStatuses };
   statuses[step] = status;
   await setState({ stepStatuses: statuses, currentStep: step });
+  touchAutoRunStageProgress(`step ${step} -> ${status}`, { step });
   chrome.runtime.sendMessage({
     type: 'STEP_STATUS_CHANGED',
     payload: { step, status },
@@ -8659,6 +8661,7 @@ const loggingStatus = self.MultiPageBackgroundLoggingStatus?.createLoggingStatus
   LOG_PREFIX,
   setState,
   STOP_ERROR_MESSAGE,
+  touchAutoRunStageProgress,
 });
 
 const tabRuntime = self.MultiPageBackgroundTabRuntime?.createTabRuntime({
@@ -9129,6 +9132,97 @@ function clearStopRequest() {
   stopRequested = false;
 }
 
+function isAutoRunStageWatchdogPhase(phase = '') {
+  const normalized = String(phase || '').trim().toLowerCase();
+  return normalized === 'running' || normalized === 'waiting_step';
+}
+
+function isAutoRunStageWatchdogExemptStep(step) {
+  return AUTO_RUN_STAGE_STALLED_EXEMPT_STEPS.has(Number(step) || 0);
+}
+
+function beginAutoRunStageWatchdog(options = {}) {
+  autoRunStageWatchdogEnabled = Boolean(options.enabled);
+  autoRunStageWatchdogPhase = String(options.phase || '').trim().toLowerCase() || 'idle';
+  autoRunStageWatchdogStep = Math.max(0, Number(options.step) || 0);
+  autoRunStageWatchdogSessionId = normalizeAutoRunSessionId(options.sessionId);
+  autoRunStageWatchdogLastProgressAt = autoRunStageWatchdogEnabled ? Date.now() : 0;
+  autoRunStageWatchdogLastProgressReason = String(options.reason || '').trim();
+}
+
+function clearAutoRunStageWatchdog() {
+  autoRunStageWatchdogEnabled = false;
+  autoRunStageWatchdogPhase = 'idle';
+  autoRunStageWatchdogStep = 0;
+  autoRunStageWatchdogSessionId = 0;
+  autoRunStageWatchdogLastProgressAt = 0;
+  autoRunStageWatchdogLastProgressReason = '';
+}
+
+function touchAutoRunStageProgress(reason = '', options = {}) {
+  if (!autoRunStageWatchdogEnabled) {
+    return;
+  }
+  const nextPhase = String(options.phase || '').trim().toLowerCase();
+  if (nextPhase) {
+    autoRunStageWatchdogPhase = nextPhase;
+  }
+  const nextStep = Math.floor(Number(options.step) || 0);
+  if (nextStep > 0) {
+    autoRunStageWatchdogStep = nextStep;
+  }
+  if (options.sessionId !== undefined) {
+    autoRunStageWatchdogSessionId = normalizeAutoRunSessionId(options.sessionId);
+  }
+  autoRunStageWatchdogLastProgressAt = Date.now();
+  autoRunStageWatchdogLastProgressReason = String(reason || '').trim();
+}
+
+function buildAutoRunStageStalledError(options = {}) {
+  const step = Math.max(0, Number(options.step) || 0);
+  const idleMs = Math.max(0, Number(options.idleMs) || 0);
+  const phase = String(options.phase || '').trim().toLowerCase() || 'running';
+  const lastReason = String(options.reason || '').trim();
+  const sessionId = normalizeAutoRunSessionId(options.sessionId);
+  const detail = lastReason ? ` 最近进展：${lastReason}` : '';
+  const error = new Error(
+    `AUTO_RUN_STAGE_STALLED::步骤 ${step || '?'} 在 ${Math.round(idleMs / 1000)} 秒内无进展，已触发不停止模式 watchdog 重开当前轮。${detail}`
+  );
+  error.code = 'AUTO_RUN_STAGE_STALLED';
+  error.step = step;
+  error.phase = phase;
+  error.idleMs = idleMs;
+  error.sessionId = sessionId;
+  error.reason = lastReason;
+  return error;
+}
+
+function throwIfAutoRunStageStalled() {
+  if (!autoRunStageWatchdogEnabled) {
+    return;
+  }
+  if (!isAutoRunStageWatchdogPhase(autoRunStageWatchdogPhase)) {
+    return;
+  }
+  if (isAutoRunStageWatchdogExemptStep(autoRunStageWatchdogStep)) {
+    return;
+  }
+  if (autoRunStageWatchdogLastProgressAt <= 0) {
+    return;
+  }
+  const idleMs = Date.now() - autoRunStageWatchdogLastProgressAt;
+  if (idleMs < AUTO_RUN_STAGE_STALLED_TIMEOUT_MS) {
+    return;
+  }
+  throw buildAutoRunStageStalledError({
+    step: autoRunStageWatchdogStep,
+    phase: autoRunStageWatchdogPhase,
+    idleMs,
+    reason: autoRunStageWatchdogLastProgressReason,
+    sessionId: autoRunStageWatchdogSessionId,
+  });
+}
+
 function getRunningSteps(statuses = {}, stateOverride = null) {
   const state = stateOverride || {};
   const merged = { ...DEFAULT_STATE.stepStatuses, ...statuses };
@@ -9267,6 +9361,12 @@ async function broadcastAutoRunStatus(phase, payload = {}, extraState = {}) {
     ...extraState,
     ...getAutoRunStatusPayload(phase, statusPayload),
   });
+  if (autoRunStageWatchdogEnabled) {
+    touchAutoRunStageProgress(`auto-run phase -> ${phase}`, {
+      phase,
+      sessionId: statusPayload.sessionId,
+    });
+  }
   chrome.runtime.sendMessage({
     type: 'AUTO_RUN_STATUS',
     payload: statusPayload,
@@ -9713,6 +9813,9 @@ function throwIfStopped(error = null) {
   }
   if (stopRequested) {
     throw new Error(STOP_ERROR_MESSAGE);
+  }
+  if (typeof throwIfAutoRunStageStalled === 'function') {
+    throwIfAutoRunStageStalled();
   }
 }
 
@@ -10210,13 +10313,28 @@ async function waitForRunningStepsToFinish(payload = {}) {
     return currentState;
   }
 
+  touchAutoRunStageProgress(`waiting_step:${runningSteps.join(',')}`, {
+    phase: 'waiting_step',
+    step: runningSteps[0],
+    sessionId: payload.sessionId,
+  });
   await addLog(`自动继续：检测到步骤 ${runningSteps.join(', ')} 正在运行，等待完成后再继续自动流程...`, 'info');
   await broadcastAutoRunStatus('waiting_step', payload);
 
+  let lastRunningSignature = runningSteps.join(',');
   while (runningSteps.length) {
     await sleepWithStop(250);
     currentState = await getState();
     runningSteps = getRunningSteps(currentState.stepStatuses, currentState);
+    const nextSignature = runningSteps.join(',');
+    if (nextSignature !== lastRunningSignature) {
+      touchAutoRunStageProgress(`waiting_step:${nextSignature || 'cleared'}`, {
+        phase: 'waiting_step',
+        step: runningSteps[0],
+        sessionId: payload.sessionId,
+      });
+      lastRunningSignature = nextSignature;
+    }
   }
 
   await addLog('自动继续：当前运行步骤已结束，准备按最新进度继续自动流程...', 'info');
@@ -10772,6 +10890,14 @@ let autoRunTotalRuns = 1;
 let autoRunAttemptRun = 0;
 let autoRunSessionId = 0;
 let autoRunSessionSeed = 0;
+const AUTO_RUN_STAGE_STALLED_TIMEOUT_MS = 10 * 60 * 1000;
+const AUTO_RUN_STAGE_STALLED_EXEMPT_STEPS = new Set([12]);
+let autoRunStageWatchdogEnabled = false;
+let autoRunStageWatchdogPhase = 'idle';
+let autoRunStageWatchdogStep = 0;
+let autoRunStageWatchdogSessionId = 0;
+let autoRunStageWatchdogLastProgressAt = 0;
+let autoRunStageWatchdogLastProgressReason = '';
 let ipProxyAutoSyncRunning = false;
 const EMAIL_FETCH_MAX_ATTEMPTS = 5;
 const VERIFICATION_POLL_MAX_ROUNDS = 5;
@@ -11134,10 +11260,12 @@ const autoRunController = self.MultiPageBackgroundAutoRunController?.createAutoR
   AUTO_RUN_RETRY_DELAY_MS,
   AUTO_RUN_TIMER_KIND_BEFORE_RETRY,
   AUTO_RUN_TIMER_KIND_BETWEEN_ROUNDS,
+  beginAutoRunStageWatchdog,
   broadcastAutoRunStatus,
   broadcastStopToContentScripts,
   cancelPendingCommands,
   clearStopRequest: () => clearStopRequest(),
+  clearAutoRunStageWatchdog,
   createAutoRunSessionId: () => createAutoRunSessionId(),
   ensureHotmailMailboxReadyForAutoRunRound: (...args) => ensureHotmailMailboxReadyForAutoRunRound(...args),
   getAutoRunStatusPayload,

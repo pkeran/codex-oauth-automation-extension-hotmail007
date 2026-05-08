@@ -10,6 +10,7 @@
       LOG_PREFIX,
       setState,
       STOP_ERROR_MESSAGE,
+      touchAutoRunStageProgress = () => {},
     } = deps;
 
     function getSourceLabel(source) {
@@ -56,6 +57,7 @@
       logs.push(entry);
       if (logs.length > 500) logs.splice(0, logs.length - 500);
       await setState({ logs });
+      touchAutoRunStageProgress(entry.message, { step: entry.step || undefined });
       chrome.runtime.sendMessage({ type: 'LOG_ENTRY', payload: entry }).catch(() => { });
     }
 
@@ -64,6 +66,7 @@
       const statuses = { ...state.stepStatuses };
       statuses[step] = status;
       await setState({ stepStatuses: statuses, currentStep: step });
+      touchAutoRunStageProgress(`step ${step} -> ${status}`, { step });
       chrome.runtime.sendMessage({
         type: 'STEP_STATUS_CHANGED',
         payload: { step, status },

@@ -1,4 +1,4 @@
-const test = require('node:test');
+﻿const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 
@@ -336,6 +336,61 @@ test('auto-run controller retries STEP3_PHONE_CREDENTIAL_INVALID in the same rou
   assert.deepEqual(events.runTargets, [1, 1]);
   assert.equal(events.broadcasts.some(({ phase }) => phase === 'retrying'), true);
   assert.equal(events.accountRecords.some(({ status }) => status === 'failed'), false);
+});
+
+test('auto-run controller restarts the same round on AUTO_RUN_STAGE_STALLED while never-stop mode is enabled', async () => {
+  let attempts = 0;
+  const { controller, events } = createHarness({
+    totalRuns: 1,
+    autoRunSkipFailures: false,
+    autoRunNeverStop: true,
+    runImpl: async () => {
+      attempts += 1;
+      if (attempts === 1) {
+        const error = new Error('AUTO_RUN_STAGE_STALLED::step 4 no progress for 600s');
+        error.code = 'AUTO_RUN_STAGE_STALLED';
+        throw error;
+      }
+      return {};
+    },
+  });
+
+  await controller.autoRunLoop(1, {
+    autoRunSkipFailures: false,
+    autoRunNeverStop: true,
+    mode: 'restart',
+  });
+
+  assert.equal(attempts, 2);
+  assert.deepEqual(events.runTargets, [1, 1]);
+  assert.equal(events.broadcasts.some(({ phase }) => phase === 'retrying'), true);
+  assert.equal(events.accountRecords.some(({ status }) => status === 'failed'), false);
+});
+
+test('auto-run controller skips to the next round after repeated AUTO_RUN_STAGE_STALLED hits in never-stop mode', async () => {
+  const { controller, events } = createHarness({
+    totalRuns: 2,
+    autoRunSkipFailures: false,
+    autoRunNeverStop: true,
+    runImpl: async ({ targetRun }) => {
+      if (targetRun === 1) {
+        const error = new Error('AUTO_RUN_STAGE_STALLED::step 9 no progress for 600s');
+        error.code = 'AUTO_RUN_STAGE_STALLED';
+        throw error;
+      }
+      return {};
+    },
+  });
+
+  await controller.autoRunLoop(2, {
+    autoRunSkipFailures: false,
+    autoRunNeverStop: true,
+    mode: 'restart',
+  });
+
+  assert.deepEqual(events.runTargets, [1, 1, 1, 2], 'stalled watchdog should retry the same round three times before moving on');
+  assert.equal(events.logs.some(({ message }) => /同阶段无进展 watchdog 已连续触发 3 次/i.test(message)), true);
+  assert.equal(events.accountRecords.filter(({ status }) => status === 'failed').length, 1);
 });
 
 test('auto-run controller retries RESTART_CURRENT_ATTEMPT in the same round even when auto retry is disabled', async () => {

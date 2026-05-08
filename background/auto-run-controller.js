@@ -36,6 +36,8 @@
       launchAutoRunTimerPlan,
       normalizeAutoRunFallbackThreadIntervalMinutes,
       persistAutoRunTimerPlan,
+      beginAutoRunStageWatchdog = () => {},
+      clearAutoRunStageWatchdog = () => {},
       releaseCurrentHotmailSelectionAfterFailure,
       resetState,
       runAutoSequenceFromStep,
@@ -139,6 +141,9 @@
         ? String(error.code || '').trim()
         : '';
     }
+
+    const AUTO_RUN_STAGE_STALLED_CODE = 'AUTO_RUN_STAGE_STALLED';
+    const AUTO_RUN_STAGE_STALLED_MAX_RESTARTS_PER_ROUND = 3;
 
     function isPhoneNumberSupplyExhaustedFailure(error) {
       if (error && typeof error === 'object' && String(error.code || '').trim() === 'PHONE_SMS_NO_SUPPLY') {
@@ -373,26 +378,34 @@
         ? 'waiting_step'
         : 'running';
       const showResumePosition = continueCurrentOnFirstAttempt || resumeCurrentRun > 1 || resumeAttemptRun > 1;
-
-      await setState({
-        autoRunSessionId: sessionId,
-        autoRunSkipFailures,
-        autoRunNeverStop,
-        autoRunRoundSummaries: serializeAutoRunRoundSummaries(totalRuns, roundSummaries),
-        ...getAutoRunStatusPayload(initialPhase, {
-          currentRun: showResumePosition ? resumeCurrentRun : 0,
-          totalRuns,
-          attemptRun: showResumePosition ? resumeAttemptRun : 0,
-          sessionId,
-        }),
+      beginAutoRunStageWatchdog({
+        enabled: autoRunNeverStop,
+        phase: initialPhase,
+        sessionId,
+        reason: 'auto-run-loop-start',
       });
 
-      for (let targetRun = resumeCurrentRun; targetRun <= totalRuns; targetRun += 1) {
+      try {
+        await setState({
+          autoRunSessionId: sessionId,
+          autoRunSkipFailures,
+          autoRunNeverStop,
+          autoRunRoundSummaries: serializeAutoRunRoundSummaries(totalRuns, roundSummaries),
+          ...getAutoRunStatusPayload(initialPhase, {
+            currentRun: showResumePosition ? resumeCurrentRun : 0,
+            totalRuns,
+            attemptRun: showResumePosition ? resumeAttemptRun : 0,
+            sessionId,
+          }),
+        });
+
+        for (let targetRun = resumeCurrentRun; targetRun <= totalRuns; targetRun += 1) {
         const roundSummary = roundSummaries[targetRun - 1];
         let roundRecordAppended = false;
         const resumingCurrentRound = continueCurrentOnFirstAttempt && targetRun === resumeCurrentRun;
         let attemptRun = resumingCurrentRound ? resumeAttemptRun : 1;
         let reuseExistingProgress = resumingCurrentRound;
+        let stageStalledRetryCount = 0;
         const currentRoundState = await getState();
         const keepSameEmailUntilAddPhone = autoRunSkipFailures && shouldKeepCustomMailProviderPoolEmail(currentRoundState);
         const maxAttemptsForRound = autoRunNeverStop
@@ -573,11 +586,13 @@
               && structuredErrorCode === 'HOTMAIL007_NO_STOCK';
             const blockedByHotmailAccountInvalid = !blockedByPhoneSmsRateLimit
               && structuredErrorCode === 'HOTMAIL_ACCOUNT_INVALID';
+            const blockedByStageStalled = structuredErrorCode === AUTO_RUN_STAGE_STALLED_CODE;
             const blockedByStep3PhoneCredentialInvalid = structuredErrorCode === 'STEP3_PHONE_CREDENTIAL_INVALID';
             const blockedByAddPhone = !blockedByPhoneSmsRateLimit
               && !blockedByPhoneNoSupply
               && !blockedByHotmailNoStock
               && !blockedByHotmailAccountInvalid
+              && !blockedByStageStalled
               && !blockedByStep3PhoneCredentialInvalid
               && typeof isAddPhoneAuthFailure === 'function'
               && isAddPhoneAuthFailure(err);
@@ -592,14 +607,25 @@
               && isMailboxProviderTransientFailure(err);
             const restartCurrentAttemptRequired = typeof isRestartCurrentAttemptError === 'function'
               && isRestartCurrentAttemptError(err);
+            if (blockedByStageStalled && autoRunNeverStop) {
+              stageStalledRetryCount += 1;
+            }
             const forceCurrentRoundRetry = autoRunNeverStop
               && !blockedBySecurity
               && !blockedByBrowserSwitch
-              && !blockedByConfigurationFatal;
+              && !blockedByConfigurationFatal
+              && !blockedByStageStalled;
             const canRetry = !blockedBySecurity
               && !blockedByBrowserSwitch
               && !blockedByConfigurationFatal
               && (
+                (
+                  blockedByStageStalled
+                  && autoRunNeverStop
+                  && stageStalledRetryCount < AUTO_RUN_STAGE_STALLED_MAX_RESTARTS_PER_ROUND
+                  && attemptRun < maxAttemptsForRound
+                )
+                ||
                 (restartCurrentAttemptRequired && attemptRun < maxAttemptsForRound)
                 ||
                 (forceCurrentRoundRetry && attemptRun < maxAttemptsForRound)
@@ -612,6 +638,7 @@
                       && !blockedByPhoneNoSupply
                       && !blockedByHotmailNoStock
                       && !blockedByHotmailAccountInvalid
+                      && !blockedByStageStalled
                       && !blockedByPlusNonFreeTrial
                       && !blockedBySignupUserAlreadyExists
                       && !blockedByStep4Route405
@@ -844,9 +871,35 @@
               break;
             }
 
+            if (
+              blockedByStageStalled
+              && autoRunNeverStop
+              && stageStalledRetryCount >= AUTO_RUN_STAGE_STALLED_MAX_RESTARTS_PER_ROUND
+            ) {
+              roundSummary.status = 'failed';
+              roundSummary.finalFailureReason = reason;
+              await setState({
+                autoRunRoundSummaries: serializeAutoRunRoundSummaries(totalRuns, roundSummaries),
+              });
+              await appendRoundRecordIfNeeded('failed', reason);
+              cancelPendingCommands('当前轮因 AUTO_RUN_STAGE_STALLED 连续触发已终止。');
+              await broadcastStopToContentScripts();
+              await addLog(
+                `第 ${targetRun}/${totalRuns} 轮同阶段无进展 watchdog 已连续触发 ${AUTO_RUN_STAGE_STALLED_MAX_RESTARTS_PER_ROUND} 次，本轮将直接失败并进入下一轮。`,
+                'warn'
+              );
+              forceFreshTabsNextRun = true;
+              break;
+            }
+
             if (canRetry) {
               const retryIndex = attemptRun;
-              if (isRestartCurrentAttemptError(err)) {
+              if (blockedByStageStalled) {
+                await addLog(
+                  `第 ${targetRun}/${totalRuns} 轮第 ${attemptRun} 次尝试命中 AUTO_RUN_STAGE_STALLED，准备从步骤 1 重开本轮（${stageStalledRetryCount}/${AUTO_RUN_STAGE_STALLED_MAX_RESTARTS_PER_ROUND}）。`,
+                  'warn'
+                );
+              } else if (isRestartCurrentAttemptError(err)) {
                 await addLog(`第 ${targetRun}/${totalRuns} 轮第 ${attemptRun} 次尝试需要整轮重开：${reason}`, 'warn');
               } else {
                 await addLog(`第 ${targetRun}/${totalRuns} 轮第 ${attemptRun} 次尝试失败：${reason}`, 'error');
@@ -983,50 +1036,53 @@
         }
       }
 
-      if (parkedByTimer) {
-        runtime.set({ autoRunActive: false });
+        if (parkedByTimer) {
+          runtime.set({ autoRunActive: false });
+          clearStopRequest();
+          return;
+        }
+
+        await setState({
+          autoRunRoundSummaries: serializeAutoRunRoundSummaries(totalRuns, roundSummaries),
+        });
+        await logAutoRunFinalSummary(totalRuns, roundSummaries);
+
+        const finalRuntime = runtime.get();
+        if (deps.getStopRequested() || stoppedEarly) {
+          await addLog(`=== 已停止，完成 ${successfulRuns}/${finalRuntime.autoRunTotalRuns} 轮 ===`, 'warn');
+          await broadcastAutoRunStatus('stopped', {
+            currentRun: finalRuntime.autoRunCurrentRun,
+            totalRuns: finalRuntime.autoRunTotalRuns,
+            attemptRun: finalRuntime.autoRunAttemptRun,
+            sessionId: 0,
+          });
+        } else {
+          await addLog(`=== 全部 ${finalRuntime.autoRunTotalRuns} 轮已执行完成，成功 ${successfulRuns} 轮 ===`, 'ok');
+          await broadcastAutoRunStatus('complete', {
+            currentRun: finalRuntime.autoRunTotalRuns,
+            totalRuns: finalRuntime.autoRunTotalRuns,
+            attemptRun: finalRuntime.autoRunAttemptRun,
+            sessionId: 0,
+          });
+        }
+        runtime.set({ autoRunActive: false, autoRunSessionId: 0 });
+        const afterRuntime = runtime.get();
+        await setState({
+          autoRunSessionId: 0,
+          autoRunRoundSummaries: serializeAutoRunRoundSummaries(totalRuns, roundSummaries),
+          autoRunTimerPlan: null,
+          scheduledAutoRunPlan: null,
+          ...getAutoRunStatusPayload(deps.getStopRequested() || stoppedEarly ? 'stopped' : 'complete', {
+            currentRun: deps.getStopRequested() || stoppedEarly ? afterRuntime.autoRunCurrentRun : afterRuntime.autoRunTotalRuns,
+            totalRuns: afterRuntime.autoRunTotalRuns,
+            attemptRun: afterRuntime.autoRunAttemptRun,
+            sessionId: 0,
+          }),
+        });
         clearStopRequest();
-        return;
+      } finally {
+        clearAutoRunStageWatchdog();
       }
-
-      await setState({
-        autoRunRoundSummaries: serializeAutoRunRoundSummaries(totalRuns, roundSummaries),
-      });
-      await logAutoRunFinalSummary(totalRuns, roundSummaries);
-
-      const finalRuntime = runtime.get();
-      if (deps.getStopRequested() || stoppedEarly) {
-        await addLog(`=== 已停止，完成 ${successfulRuns}/${finalRuntime.autoRunTotalRuns} 轮 ===`, 'warn');
-        await broadcastAutoRunStatus('stopped', {
-          currentRun: finalRuntime.autoRunCurrentRun,
-          totalRuns: finalRuntime.autoRunTotalRuns,
-          attemptRun: finalRuntime.autoRunAttemptRun,
-          sessionId: 0,
-        });
-      } else {
-        await addLog(`=== 全部 ${finalRuntime.autoRunTotalRuns} 轮已执行完成，成功 ${successfulRuns} 轮 ===`, 'ok');
-        await broadcastAutoRunStatus('complete', {
-          currentRun: finalRuntime.autoRunTotalRuns,
-          totalRuns: finalRuntime.autoRunTotalRuns,
-          attemptRun: finalRuntime.autoRunAttemptRun,
-          sessionId: 0,
-        });
-      }
-      runtime.set({ autoRunActive: false, autoRunSessionId: 0 });
-      const afterRuntime = runtime.get();
-      await setState({
-        autoRunSessionId: 0,
-        autoRunRoundSummaries: serializeAutoRunRoundSummaries(totalRuns, roundSummaries),
-        autoRunTimerPlan: null,
-        scheduledAutoRunPlan: null,
-        ...getAutoRunStatusPayload(deps.getStopRequested() || stoppedEarly ? 'stopped' : 'complete', {
-          currentRun: deps.getStopRequested() || stoppedEarly ? afterRuntime.autoRunCurrentRun : afterRuntime.autoRunTotalRuns,
-          totalRuns: afterRuntime.autoRunTotalRuns,
-          attemptRun: afterRuntime.autoRunAttemptRun,
-          sessionId: 0,
-        }),
-      });
-      clearStopRequest();
     }
 
     return {
