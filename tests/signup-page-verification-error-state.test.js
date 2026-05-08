@@ -59,8 +59,8 @@ function extractConst(name) {
   return `const ${name} = ${match[1]};`;
 }
 
-test('getVerificationErrorOutcome returns structured signup phone delivery blocked error', () => {
-  const api = new Function(`
+function createApiWithErrorText(errorText) {
+  return new Function(`
 ${extractConst('INVALID_VERIFICATION_CODE_PATTERN')}
 ${extractConst('PHONE_VERIFICATION_DELIVERY_BLOCKED_PATTERN')}
 const VERIFICATION_CODE_INPUT_SELECTOR = 'input[name="code"]';
@@ -69,7 +69,7 @@ ${extractFunction('getVerificationErrorText')}
 ${extractFunction('getVerificationErrorOutcome')}
 
 const errorNode = {
-  textContent: '无法向此电话号码发送文本消息',
+  textContent: ${JSON.stringify(errorText)},
 };
 const document = {
   querySelectorAll(selector) {
@@ -88,11 +88,33 @@ return {
   getVerificationErrorOutcome,
 };
 `)();
+}
 
+test('getVerificationErrorOutcome returns structured signup phone delivery blocked error', () => {
+  const errorText = '无法向此电话号码发送文本消息';
+  const api = createApiWithErrorText(errorText);
   const outcome = api.getVerificationErrorOutcome(4);
   assert.deepEqual(outcome, {
     phoneDeliveryBlocked: true,
     errorCode: 'PHONE_SIGNUP_CANNOT_SEND_TEXT',
-    errorText: '无法向此电话号码发送文本消息',
+    errorText,
   });
+});
+
+test('getVerificationErrorOutcome matches English delivery-blocked variants for signup phone verification', () => {
+  const englishVariants = [
+    'We couldn’t send a text message to this phone number.',
+    'We could not send a text message to this phone number.',
+    'Unable to send text messages to this number.',
+  ];
+
+  for (const variant of englishVariants) {
+    const api = createApiWithErrorText(variant);
+    const outcome = api.getVerificationErrorOutcome(4);
+    assert.deepEqual(outcome, {
+      phoneDeliveryBlocked: true,
+      errorCode: 'PHONE_SIGNUP_CANNOT_SEND_TEXT',
+      errorText: variant,
+    });
+  }
 });

@@ -147,7 +147,7 @@ const RESEND_VERIFICATION_CODE_PATTERN = /重新发送(?:验证码)?|再次发�
 const POST_SIGNUP_ONBOARDING_TITLE_PATTERN = /what\s+brings\s+you\s+to\s+chatgpt|what\s+brought\s+you\s+to\s+chatgpt|是什么促使你使用\s*chatgpt|你为何使用\s*chatgpt|你想如何使用\s*chatgpt/i;
 const POST_SIGNUP_ONBOARDING_SKIP_PATTERN = /skip(?:\s+(?:tour|guide|intro))?|跳过(?:导览)?/i;
 const POST_SIGNUP_ONBOARDING_NEXT_PATTERN = /next|continue|get\s*started|start|let'?s\s*go|下一步|继续|开始吧|好的，开始吧/i;
-const PHONE_VERIFICATION_DELIVERY_BLOCKED_PATTERN = /无法向(?:此|该)?电话号码发送文本消息|unable to send (?:a )?text message to this phone number|cannot send (?:a )?text message to this phone number/i;
+const PHONE_VERIFICATION_DELIVERY_BLOCKED_PATTERN = /无法向(?:此|该)?电话号码发送文本消息|unable to send (?:a )?text messages? to (?:this phone number|this number)|cannot send (?:a )?text messages? to (?:this phone number|this number)|we couldn['’]?t send (?:a )?text messages? to (?:this phone number|this number)|we could not send (?:a )?text messages? to (?:this phone number|this number)/i;
 const POST_SIGNUP_ONBOARDING_OPTION_PATTERNS = [
   /school|学校/i,
   /work|工作/i,
