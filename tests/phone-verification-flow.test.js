@@ -265,6 +265,74 @@ test('signup phone helper retries transient poll failures within the same sms wi
   assert.equal(sleeps.some((ms) => ms >= 1000), true);
 });
 
+test('signup phone helper logs timeout-window recovery telemetry before continuing to the next window', async () => {
+  const logs = [];
+  const requests = [];
+  let currentState = {
+    heroSmsApiKey: 'demo-key',
+    phoneCodeWaitSeconds: 15,
+    phoneCodeTimeoutWindows: 2,
+    phoneCodePollIntervalSeconds: 1,
+    phoneCodePollMaxRounds: 1,
+    signupPhoneActivation: {
+      activationId: 'signup-123',
+      phoneNumber: '66959916439',
+      provider: 'hero-sms',
+      serviceCode: 'dr',
+      countryId: 52,
+      successfulUses: 0,
+      maxUses: 3,
+    },
+  };
+  let statusPollCount = 0;
+  const helpers = api.createPhoneVerificationHelpers({
+    addLog: async (message, level) => {
+      logs.push({ message, level });
+    },
+    ensureStep8SignupPageReady: async () => {},
+    fetchImpl: async (url) => {
+      const parsedUrl = new URL(url);
+      requests.push(parsedUrl);
+      const action = parsedUrl.searchParams.get('action');
+      if (action === 'getStatus') {
+        statusPollCount += 1;
+        return {
+          ok: true,
+          text: async () => (statusPollCount === 1 ? 'STATUS_WAIT_CODE' : 'STATUS_OK:123456'),
+        };
+      }
+      if (action === 'setStatus') {
+        return {
+          ok: true,
+          text: async () => 'ACCESS_READY',
+        };
+      }
+      throw new Error(`Unexpected HeroSMS action: ${action}`);
+    },
+    getOAuthFlowStepTimeoutMs: async (fallback) => fallback,
+    getState: async () => ({ ...currentState }),
+    sendToContentScriptResilient: async () => ({}),
+    setState: async (updates) => {
+      currentState = { ...currentState, ...updates };
+    },
+    sleepWithStop: async () => {},
+    throwIfStopped: () => {},
+  });
+
+  const code = await helpers.waitForSignupPhoneCode(currentState, currentState.signupPhoneActivation);
+
+  assert.equal(code, '123456');
+  assert.equal(requests.filter((url) => url.searchParams.get('action') === 'setStatus').length, 1);
+  assert.equal(
+    logs.some(({ message }) => /requesting additional sms from herosms/i.test(message)),
+    true
+  );
+  assert.equal(
+    logs.some(({ message }) => /provider-side additional sms request completed/i.test(message)),
+    true
+  );
+});
+
 test('signup phone helper finalizes or cancels signup activation without clearing add-phone activation', async () => {
   const setStateCalls = [];
   const statusActions = [];

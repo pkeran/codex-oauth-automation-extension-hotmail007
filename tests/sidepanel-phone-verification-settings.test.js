@@ -195,6 +195,8 @@ test('sidepanel source wires runtime signup phone field to background sync messa
   assert.doesNotMatch(sidepanelSource, /rowPhoneSmsProviderOrderActions/);
   assert.doesNotMatch(sidepanelSource, /rowHeroSmsPlatform/);
   assert.match(sidepanelSource, /function getRuntimeSignupPhoneValue\(state = latestState\)/);
+  assert.match(sidepanelSource, /function getVisiblePhoneRuntimeActivation\(state = latestState\)/);
+  assert.match(sidepanelSource, /function buildPhoneRuntimeStatusSummary\(state = latestState\)/);
   assert.match(sidepanelSource, /function shouldExecuteStep3WithSignupPhoneIdentity\(state = latestState\)/);
   assert.match(sidepanelSource, /function shouldPreserveSignupPhoneInputValue\(stateSignupPhone = ''\)/);
   assert.match(sidepanelSource, /function syncSignupPhoneInputFromState\(state = latestState\)/);
@@ -206,6 +208,61 @@ test('sidepanel source wires runtime signup phone field to background sync messa
   assert.match(sidepanelSource, /if \(shouldExecuteStep3WithSignupPhoneIdentity\(latestState\)\)[\s\S]*payload: \{ step \}/);
   assert.match(sidepanelSource, /async function handleSkipStep\(step\)[\s\S]*await persistCurrentSettingsForAction\(\);/);
   assert.match(sidepanelSource, /inputSignupPhone\.addEventListener\('input'[\s\S]*signupPhoneInputDirty = true/);
+  assert.match(sidepanelSource, /const activation = getVisiblePhoneRuntimeActivation\(state\);[\s\S]*displayHeroSmsCurrentNumber\.textContent/);
+  assert.match(sidepanelSource, /const phoneRuntimeStatusSummary = buildPhoneRuntimeStatusSummary\(state\);[\s\S]*displayStatus\.textContent = phoneRuntimeStatusSummary/);
+});
+
+test('phone runtime status summary surfaces signup-phone countdown while step 4 is running', () => {
+  const api = new Function(`
+let latestState = {};
+const PHONE_SMS_PROVIDER_HERO = 'hero-sms';
+const PHONE_SMS_PROVIDER_FIVE_SIM = '5sim';
+const PHONE_SMS_PROVIDER_NEXSMS = 'nexsms';
+const Date = { now: () => 1000 };
+function normalizePhoneSmsProviderValue(value = '') {
+  return String(value || 'hero-sms').trim().toLowerCase() || 'hero-sms';
+}
+function normalizePhoneSmsProvider(value = '') {
+  return normalizePhoneSmsProviderValue(value);
+}
+function normalizeHeroSmsCountryId(value, fallback = 0) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+function normalizeFiveSimCountryCode(value, fallback = '') {
+  return String(value || fallback).trim();
+}
+function normalizeNexSmsCountryId(value, fallback = -1) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+${extractFunction('formatCountdown')}
+${extractFunction('normalizePhoneActivationState')}
+${extractFunction('getPhoneSmsProviderLabel')}
+${extractFunction('getVisiblePhoneRuntimeActivation')}
+${extractFunction('buildPhoneRuntimeStatusSummary')}
+return { buildPhoneRuntimeStatusSummary };
+`)();
+
+  const text = api.buildPhoneRuntimeStatusSummary({
+    stepStatuses: {
+      4: 'running',
+    },
+    currentPhoneActivation: null,
+    signupPhoneActivation: {
+      provider: 'hero-sms',
+      activationId: 'signup-123',
+      phoneNumber: '66959916439',
+      countryId: 52,
+      successfulUses: 0,
+      maxUses: 3,
+    },
+    currentPhoneVerificationCountdownEndsAt: 31000,
+    currentPhoneVerificationCountdownWindowIndex: 1,
+    currentPhoneVerificationCountdownWindowTotal: 2,
+  });
+
+  assert.equal(text, '步骤 4 等码中：66959916439 / HeroSMS / 剩余 00:00:30（1/2）');
 });
 
 test('manual step 3 uses phone identity without requiring registration email', () => {

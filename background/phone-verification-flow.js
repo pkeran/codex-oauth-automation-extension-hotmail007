@@ -5823,13 +5823,28 @@
                 'warn',
                 { step: visibleStep, stepKey }
               );
+              await addLog(
+                `Step ${visibleStep}: SMS wait window ${windowIndex}/${timeoutWindows} expired for ${normalizedActivation.phoneNumber}; requesting additional SMS from ${providerLabel}.`,
+                'warn',
+                { step: visibleStep, stepKey }
+              );
               await requestAdditionalPhoneSms(state, normalizedActivation);
+              await addLog(
+                `Step ${visibleStep}: provider-side additional SMS request completed for ${normalizedActivation.phoneNumber}; continuing timeout-window recovery.`,
+                'info',
+                { step: visibleStep, stepKey }
+              );
               if (typeof options.onTimeoutWindow === 'function') {
                 await options.onTimeoutWindow({
                   activation: normalizedActivation,
                   windowIndex,
                   timeoutWindows,
                 });
+                await addLog(
+                  `Step ${visibleStep}: timeout-window recovery finished for ${normalizedActivation.phoneNumber}; continuing with window ${windowIndex + 1}/${timeoutWindows}.`,
+                  'info',
+                  { step: visibleStep, stepKey }
+                );
               }
               continue;
             }

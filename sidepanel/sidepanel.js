@@ -5752,16 +5752,25 @@ function buildPhoneActivationOptionLabel(activation = null, sourceLabel = '') {
   return `${sourcePrefix}${normalized.phoneNumber} / ${providerLabel}${countryLabel ? ` / ${countryLabel}` : ''} (#${normalized.activationId})${reuseLabel}`;
 }
 
+function getVisiblePhoneRuntimeActivation(state = latestState) {
+  return normalizePhoneActivationState(
+    state?.currentPhoneActivation
+    || state?.signupPhoneActivation
+    || latestState?.currentPhoneActivation
+    || latestState?.signupPhoneActivation
+  );
+}
+
 function stopPhoneRuntimeCountdownTicker() {
   clearInterval(phoneRuntimeCountdownTimer);
   phoneRuntimeCountdownTimer = null;
 }
 
-function renderPhoneRuntimeCountdown() {
+function renderPhoneRuntimeCountdown(state = latestState) {
   if (!displayHeroSmsCurrentCountdown) {
     return;
   }
-  const hasActivation = Boolean(normalizePhoneActivationState(latestState?.currentPhoneActivation));
+  const hasActivation = Boolean(getVisiblePhoneRuntimeActivation(state));
   const endsAt = Number(phoneRuntimeCountdownEndsAt) || 0;
   const now = Date.now();
   if (!hasActivation || !Number.isFinite(endsAt) || endsAt <= 0) {
@@ -5787,16 +5796,37 @@ function syncPhoneRuntimeCountdown(state = {}) {
   phoneRuntimeCountdownEndsAt = Math.max(0, Number(state?.currentPhoneVerificationCountdownEndsAt) || 0);
   phoneRuntimeCountdownWindowIndex = Math.max(0, Math.floor(Number(state?.currentPhoneVerificationCountdownWindowIndex) || 0));
   phoneRuntimeCountdownWindowTotal = Math.max(0, Math.floor(Number(state?.currentPhoneVerificationCountdownWindowTotal) || 0));
-  renderPhoneRuntimeCountdown();
+  renderPhoneRuntimeCountdown(state);
   if (phoneRuntimeCountdownEndsAt > Date.now()) {
     if (!phoneRuntimeCountdownTimer) {
       phoneRuntimeCountdownTimer = setInterval(() => {
-        renderPhoneRuntimeCountdown();
+        renderPhoneRuntimeCountdown(latestState);
       }, 1000);
     }
   } else {
     stopPhoneRuntimeCountdownTicker();
   }
+}
+
+function buildPhoneRuntimeStatusSummary(state = latestState) {
+  const runningEntry = Object.entries(state?.stepStatuses || {}).find(([, status]) => status === 'running');
+  const runningStep = Number(runningEntry?.[0] || 0);
+  if (runningStep !== 4 && runningStep !== 8) {
+    return '';
+  }
+  const activation = getVisiblePhoneRuntimeActivation(state);
+  if (!activation) {
+    return '';
+  }
+  const providerLabel = getPhoneSmsProviderLabel(activation.provider);
+  const endsAt = Math.max(0, Number(state?.currentPhoneVerificationCountdownEndsAt) || 0);
+  const windowIndex = Math.max(0, Math.floor(Number(state?.currentPhoneVerificationCountdownWindowIndex) || 0));
+  const windowTotal = Math.max(0, Math.floor(Number(state?.currentPhoneVerificationCountdownWindowTotal) || 0));
+  const windowHint = windowTotal > 0 ? `（${Math.max(1, windowIndex)}/${windowTotal}）` : '';
+  if (endsAt > Date.now()) {
+    return `步骤 ${runningStep} 等码中：${activation.phoneNumber} / ${providerLabel} / 剩余 ${formatCountdown(endsAt - Date.now())}${windowHint}`;
+  }
+  return `步骤 ${runningStep} 等码中：${activation.phoneNumber} / ${providerLabel} / 等待平台状态更新${windowHint}`;
 }
 
 function renderPhonePreferredActivationOptions(state = {}) {
@@ -5869,7 +5899,7 @@ function getSelectedPhonePreferredActivation() {
 
 function updateHeroSmsRuntimeDisplay(state = {}) {
   if (displayHeroSmsCurrentNumber) {
-    const activation = normalizePhoneActivationState(state?.currentPhoneActivation || latestState?.currentPhoneActivation);
+    const activation = getVisiblePhoneRuntimeActivation(state);
     const phoneNumber = String(activation?.phoneNumber || '').trim();
     const activationId = String(activation?.activationId || '').trim();
     const countryLabel = normalizePhoneSmsCountryLabel(
@@ -10485,6 +10515,13 @@ function updateStatusDisplay(state) {
     displayStatus.textContent = runningSteps.length
       ? `自动等待步骤 ${runningSteps.join(', ')} 完成后继续${getAutoRunLabel()}`
       : `自动正在按最新进度准备继续${getAutoRunLabel()}`;
+    statusBar.classList.add('running');
+    return;
+  }
+
+  const phoneRuntimeStatusSummary = buildPhoneRuntimeStatusSummary(state);
+  if (phoneRuntimeStatusSummary) {
+    displayStatus.textContent = phoneRuntimeStatusSummary;
     statusBar.classList.add('running');
     return;
   }
