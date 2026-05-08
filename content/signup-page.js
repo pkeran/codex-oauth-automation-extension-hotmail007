@@ -147,6 +147,7 @@ const RESEND_VERIFICATION_CODE_PATTERN = /重新发送(?:验证码)?|再次发�
 const POST_SIGNUP_ONBOARDING_TITLE_PATTERN = /what\s+brings\s+you\s+to\s+chatgpt|what\s+brought\s+you\s+to\s+chatgpt|是什么促使你使用\s*chatgpt|你为何使用\s*chatgpt|你想如何使用\s*chatgpt/i;
 const POST_SIGNUP_ONBOARDING_SKIP_PATTERN = /skip(?:\s+(?:tour|guide|intro))?|跳过(?:导览)?/i;
 const POST_SIGNUP_ONBOARDING_NEXT_PATTERN = /next|continue|get\s*started|start|let'?s\s*go|下一步|继续|开始吧|好的，开始吧/i;
+const PHONE_VERIFICATION_DELIVERY_BLOCKED_PATTERN = /无法向(?:此|该)?电话号码发送文本消息|unable to send (?:a )?text message to this phone number|cannot send (?:a )?text message to this phone number/i;
 const POST_SIGNUP_ONBOARDING_OPTION_PATTERNS = [
   /school|学校/i,
   /work|工作/i,
@@ -293,6 +294,11 @@ async function resendVerificationCode(step, timeout = 45000) {
         await handle405ResendError(step, timeout - (Date.now() - start));
         loggedWaiting = false;
         continue;
+      }
+
+      const verificationErrorOutcome = getVerificationErrorOutcome(step);
+      if (verificationErrorOutcome?.phoneDeliveryBlocked) {
+        return verificationErrorOutcome;
       }
 
       return {
@@ -2684,6 +2690,10 @@ const authPageRecovery = self.MultiPageAuthPageRecovery?.createAuthPageRecovery?
 }) || null;
 
 function getVerificationErrorText() {
+  return getVerificationErrorMessages().find((text) => INVALID_VERIFICATION_CODE_PATTERN.test(text)) || '';
+}
+
+function getVerificationErrorMessages() {
   const messages = [];
   const selectors = [
     '.react-aria-FieldError',
@@ -2714,7 +2724,30 @@ function getVerificationErrorText() {
     }
   }
 
-  return messages.find((text) => INVALID_VERIFICATION_CODE_PATTERN.test(text)) || '';
+  return messages;
+}
+
+function getVerificationErrorOutcome(step = 0) {
+  const messages = getVerificationErrorMessages();
+  const safeStep = Math.floor(Number(step) || 0);
+  const deliveryBlockedText = messages.find((text) => PHONE_VERIFICATION_DELIVERY_BLOCKED_PATTERN.test(text)) || '';
+  if (deliveryBlockedText && safeStep === 4) {
+    return {
+      phoneDeliveryBlocked: true,
+      errorCode: 'PHONE_SIGNUP_CANNOT_SEND_TEXT',
+      errorText: deliveryBlockedText,
+    };
+  }
+
+  const invalidCodeText = messages.find((text) => INVALID_VERIFICATION_CODE_PATTERN.test(text)) || '';
+  if (invalidCodeText) {
+    return {
+      invalidCode: true,
+      errorText: invalidCodeText,
+    };
+  }
+
+  return null;
 }
 
 function createSignupUserAlreadyExistsError() {
@@ -4905,9 +4938,9 @@ async function waitForVerificationSubmitOutcome(step, timeout) {
       }
     }
 
-    const errorText = getVerificationErrorText();
-    if (errorText) {
-      return { invalidCode: true, errorText };
+    const verificationErrorOutcome = getVerificationErrorOutcome(step);
+    if (verificationErrorOutcome) {
+      return verificationErrorOutcome;
     }
 
     if (step === 8 && isStep8Ready()) {
@@ -4941,6 +4974,10 @@ async function waitForVerificationSubmitOutcome(step, timeout) {
   }
 
   if (isVerificationPageStillVisible()) {
+    const verificationErrorOutcome = getVerificationErrorOutcome(step);
+    if (verificationErrorOutcome) {
+      return verificationErrorOutcome;
+    }
     return {
       invalidCode: true,
       errorText: getVerificationErrorText() || '提交后仍停留在验证码页面，准备重新发送验证码。',

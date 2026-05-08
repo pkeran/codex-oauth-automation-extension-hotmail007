@@ -729,6 +729,118 @@ test('signup phone helper completes signup SMS verification without touching add
   assert.ok(!setStateCalls.some((updates) => Object.prototype.hasOwnProperty.call(updates, 'currentPhoneActivation')));
 });
 
+test('signup phone helper retires current number and restarts current attempt when resend reports delivery blocked', async () => {
+  const contentMessages = [];
+  const statusActions = [];
+  let currentState = {
+    heroSmsApiKey: 'demo-key',
+    heroSmsReuseEnabled: false,
+    phoneCodeWaitSeconds: 15,
+    phoneCodeTimeoutWindows: 2,
+    phoneCodePollIntervalSeconds: 1,
+    phoneCodePollMaxRounds: 1,
+    signupPhoneNumber: '56999889184',
+    signupPhoneVerificationPurpose: 'signup',
+    signupPhoneActivation: {
+      activationId: 'signup-blocked-1',
+      latestActivationId: 'signup-blocked-1',
+      phoneNumber: '56999889184',
+      provider: 'hero-sms',
+      serviceCode: 'dr',
+      countryId: 56,
+      successfulUses: 0,
+      maxUses: 3,
+    },
+    reusablePhoneActivation: {
+      activationId: 'signup-blocked-1',
+      latestActivationId: 'signup-blocked-1',
+      phoneNumber: '56999889184',
+      provider: 'hero-sms',
+      serviceCode: 'dr',
+      countryId: 56,
+      successfulUses: 0,
+      maxUses: 3,
+    },
+    currentPhoneActivation: {
+      activationId: 'add-phone-activation',
+      phoneNumber: '66880000000',
+      provider: 'hero-sms',
+      serviceCode: 'dr',
+      countryId: 52,
+      successfulUses: 0,
+      maxUses: 3,
+    },
+  };
+  const helpers = api.createPhoneVerificationHelpers({
+    addLog: async () => {},
+    ensureStep8SignupPageReady: async () => {},
+    fetchImpl: async (url) => {
+      const parsedUrl = new URL(url);
+      const action = parsedUrl.searchParams.get('action');
+      if (action === 'getStatus') {
+        return {
+          ok: true,
+          text: async () => 'STATUS_WAIT_CODE',
+        };
+      }
+      if (action === 'setStatus') {
+        statusActions.push(parsedUrl.searchParams.get('status'));
+        return {
+          ok: true,
+          text: async () => 'ACCESS_READY',
+        };
+      }
+      throw new Error(`Unexpected HeroSMS action: ${action}`);
+    },
+    getOAuthFlowStepTimeoutMs: async (fallback) => fallback,
+    getState: async () => currentState,
+    sendToContentScriptResilient: async (_source, message) => {
+      contentMessages.push(message);
+      if (message.type === 'RESEND_VERIFICATION_CODE') {
+        return {
+          phoneDeliveryBlocked: true,
+          errorCode: 'PHONE_SIGNUP_CANNOT_SEND_TEXT',
+          errorText: '无法向此电话号码发送文本消息',
+          url: 'https://auth.openai.com/phone-verification',
+        };
+      }
+      if (message.type === 'SUBMIT_PHONE_VERIFICATION_CODE') {
+        throw new Error('should not submit phone verification code after delivery blocked');
+      }
+      throw new Error(`Unexpected content-script message: ${message.type}`);
+    },
+    setState: async (updates) => {
+      currentState = { ...currentState, ...updates };
+    },
+    sleepWithStop: async () => {},
+    throwIfStopped: () => {},
+  });
+
+  await assert.rejects(
+    helpers.completeSignupPhoneVerificationFlow(77, {
+      state: currentState,
+    }),
+    (error) => {
+      assert.equal(error?.code, 'RESTART_CURRENT_ATTEMPT');
+      assert.equal(error?.reason, 'PHONE_SIGNUP_CANNOT_SEND_TEXT');
+      assert.match(String(error?.message || ''), /RESTART_CURRENT_ATTEMPT::/);
+      return true;
+    }
+  );
+
+  assert.deepStrictEqual(contentMessages.map((message) => message.type), [
+    'RESEND_VERIFICATION_CODE',
+  ]);
+  assert.deepStrictEqual(statusActions, ['3', '8']);
+  assert.equal(currentState.signupPhoneActivation, null);
+  assert.equal(currentState.signupPhoneVerificationPurpose, '');
+  assert.equal(currentState.currentPhoneVerificationCode, '');
+  assert.equal(currentState.reusablePhoneActivation, null);
+  assert.equal(currentState.currentPhoneActivation.activationId, 'add-phone-activation');
+  assert.equal(Array.isArray(currentState.phoneCredentialInvalidBlocklist), true);
+  assert.equal(currentState.phoneCredentialInvalidBlocklist.length, 1);
+});
+
 test('signup phone helper completes login SMS verification by reusing the completed signup activation', async () => {
   const setStateCalls = [];
   const contentMessages = [];

@@ -109,6 +109,7 @@
     const PHONE_ERROR_CODE_ADD_PHONE_NUMBER_USED = 'PHONE_ADD_PHONE_NUMBER_USED';
     const PHONE_ERROR_CODE_ADD_PHONE_NUMBER_INVALID = 'PHONE_ADD_PHONE_NUMBER_INVALID';
     const PHONE_ERROR_CODE_ADD_PHONE_REJECT_UNKNOWN = 'PHONE_ADD_PHONE_REJECT_UNKNOWN';
+    const PHONE_ERROR_CODE_SIGNUP_CANNOT_SEND_TEXT = 'PHONE_SIGNUP_CANNOT_SEND_TEXT';
     const PHONE_ERROR_CODE_FREE_REUSE_PREPARE_FAILED = 'PHONE_FREE_REUSE_PREPARE_FAILED';
     const PHONE_SMS_RATE_LIMIT_ERROR_PREFIX = 'PHONE_SMS_RATE_LIMIT::';
     const PHONE_CODE_TIMEOUT_ERROR_PREFIX = 'PHONE_CODE_TIMEOUT::';
@@ -1918,6 +1919,11 @@
         message.slice(PHONE_RESTART_STEP7_ERROR_PREFIX.length).trim()
         || '手机验证重发后仍未收到短信，请从步骤 7 重新获取新号码。'
       );
+    }
+
+    function isSignupPhoneDeliveryBlockedResult(result = {}) {
+      return Boolean(result?.phoneDeliveryBlocked)
+        && String(result?.errorCode || '').trim() === PHONE_ERROR_CODE_SIGNUP_CANNOT_SEND_TEXT;
     }
 
     async function fetchHeroSmsPayload(config, query, actionLabel) {
@@ -5896,6 +5902,33 @@
         }
 
         let shouldCancelActivation = true;
+        const restartCurrentAttemptForDeliveryBlockedNumber = async (result = {}) => {
+          const errorText = String(result?.errorText || '无法向此电话号码发送文本消息').trim();
+          await addLog(
+            `步骤 4：当前号码 ${activation.phoneNumber} 无法接收 OpenAI 验证短信，已废弃该号码并重新开始本轮。${errorText ? `（${errorText}）` : ''}`,
+            'warn',
+            { step: 4, stepKey: 'fetch-signup-code' }
+          );
+          await cancelSignupPhoneActivation(state, activation).catch(() => {});
+          await markPhoneSignupActivationNonReusable(state, activation).catch(() => []);
+          await retireFreeReusableActivationIfMatching(
+            activation,
+            activation ? `自动白嫖复用号码 ${activation.phoneNumber} 在注册手机验证码页被判定不可送达，已退役。` : ''
+          ).catch(() => {});
+          shouldCancelActivation = false;
+          throw createPhoneFlowError(
+            'RESTART_CURRENT_ATTEMPT',
+            `RESTART_CURRENT_ATTEMPT::步骤 4：当前号码无法接收 OpenAI 验证短信，已废弃该号码并重新开始本轮。${errorText ? `（${errorText}）` : ''}`,
+            {
+              reason: PHONE_ERROR_CODE_SIGNUP_CANNOT_SEND_TEXT,
+              provider: activation?.provider,
+              payload: {
+                phoneNumber: String(activation?.phoneNumber || '').trim(),
+                errorText,
+              },
+            }
+          );
+        };
         try {
           for (let attempt = 1; attempt <= DEFAULT_PHONE_SUBMIT_ATTEMPTS; attempt += 1) {
             throwIfStopped();
@@ -5903,13 +5936,16 @@
             const code = await waitForSignupPhoneCode(state, activation, {
               onTimeoutWindow: async () => {
                 try {
-                  await resendSignupPhoneVerificationCode(tabId);
+                  const resendResult = await resendSignupPhoneVerificationCode(tabId);
+                  if (isSignupPhoneDeliveryBlockedResult(resendResult)) {
+                    await restartCurrentAttemptForDeliveryBlockedNumber(resendResult);
+                  }
                   await addLog('步骤 4：已点击注册手机验证码页面的“重新发送”。', 'info', {
                     step: 4,
                     stepKey: 'fetch-signup-code',
                   });
                 } catch (resendError) {
-                  if (isStopRequestedError(resendError)) {
+                  if (isStopRequestedError(resendError) || String(resendError?.code || '').trim() === 'RESTART_CURRENT_ATTEMPT') {
                     throw resendError;
                   }
                   await addLog(`步骤 4：注册手机验证码页面重发失败，将继续轮询短信。${resendError.message}`, 'warn', {
@@ -5934,6 +5970,10 @@
               signupProfile: options.signupProfile || null,
             });
 
+            if (isSignupPhoneDeliveryBlockedResult(submitResult)) {
+              await restartCurrentAttemptForDeliveryBlockedNumber(submitResult);
+            }
+
             if (submitResult.invalidCode) {
               const invalidErrorText = String(submitResult.errorText || submitResult.url || '未知错误').trim();
               if (attempt >= DEFAULT_PHONE_SUBMIT_ATTEMPTS) {
@@ -5942,9 +5982,12 @@
 
               await requestAdditionalPhoneSms(state, activation);
               try {
-                await resendSignupPhoneVerificationCode(tabId);
+                const resendResult = await resendSignupPhoneVerificationCode(tabId);
+                if (isSignupPhoneDeliveryBlockedResult(resendResult)) {
+                  await restartCurrentAttemptForDeliveryBlockedNumber(resendResult);
+                }
               } catch (resendError) {
-                if (isStopRequestedError(resendError)) {
+                if (isStopRequestedError(resendError) || String(resendError?.code || '').trim() === 'RESTART_CURRENT_ATTEMPT') {
                   throw resendError;
                 }
                 await addLog(`步骤 4：验证码被拒后点击重发失败。${resendError.message}`, 'warn', {
