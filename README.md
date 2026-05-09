@@ -1,5 +1,10 @@
 # Multi-Page Automation
 
+## Fork Documents
+
+- Hotmail007 fork README: [README.hotmail007-fork.md](README.hotmail007-fork.md)
+- 中文发布说明: [docs/Hotmail007-Fork-发布说明.md](docs/Hotmail007-Fork-%E5%8F%91%E5%B8%83%E8%AF%B4%E6%98%8E.md)
+
 一个用于批量跑通 ChatGPT OAuth 注册/登录流程的 Chrome 扩展。
 
 当前版本基于侧边栏控制，支持单步执行、整套自动执行、停止当前流程、保存常用配置，以及通过 DuckDuckGo / QQ / 163 / 163 VIP / 126 / Inbucket / Hotmail 协助获取验证码。
