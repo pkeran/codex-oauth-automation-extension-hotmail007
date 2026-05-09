@@ -485,3 +485,29 @@ test('auto-run controller restarts the current round on generic failure when nev
   assert.equal(events.broadcasts.some(({ phase }) => phase === 'stopped'), false);
   assert.equal(events.accountRecords.some(({ status }) => status === 'failed'), false);
 });
+
+test('auto-run controller enables stage watchdog even when never-stop mode is disabled', async () => {
+  const watchdogCalls = [];
+  const { controller } = createHarness({
+    totalRuns: 1,
+    autoRunSkipFailures: false,
+    autoRunNeverStop: false,
+    runImpl: async () => ({}),
+    extraDeps: {
+      beginAutoRunStageWatchdog: (payload = {}) => {
+        watchdogCalls.push(payload);
+      },
+      clearAutoRunStageWatchdog: () => {},
+    },
+  });
+
+  await controller.autoRunLoop(1, {
+    autoRunSkipFailures: false,
+    autoRunNeverStop: false,
+    mode: 'restart',
+  });
+
+  assert.equal(watchdogCalls.length > 0, true);
+  assert.equal(Boolean(watchdogCalls[0]?.enabled), true);
+  assert.equal(String(watchdogCalls[0]?.phase || ''), 'running');
+});

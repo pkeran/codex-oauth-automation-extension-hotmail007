@@ -508,7 +508,7 @@
         : 'running';
       const showResumePosition = continueCurrentOnFirstAttempt || resumeCurrentRun > 1 || resumeAttemptRun > 1;
       beginAutoRunStageWatchdog({
-        enabled: autoRunNeverStop,
+        enabled: true,
         phase: initialPhase,
         sessionId,
         reason: 'auto-run-loop-start',

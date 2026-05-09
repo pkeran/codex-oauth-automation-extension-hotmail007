@@ -9170,7 +9170,9 @@ function clearStopRequest() {
 
 function isAutoRunStageWatchdogPhase(phase = '') {
   const normalized = String(phase || '').trim().toLowerCase();
-  return normalized === 'running' || normalized === 'waiting_step';
+  return normalized === 'running'
+    || normalized === 'waiting_step'
+    || normalized === 'waiting_email';
 }
 
 function isAutoRunStageWatchdogExemptStep(step) {
@@ -9222,7 +9224,7 @@ function buildAutoRunStageStalledError(options = {}) {
   const sessionId = normalizeAutoRunSessionId(options.sessionId);
   const detail = lastReason ? ` 最近进展：${lastReason}` : '';
   const error = new Error(
-    `AUTO_RUN_STAGE_STALLED::步骤 ${step || '?'} 在 ${Math.round(idleMs / 1000)} 秒内无进展，已触发不停止模式 watchdog 重开当前轮。${detail}`
+    `AUTO_RUN_STAGE_STALLED::步骤 ${step || '?'} 在 ${Math.round(idleMs / 1000)} 秒内无进展，已触发自动运行 watchdog。${detail}`
   );
   error.code = 'AUTO_RUN_STAGE_STALLED';
   error.step = step;
@@ -10927,7 +10929,7 @@ let autoRunAttemptRun = 0;
 let autoRunSessionId = 0;
 let autoRunSessionSeed = 0;
 const AUTO_RUN_STAGE_STALLED_TIMEOUT_MS = 10 * 60 * 1000;
-const AUTO_RUN_STAGE_STALLED_EXEMPT_STEPS = new Set([12]);
+const AUTO_RUN_STAGE_STALLED_EXEMPT_STEPS = new Set();
 let autoRunStageWatchdogEnabled = false;
 let autoRunStageWatchdogPhase = 'idle';
 let autoRunStageWatchdogStep = 0;
@@ -11941,16 +11943,15 @@ async function runAutoSequenceFromStep(startStep, context = {}) {
 }
 
 async function waitForResume() {
-  throwIfStopped();
-  const state = await getState();
-  if (state.email) {
-    await addLog('邮箱已就绪，自动继续后续步骤...', 'info');
-    return;
+  while (true) {
+    throwIfStopped();
+    const state = await getState();
+    if (state.email) {
+      await addLog('邮箱已就绪，自动继续后续步骤...', 'info');
+      return;
+    }
+    await sleepWithStop(250);
   }
-
-  return new Promise((resolve, reject) => {
-    resumeWaiter = { resolve, reject };
-  });
 }
 
 function createAutoRunRoundSummary(round) {

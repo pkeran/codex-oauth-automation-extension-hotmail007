@@ -84,7 +84,7 @@ test('throwIfStopped surfaces AUTO_RUN_STAGE_STALLED when never-stop watchdog se
   const api = new Function(`
 const STOP_ERROR_MESSAGE = '流程已被用户停止。';
 const AUTO_RUN_STAGE_STALLED_TIMEOUT_MS = 600000;
-const AUTO_RUN_STAGE_STALLED_EXEMPT_STEPS = new Set([12]);
+const AUTO_RUN_STAGE_STALLED_EXEMPT_STEPS = new Set();
 let stopRequested = false;
 let autoRunStageWatchdogEnabled = true;
 let autoRunStageWatchdogPhase = 'running';
@@ -115,18 +115,18 @@ return {
   );
 });
 
-test('throwIfStopped does not stall-watchdog Step 12 even after 10 minutes without progress', () => {
+test('throwIfStopped surfaces AUTO_RUN_STAGE_STALLED during waiting_email after 10 minutes without progress', () => {
   const api = new Function(`
 const STOP_ERROR_MESSAGE = '流程已被用户停止。';
 const AUTO_RUN_STAGE_STALLED_TIMEOUT_MS = 600000;
-const AUTO_RUN_STAGE_STALLED_EXEMPT_STEPS = new Set([12]);
+const AUTO_RUN_STAGE_STALLED_EXEMPT_STEPS = new Set();
 let stopRequested = false;
 let autoRunStageWatchdogEnabled = true;
-let autoRunStageWatchdogPhase = 'running';
-let autoRunStageWatchdogStep = 12;
+let autoRunStageWatchdogPhase = 'waiting_email';
+let autoRunStageWatchdogStep = 4;
 let autoRunStageWatchdogSessionId = 0;
 let autoRunStageWatchdogLastProgressAt = 1000;
-let autoRunStageWatchdogLastProgressReason = 'manual confirm';
+let autoRunStageWatchdogLastProgressReason = 'waiting for email';
 const Date = { now: () => 602000 };
 function normalizeAutoRunSessionId(value) { return Number(value) || 0; }
 ${extractFunction('isStopError')}
@@ -138,12 +138,89 @@ ${extractFunction('throwIfStopped')}
 return {
   run() {
     throwIfStopped();
-    return 'ok';
   },
 };
 `)();
 
-  assert.equal(api.run(), 'ok');
+  assert.throws(
+    () => api.run(),
+    (error) => String(error?.code || '') === 'AUTO_RUN_STAGE_STALLED'
+      && String(error?.phase || '') === 'waiting_email'
+      && Number(error?.step) === 4
+  );
+});
+
+test('throwIfStopped no longer exempts Step 12 after 10 minutes without progress', () => {
+  const api = new Function(`
+const STOP_ERROR_MESSAGE = '流程已被用户停止。';
+const AUTO_RUN_STAGE_STALLED_TIMEOUT_MS = 600000;
+const AUTO_RUN_STAGE_STALLED_EXEMPT_STEPS = new Set();
+let stopRequested = false;
+let autoRunStageWatchdogEnabled = true;
+let autoRunStageWatchdogPhase = 'running';
+let autoRunStageWatchdogStep = 12;
+let autoRunStageWatchdogSessionId = 0;
+let autoRunStageWatchdogLastProgressAt = 1000;
+let autoRunStageWatchdogLastProgressReason = 'step12 stalled';
+const Date = { now: () => 602000 };
+function normalizeAutoRunSessionId(value) { return Number(value) || 0; }
+${extractFunction('isStopError')}
+${extractFunction('isAutoRunStageWatchdogPhase')}
+${extractFunction('isAutoRunStageWatchdogExemptStep')}
+${extractFunction('buildAutoRunStageStalledError')}
+${extractFunction('throwIfAutoRunStageStalled')}
+${extractFunction('throwIfStopped')}
+return {
+  run() {
+    throwIfStopped();
+  },
+};
+`)();
+
+  assert.throws(
+    () => api.run(),
+    (error) => String(error?.code || '') === 'AUTO_RUN_STAGE_STALLED'
+      && Number(error?.step) === 12
+  );
+});
+
+test('waitForResume is no longer an unbounded wait and surfaces AUTO_RUN_STAGE_STALLED while waiting for email', async () => {
+  const api = new Function(`
+const STOP_ERROR_MESSAGE = '流程已被用户停止。';
+const AUTO_RUN_STAGE_STALLED_TIMEOUT_MS = 600000;
+const AUTO_RUN_STAGE_STALLED_EXEMPT_STEPS = new Set();
+let stopRequested = false;
+let autoRunStageWatchdogEnabled = true;
+let autoRunStageWatchdogPhase = 'waiting_email';
+let autoRunStageWatchdogStep = 4;
+let autoRunStageWatchdogSessionId = 0;
+let autoRunStageWatchdogLastProgressAt = 1000;
+let autoRunStageWatchdogLastProgressReason = 'waiting for email';
+let resumeWaiter = null;
+const Date = { now: () => 602000 };
+function normalizeAutoRunSessionId(value) { return Number(value) || 0; }
+async function getState() {
+  return { email: '', autoRunPhase: 'waiting_email', autoRunning: true };
+}
+async function addLog() {}
+${extractFunction('isStopError')}
+${extractFunction('isAutoRunStageWatchdogPhase')}
+${extractFunction('isAutoRunStageWatchdogExemptStep')}
+${extractFunction('buildAutoRunStageStalledError')}
+${extractFunction('throwIfAutoRunStageStalled')}
+${extractFunction('throwIfStopped')}
+async function sleepWithStop() {
+  throwIfStopped();
+}
+${extractFunction('waitForResume')}
+return { waitForResume };
+`)();
+
+  await assert.rejects(
+    () => api.waitForResume(),
+    (error) => String(error?.code || '') === 'AUTO_RUN_STAGE_STALLED'
+      && String(error?.phase || '') === 'waiting_email'
+  );
 });
 
 test('executeStep reuses the active top-level auth chain instead of starting a duplicate step', async () => {
