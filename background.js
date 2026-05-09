@@ -11709,6 +11709,46 @@ async function runAutoSequenceFromStep(startStep, context = {}) {
   let currentStartStep = startStep;
   let continueCurrentAttempt = continued;
   const resolvedSignupMethod = await ensureResolvedSignupMethodForRun();
+  const attachPhoneSignupFreshAttemptResumeHint = async (errorLike, failedStep) => {
+    if (!errorLike || typeof errorLike !== 'object') {
+      return errorLike;
+    }
+    if (resolvedSignupMethod !== SIGNUP_METHOD_PHONE) {
+      return errorLike;
+    }
+    if (Number(errorLike.phoneSignupFreshAttemptResumeStep) > 0) {
+      return errorLike;
+    }
+    const normalizedFailedStep = Math.max(0, Math.floor(Number(failedStep) || 0));
+    if (normalizedFailedStep < 5) {
+      return errorLike;
+    }
+    const latestState = await getState();
+    const activation = latestState?.signupPhoneCompletedActivation;
+    if (!activation || typeof activation !== 'object' || Array.isArray(activation)) {
+      return errorLike;
+    }
+    const activationId = String(
+      activation.activationId
+      || activation.latestActivationId
+      || activation.id
+      || ''
+    ).trim();
+    const phoneNumber = String(
+      latestState?.signupPhoneNumber
+      || activation.phoneNumber
+      || activation.number
+      || activation.phone
+      || ''
+    ).trim();
+    if (!activationId || !phoneNumber) {
+      return errorLike;
+    }
+    errorLike.phoneSignupFreshAttemptResumeStep = normalizedFailedStep <= 5
+      ? 5
+      : (normalizedFailedStep === 6 ? 6 : 7);
+    return errorLike;
+  };
 
   while (true) {
 
@@ -11778,6 +11818,7 @@ async function runAutoSequenceFromStep(startStep, context = {}) {
         throw err;
       }
       if (isRestartCurrentAttemptError(err)) {
+        await attachPhoneSignupFreshAttemptResumeHint(err, step);
         throw err;
       }
 
@@ -11886,6 +11927,7 @@ async function runAutoSequenceFromStep(startStep, context = {}) {
           : FINAL_OAUTH_CHAIN_START_STEP;
         await addLog(`步骤 ${step}：检测到认证流程进入 add-phone（${addPhoneUrl}），停止自动回到步骤 ${authChainStartStep} 重开。`, 'warn');
       }
+      await attachPhoneSignupFreshAttemptResumeHint(err, step);
       throw err;
     }
   }

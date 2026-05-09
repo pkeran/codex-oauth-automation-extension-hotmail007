@@ -142,6 +142,98 @@
         : '';
     }
 
+    function isPhoneSignupFreshAttemptResumeBlockedError(errorLike, context = {}) {
+      if (context.blockedByAddPhone || context.blockedByPhoneNoSupply || context.blockedByPhoneSmsRateLimit) {
+        return true;
+      }
+
+      const structuredCode = getStructuredErrorCode(errorLike).toUpperCase();
+      if (structuredCode) {
+        const blockedCodes = new Set([
+          'PHONE_SIGNUP_CANNOT_SEND_TEXT',
+          'PHONE_SIGNUP_NUMBER_USED',
+          'PHONE_SIGNUP_NUMBER_INVALID',
+          'PHONE_SMS_NO_SUPPLY',
+          'PHONE_SMS_RATE_LIMIT',
+          'PHONE_ROUTE_405_RECOVERY_FAILED',
+          'PHONE_ACTIVATION_NOT_FOUND',
+          'PHONE_ADD_PHONE_UNABLE_TO_SEND_CODE',
+          'PHONE_ADD_PHONE_PAGE_RATE_LIMIT',
+          'PHONE_ADD_PHONE_NUMBER_USED',
+          'PHONE_ADD_PHONE_NUMBER_INVALID',
+          'PHONE_ADD_PHONE_REJECT_UNKNOWN',
+        ]);
+        if (blockedCodes.has(structuredCode)) {
+          return true;
+        }
+      }
+
+      const message = String(
+        typeof getErrorMessage === 'function'
+          ? getErrorMessage(errorLike)
+          : (errorLike?.message || errorLike || '')
+      ).trim();
+      if (!message) {
+        return false;
+      }
+
+      return /add-phone|phone verification did not succeed after|number replacements|sms_timeout_after|resend_throttled|activation_not_found|order\s+not\s+found|unable to send|already associated with another account|already linked to the maximum number of accounts|invalid phone|无法接收\s*openai\s*验证短信|已被判定为.*(?:使用|无效)|无效或异常|已被使用/i.test(message);
+    }
+
+    function buildPhoneSignupFreshAttemptResumePlan(state = {}, context = {}) {
+      const signupMethod = String(state?.resolvedSignupMethod || state?.signupMethod || '').trim().toLowerCase();
+      if (signupMethod !== 'phone') {
+        return null;
+      }
+      const activation = state?.signupPhoneCompletedActivation;
+      if (!activation || typeof activation !== 'object' || Array.isArray(activation)) {
+        return null;
+      }
+      const activationId = String(
+        activation.activationId
+        || activation.latestActivationId
+        || activation.id
+        || ''
+      ).trim();
+      const phoneNumber = String(
+        state?.signupPhoneNumber
+        || activation.phoneNumber
+        || activation.number
+        || activation.phone
+        || ''
+      ).trim();
+      const password = String(state?.password || state?.customPassword || '').trim();
+      const costOutcome = String(activation.costOutcome || '').trim().toLowerCase();
+      if (!activationId || !phoneNumber || !password || costOutcome !== 'consumed') {
+        return null;
+      }
+
+      if (isPhoneSignupFreshAttemptResumeBlockedError(context.error, context)) {
+        return null;
+      }
+
+      const hintedStep = Math.max(0, Math.floor(Number(context.resumeStepHint || context.failedStep || 0)));
+      const startStep = hintedStep >= 7
+        ? 7
+        : hintedStep === 6
+          ? 6
+          : hintedStep === 5
+            ? 5
+            : (context.restartCurrentAttemptRequired ? 7 : 0);
+
+      if (!startStep) {
+        return null;
+      }
+
+      return {
+        password,
+        phoneNumber,
+        activation,
+        startStep,
+        preserveTabContext: startStep <= 6,
+      };
+    }
+
     const AUTO_RUN_STAGE_STALLED_CODE = 'AUTO_RUN_STAGE_STALLED';
     const AUTO_RUN_STAGE_STALLED_MAX_RESTARTS_PER_ROUND = 3;
 
@@ -405,6 +497,8 @@
         const resumingCurrentRound = continueCurrentOnFirstAttempt && targetRun === resumeCurrentRun;
         let attemptRun = resumingCurrentRound ? resumeAttemptRun : 1;
         let reuseExistingProgress = resumingCurrentRound;
+        let preservedFreshAttemptStartStep = 1;
+        let preservedFreshAttemptState = null;
         let stageStalledRetryCount = 0;
         const currentRoundState = await getState();
         const keepSameEmailUntilAddPhone = autoRunSkipFailures && shouldKeepCustomMailProviderPoolEmail(currentRoundState);
@@ -422,7 +516,7 @@
             autoRunAttemptRun: attemptRun,
           });
           roundSummary.attempts = attemptRun;
-          let startStep = 1;
+          let startStep = preservedFreshAttemptStartStep > 0 ? preservedFreshAttemptStartStep : 1;
           let useExistingProgress = false;
 
           if (reuseExistingProgress) {
@@ -448,6 +542,7 @@
             const keepSettings = {
               vpsUrl: prevState.vpsUrl,
               vpsPassword: prevState.vpsPassword,
+              password: prevState.password,
               customPassword: prevState.customPassword,
               plusModeEnabled: prevState.plusModeEnabled,
               paypalEmail: prevState.paypalEmail,
@@ -470,14 +565,27 @@
               cloudflareDomain: prevState.cloudflareDomain,
               cloudflareDomains: prevState.cloudflareDomains,
               reusablePhoneActivation: prevState.reusablePhoneActivation,
+              resolvedSignupMethod: preservedFreshAttemptState ? prevState.resolvedSignupMethod || prevState.signupMethod || 'phone' : null,
+              ...(preservedFreshAttemptState ? {
+                password: preservedFreshAttemptState.password,
+                signupPhoneNumber: preservedFreshAttemptState.phoneNumber,
+                signupPhoneCompletedActivation: preservedFreshAttemptState.activation,
+                signupPhoneActivation: null,
+                signupPhoneVerificationRequestedAt: null,
+                signupPhoneVerificationPurpose: '',
+                accountIdentifierType: 'phone',
+                accountIdentifier: preservedFreshAttemptState.phoneNumber,
+              } : {}),
               autoRunRoundSummaries: serializeAutoRunRoundSummaries(totalRuns, roundSummaries),
               autoRunSessionId: sessionId,
-              tabRegistry: {},
-              sourceLastUrls: {},
+              tabRegistry: preservedFreshAttemptState?.preserveTabContext ? prevState.tabRegistry : {},
+              sourceLastUrls: preservedFreshAttemptState?.preserveTabContext ? prevState.sourceLastUrls : {},
               ...getAutoRunStatusPayload('running', { currentRun: targetRun, totalRuns, attemptRun, sessionId }),
             };
             await resetState();
             await setState(keepSettings);
+            preservedFreshAttemptStartStep = 1;
+            preservedFreshAttemptState = null;
             deps.chrome.runtime.sendMessage({ type: 'AUTO_RUN_RESET' }).catch(() => { });
             await sleepWithStop(500);
           } else {
@@ -893,6 +1001,25 @@
             }
 
             if (canRetry) {
+              const freshAttemptResumePhoneSignup = buildPhoneSignupFreshAttemptResumePlan(await getState(), {
+                error: err,
+                resumeStepHint: err?.phoneSignupFreshAttemptResumeStep,
+                restartCurrentAttemptRequired,
+                blockedByAddPhone,
+                blockedByPhoneNoSupply,
+                blockedByPhoneSmsRateLimit,
+              });
+              if (freshAttemptResumePhoneSignup) {
+                preservedFreshAttemptStartStep = freshAttemptResumePhoneSignup.startStep;
+                preservedFreshAttemptState = freshAttemptResumePhoneSignup;
+                await addLog(
+                  `第 ${targetRun}/${totalRuns} 轮第 ${attemptRun} 次尝试命中整轮重开，但已存在成功接码的手机号注册上下文；下一次尝试将保留当前手机号并从步骤 ${preservedFreshAttemptStartStep} 继续。`,
+                  'warn'
+                );
+              } else {
+                preservedFreshAttemptStartStep = 1;
+                preservedFreshAttemptState = null;
+              }
               const retryIndex = attemptRun;
               if (blockedByStageStalled) {
                 await addLog(
