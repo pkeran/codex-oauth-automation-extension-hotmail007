@@ -265,6 +265,57 @@ return { buildPhoneRuntimeStatusSummary };
   assert.equal(text, '步骤 4 等码中：66959916439 / HeroSMS / 剩余 00:00:30（1/2）');
 });
 
+test('phone runtime status summary surfaces step4 http500 preserved-phone retry hint during auto retry', () => {
+  const api = new Function(`
+let latestState = {};
+const PHONE_SMS_PROVIDER_HERO = 'hero-sms';
+const PHONE_SMS_PROVIDER_FIVE_SIM = '5sim';
+const PHONE_SMS_PROVIDER_NEXSMS = 'nexsms';
+const Date = { now: () => 1000 };
+function normalizePhoneSmsProviderValue(value = '') {
+  return String(value || 'hero-sms').trim().toLowerCase() || 'hero-sms';
+}
+function normalizePhoneSmsProvider(value = '') {
+  return normalizePhoneSmsProviderValue(value);
+}
+function normalizeHeroSmsCountryId(value, fallback = 0) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+function normalizeFiveSimCountryCode(value, fallback = '') {
+  return String(value || fallback).trim();
+}
+function normalizeNexSmsCountryId(value, fallback = -1) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+${extractFunction('formatCountdown')}
+${extractFunction('normalizePhoneActivationState')}
+${extractFunction('getPhoneSmsProviderLabel')}
+${extractFunction('getVisiblePhoneRuntimeActivation')}
+${extractFunction('buildPhoneRuntimeStatusSummary')}
+return { buildPhoneRuntimeStatusSummary };
+`)();
+
+  const text = api.buildPhoneRuntimeStatusSummary({
+    autoRunPhase: 'retrying',
+    signupPhoneActivation: {
+      provider: 'hero-sms',
+      activationId: 'signup-123',
+      phoneNumber: '56986198316',
+      countryId: 56,
+      successfulUses: 0,
+      maxUses: 3,
+      step4Http500RecoveryCount: 1,
+    },
+    currentPhoneVerificationCode: '230059',
+    signupPhoneVerificationPurpose: 'signup',
+    stepStatuses: {},
+  });
+
+  assert.equal(text, 'Step4 HTTP500：已保留当前手机号 56986198316 并重开本轮（1/3）');
+});
+
 test('manual step 3 uses phone identity without requiring registration email', () => {
   const api = new Function(`
 let latestState = { signupMethod: 'phone', phoneVerificationEnabled: true, signupPhoneNumber: '+441111111111', accountIdentifierType: 'phone', accountIdentifier: '+441111111111' };

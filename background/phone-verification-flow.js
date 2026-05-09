@@ -6066,7 +6066,7 @@
 
           if (nextRecoveryCount >= PHONE_SIGNUP_HTTP_500_RETRY_LIMIT) {
             await addLog(
-              `步骤 4：当前号码 ${activation.phoneNumber} 在注册验证码页已连续命中 HTTP 500 ${nextRecoveryCount}/${PHONE_SIGNUP_HTTP_500_RETRY_LIMIT} 次，当前号码将废弃并重新开始本轮。${errorText ? `（${errorText}）` : ''}`,
+              `Step4 HTTP500：当前手机号 ${activation.phoneNumber} 已连续命中 ${nextRecoveryCount}/${PHONE_SIGNUP_HTTP_500_RETRY_LIMIT} 次，当前号码将废弃并重开本轮。${errorText ? `（${errorText}）` : ''}`,
               'warn',
               { step: 4, stepKey: 'fetch-signup-code' }
             );
@@ -6109,7 +6109,7 @@
             accountIdentifier: preservedActivation.phoneNumber,
           });
           await addLog(
-            `步骤 4：注册验证码页命中 HTTP 500，保留当前号码 ${activation.phoneNumber} 并重新开始本轮（${nextRecoveryCount}/${PHONE_SIGNUP_HTTP_500_RETRY_LIMIT}）。${errorText ? `（${errorText}）` : ''}`,
+            `Step4 HTTP500：已保留当前手机号 ${activation.phoneNumber} 并重开本轮（${nextRecoveryCount}/${PHONE_SIGNUP_HTTP_500_RETRY_LIMIT}）。${errorText ? `（${errorText}）` : ''}`,
             'warn',
             { step: 4, stepKey: 'fetch-signup-code' }
           );

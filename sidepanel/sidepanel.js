@@ -5809,6 +5809,29 @@ function syncPhoneRuntimeCountdown(state = {}) {
 }
 
 function buildPhoneRuntimeStatusSummary(state = latestState) {
+  const recoveryActivationRecord = state?.signupPhoneActivation || latestState?.signupPhoneActivation || null;
+  const recoveryActivation = normalizePhoneActivationState(recoveryActivationRecord);
+  const step4Http500RecoveryCount = Math.max(
+    0,
+    Math.floor(Number(recoveryActivationRecord?.step4Http500RecoveryCount || 0) || 0)
+  );
+  const currentCode = String(state?.currentPhoneVerificationCode ?? latestState?.currentPhoneVerificationCode ?? '').trim();
+  const verificationPurpose = String(
+    state?.signupPhoneVerificationPurpose
+    ?? latestState?.signupPhoneVerificationPurpose
+    ?? ''
+  ).trim().toLowerCase();
+  const autoRunPhase = String(state?.autoRunPhase ?? latestState?.autoRunPhase ?? '').trim().toLowerCase();
+  if (
+    step4Http500RecoveryCount > 0
+    && recoveryActivation?.phoneNumber
+    && currentCode
+    && verificationPurpose === 'signup'
+    && autoRunPhase === 'retrying'
+  ) {
+    return `Step4 HTTP500：已保留当前手机号 ${recoveryActivation.phoneNumber} 并重开本轮（${step4Http500RecoveryCount}/3）`;
+  }
+
   const runningEntry = Object.entries(state?.stepStatuses || {}).find(([, status]) => status === 'running');
   const runningStep = Number(runningEntry?.[0] || 0);
   if (runningStep !== 4 && runningStep !== 8) {
@@ -13688,6 +13711,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
     case 'LOG_ENTRY':
       appendLog(message.payload);
+      if (/Step4 HTTP500：已保留当前手机号/i.test(String(message.payload?.message || ''))) {
+        showToast('Step4 HTTP500：已保留当前手机号并重开本轮', 'warn', 2600);
+      }
       if (message.payload.level === 'error') {
         showToast(message.payload.message, 'error');
       }
