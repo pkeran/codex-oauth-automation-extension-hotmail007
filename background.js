@@ -2777,16 +2777,18 @@ function normalizeFreeReusablePhoneActivation(record = {}, state = {}) {
     ).trim(),
     successfulUses: Math.max(0, Math.floor(Number(record.successfulUses) || 0)),
     maxUses: Math.max(1, Math.floor(Number(record.maxUses) || 3)),
-    source: 'free-manual-reuse',
+    source: String(record.source || 'free-manual-reuse').trim() || 'free-manual-reuse',
     recordedAt: Math.max(0, Number(record.recordedAt) || Date.now()),
-    manualOnly: !latestActivationId,
+    manualOnly: Boolean(record.manualOnly) || !latestActivationId,
   };
   if (provider === '5sim') {
     normalized.countryId = normalizeFiveSimCountryId(record.countryCode ?? record.countryId ?? record.country ?? '', DEFAULT_FIVE_SIM_COUNTRY_ID);
   } else if (provider === 'nexsms') {
     normalized.countryId = normalizeNexSmsCountryId(record.countryId ?? record.country ?? 0, 0);
   } else {
-    normalized.countryId = normalizeCountryId(record.countryId ?? record.country ?? state?.heroSmsCountryId ?? HERO_SMS_COUNTRY_ID, HERO_SMS_COUNTRY_ID);
+    const explicitHeroCountryId = normalizeCountryId(record.countryId ?? record.country, 0);
+    const inferredHeroCountryId = inferHeroSmsCountryIdFromPhoneNumber(phoneNumber);
+    normalized.countryId = explicitHeroCountryId || inferredHeroCountryId || normalizeCountryId(state?.heroSmsCountryId ?? HERO_SMS_COUNTRY_ID, HERO_SMS_COUNTRY_ID);
   }
   if (countryLabel) {
     normalized.countryLabel = countryLabel;
@@ -2796,6 +2798,38 @@ function normalizeFreeReusablePhoneActivation(record = {}, state = {}) {
     normalized.latestActivationId = latestActivationId || activationId;
   }
   return normalized;
+}
+
+function inferHeroSmsCountryIdFromPhoneNumber(phoneNumber = '') {
+  const digits = String(phoneNumber || '').replace(/[^\d]/g, '');
+  if (!digits) {
+    return 0;
+  }
+  if (digits.startsWith('62')) {
+    return 6;
+  }
+  if (digits.startsWith('66')) {
+    return 52;
+  }
+  if (digits.startsWith('44')) {
+    return 16;
+  }
+  if (digits.startsWith('81')) {
+    return 151;
+  }
+  if (digits.startsWith('49')) {
+    return 43;
+  }
+  if (digits.startsWith('33')) {
+    return 73;
+  }
+  if (digits.startsWith('84')) {
+    return 10;
+  }
+  if (digits.startsWith('1') && digits.length >= 10) {
+    return 187;
+  }
+  return 0;
 }
 
 async function initializeSessionStorageAccess() {
@@ -3598,6 +3632,8 @@ async function setFreeReusablePhoneActivation(record = {}) {
   const normalized = normalizeFreeReusablePhoneActivation({
     ...(fallbackActivation || {}),
     ...(record || {}),
+    manualOnly: true,
+    source: 'free-manual-reuse',
     phoneNumber,
   }, state);
   if (!normalized) {

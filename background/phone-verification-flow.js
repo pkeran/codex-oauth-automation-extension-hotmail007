@@ -110,6 +110,8 @@
     const PHONE_ERROR_CODE_ADD_PHONE_NUMBER_INVALID = 'PHONE_ADD_PHONE_NUMBER_INVALID';
     const PHONE_ERROR_CODE_ADD_PHONE_REJECT_UNKNOWN = 'PHONE_ADD_PHONE_REJECT_UNKNOWN';
     const PHONE_ERROR_CODE_SIGNUP_CANNOT_SEND_TEXT = 'PHONE_SIGNUP_CANNOT_SEND_TEXT';
+    const PHONE_ERROR_CODE_SIGNUP_NUMBER_USED = 'PHONE_SIGNUP_NUMBER_USED';
+    const PHONE_ERROR_CODE_SIGNUP_NUMBER_INVALID = 'PHONE_SIGNUP_NUMBER_INVALID';
     const PHONE_ERROR_CODE_FREE_REUSE_PREPARE_FAILED = 'PHONE_FREE_REUSE_PREPARE_FAILED';
     const PHONE_SMS_RATE_LIMIT_ERROR_PREFIX = 'PHONE_SMS_RATE_LIMIT::';
     const PHONE_CODE_TIMEOUT_ERROR_PREFIX = 'PHONE_CODE_TIMEOUT::';
@@ -140,9 +142,11 @@
     const FREE_REUSE_PREPARE_REASON_MISSING_RECORD = 'missing_free_reusable_activation';
     const FREE_REUSE_PREPARE_REASON_UNSUPPORTED_PROVIDER = 'unsupported_provider';
     const FREE_REUSE_PREPARE_REASON_USAGE_LIMIT_REACHED = 'usage_limit_reached';
+    const FREE_REUSE_PREPARE_REASON_MANUAL_ONLY = 'manual_only';
     const FREE_REUSE_PREPARE_REASON_MISSING_ACTIVATION_ID = 'missing_activation_id';
     const FREE_REUSE_PREPARE_REASON_ACTIVATION_CANCELLED = 'activation_cancelled';
     const FREE_REUSE_PREPARE_REASON_SET_STATUS_FAILED = 'set_status_failed';
+    const FREE_REUSE_PREPARE_REASON_ADD_PHONE_LOOP = 'add_phone_loop';
     const activationPriceHintsByKey = new Map();
     let activePhoneVerificationLogStep = null;
     let activePhoneVerificationLogStepKey = null;
@@ -595,6 +599,38 @@
       const fallbackParsed = Math.floor(Number(fallback));
       if (Number.isFinite(fallbackParsed) && fallbackParsed > 0) {
         return fallbackParsed;
+      }
+      return 0;
+    }
+
+    function inferHeroSmsCountryIdFromPhoneNumber(phoneNumber = '') {
+      const digits = String(phoneNumber || '').replace(/[^\d]/g, '');
+      if (!digits) {
+        return 0;
+      }
+      if (digits.startsWith('62')) {
+        return 6;
+      }
+      if (digits.startsWith('66')) {
+        return 52;
+      }
+      if (digits.startsWith('44')) {
+        return 16;
+      }
+      if (digits.startsWith('81')) {
+        return 151;
+      }
+      if (digits.startsWith('49')) {
+        return 43;
+      }
+      if (digits.startsWith('33')) {
+        return 73;
+      }
+      if (digits.startsWith('84')) {
+        return 10;
+      }
+      if (digits.startsWith('1') && digits.length >= 10) {
+        return 187;
       }
       return 0;
     }
@@ -1223,7 +1259,7 @@
         : (
           provider === PHONE_SMS_PROVIDER_NEXSMS
             ? normalizeNexSmsCountryId(rawCountryId, 0)
-            : normalizeCountryId(rawCountryId, fallbackCountryId)
+            : (normalizeCountryId(rawCountryId, 0) || inferHeroSmsCountryIdFromPhoneNumber(phoneNumber) || fallbackCountryId)
         );
       const phoneVerificationSuccessCount = normalizeUseCount(record.phoneVerificationSuccessCount);
       return {
@@ -1423,7 +1459,7 @@
         phoneNumber,
         provider: PHONE_SMS_PROVIDER_HERO,
         serviceCode: String(record.serviceCode || HERO_SMS_SERVICE_CODE).trim() || HERO_SMS_SERVICE_CODE,
-        countryId: normalizeCountryId(record.countryId, HERO_SMS_COUNTRY_ID),
+        countryId: normalizeCountryId(record.countryId, 0) || inferHeroSmsCountryIdFromPhoneNumber(phoneNumber) || HERO_SMS_COUNTRY_ID,
         ...(countryLabel ? { countryLabel } : {}),
         successfulUses: normalizeUseCount(record.successfulUses),
         maxUses: Math.max(1, Math.floor(Number(record.maxUses) || DEFAULT_PHONE_NUMBER_MAX_USES)),
@@ -1924,6 +1960,16 @@
     function isSignupPhoneDeliveryBlockedResult(result = {}) {
       return Boolean(result?.phoneDeliveryBlocked)
         && String(result?.errorCode || '').trim() === PHONE_ERROR_CODE_SIGNUP_CANNOT_SEND_TEXT;
+    }
+
+    function isSignupPhoneTerminalRejectResult(result = {}) {
+      const code = String(result?.errorCode || '').trim();
+      if (!code) {
+        return false;
+      }
+      return code === PHONE_ERROR_CODE_SIGNUP_CANNOT_SEND_TEXT
+        || code === PHONE_ERROR_CODE_SIGNUP_NUMBER_USED
+        || code === PHONE_ERROR_CODE_SIGNUP_NUMBER_INVALID;
     }
 
     async function fetchHeroSmsPayload(config, query, actionLabel) {
@@ -4094,9 +4140,11 @@
       if (!result || result.ok) {
         return false;
       }
-      return normalizeFreePhoneReusePrepareFailureMode(state?.freePhoneReusePrepareFailureMode)
-        === FREE_PHONE_REUSE_PREPARE_FAILURE_MODE_STOP
-        && result.reason === FREE_REUSE_PREPARE_REASON_SET_STATUS_FAILED;
+      if (result.reason === FREE_REUSE_PREPARE_REASON_SET_STATUS_FAILED) {
+        return normalizeFreePhoneReusePrepareFailureMode(state?.freePhoneReusePrepareFailureMode)
+          === FREE_PHONE_REUSE_PREPARE_FAILURE_MODE_STOP;
+      }
+      return false;
     }
 
     async function prepareFreeReusablePhoneActivation(state = {}) {
@@ -4123,6 +4171,14 @@
         await retireFreeReusableActivation(message);
         return buildFreeReusablePreparationResult(false, {
           reason: FREE_REUSE_PREPARE_REASON_USAGE_LIMIT_REACHED,
+          message,
+        });
+      }
+      if (savedActivation.manualOnly) {
+        const message = `步骤 9：已手动记录的白嫖复用手机号 ${savedActivation.phoneNumber} 仅用于手动交接，本轮不会调用 HeroSMS 复用接口。`;
+        await addLog(message, 'warn');
+        return buildFreeReusablePreparationResult(false, {
+          reason: FREE_REUSE_PREPARE_REASON_MANUAL_ONLY,
           message,
         });
       }
@@ -5944,6 +6000,44 @@
             }
           );
         };
+        const restartCurrentAttemptForRejectedSignupNumber = async (result = {}) => {
+          if (isSignupPhoneDeliveryBlockedResult(result)) {
+            await restartCurrentAttemptForDeliveryBlockedNumber(result);
+            return;
+          }
+
+          const reason = String(result?.errorCode || '').trim();
+          const errorText = String(result?.errorText || 'signup phone verification rejected').trim();
+          const rejectLabel = reason === PHONE_ERROR_CODE_SIGNUP_NUMBER_USED
+            ? '已被使用'
+            : reason === PHONE_ERROR_CODE_SIGNUP_NUMBER_INVALID
+              ? '无效或异常'
+              : '不可继续使用';
+          await addLog(
+            `步骤 4：当前号码 ${activation.phoneNumber} 已被判定为${rejectLabel}，将废弃该号码并重新开始本轮。${errorText ? `（${errorText}）` : ''}`,
+            'warn',
+            { step: 4, stepKey: 'fetch-signup-code' }
+          );
+          await cancelSignupPhoneActivation(state, activation).catch(() => {});
+          await markPhoneSignupActivationNonReusable(state, activation).catch(() => []);
+          await retireFreeReusableActivationIfMatching(
+            activation,
+            activation ? `自动白嫖复用号码 ${activation.phoneNumber} 在注册手机号验证码页被判定为${rejectLabel}，已退役。` : ''
+          ).catch(() => {});
+          shouldCancelActivation = false;
+          throw createPhoneFlowError(
+            'RESTART_CURRENT_ATTEMPT',
+            `RESTART_CURRENT_ATTEMPT::步骤 4：当前号码已被判定为${rejectLabel}，已废弃并重新开始本轮。${errorText ? `（${errorText}）` : ''}`,
+            {
+              reason: reason || PHONE_ERROR_CODE_SIGNUP_CANNOT_SEND_TEXT,
+              provider: activation?.provider,
+              payload: {
+                phoneNumber: String(activation?.phoneNumber || '').trim(),
+                errorText,
+              },
+            }
+          );
+        };
         try {
           for (let attempt = 1; attempt <= DEFAULT_PHONE_SUBMIT_ATTEMPTS; attempt += 1) {
             throwIfStopped();
@@ -5952,8 +6046,8 @@
               onTimeoutWindow: async () => {
                 try {
                   const resendResult = await resendSignupPhoneVerificationCode(tabId);
-                  if (isSignupPhoneDeliveryBlockedResult(resendResult)) {
-                    await restartCurrentAttemptForDeliveryBlockedNumber(resendResult);
+                  if (isSignupPhoneTerminalRejectResult(resendResult)) {
+                    await restartCurrentAttemptForRejectedSignupNumber(resendResult);
                   }
                   await addLog('步骤 4：已点击注册手机验证码页面的“重新发送”。', 'info', {
                     step: 4,
@@ -5985,8 +6079,8 @@
               signupProfile: options.signupProfile || null,
             });
 
-            if (isSignupPhoneDeliveryBlockedResult(submitResult)) {
-              await restartCurrentAttemptForDeliveryBlockedNumber(submitResult);
+            if (isSignupPhoneTerminalRejectResult(submitResult)) {
+              await restartCurrentAttemptForRejectedSignupNumber(submitResult);
             }
 
             if (submitResult.invalidCode) {
@@ -5998,8 +6092,8 @@
               await requestAdditionalPhoneSms(state, activation);
               try {
                 const resendResult = await resendSignupPhoneVerificationCode(tabId);
-                if (isSignupPhoneDeliveryBlockedResult(resendResult)) {
-                  await restartCurrentAttemptForDeliveryBlockedNumber(resendResult);
+                if (isSignupPhoneTerminalRejectResult(resendResult)) {
+                  await restartCurrentAttemptForRejectedSignupNumber(resendResult);
                 }
               } catch (resendError) {
                 if (isStopRequestedError(resendError) || String(resendError?.code || '').trim() === 'RESTART_CURRENT_ATTEMPT') {
@@ -6728,16 +6822,33 @@
                 if (shouldCancelActivation && activation) {
                   await cancelPhoneActivation(state, activation);
                 }
-                await retireFreeReusableActivationIfMatching(
-                  activation,
-                  `自动白嫖复用号码 ${activation.phoneNumber} 连续返回 add-phone 页面，已退役该复用记录。`
-                );
-                await clearCurrentActivation();
+              await retireFreeReusableActivationIfMatching(
+                activation,
+                `自动白嫖复用号码 ${activation.phoneNumber} 连续返回 add-phone 页面，已退役该复用记录。`
+              );
+              await clearCurrentActivation();
+              if (isFreeAutoReuseActivation(activation)) {
                 activation = null;
                 shouldCancelActivation = false;
                 preferReuseExistingActivationOnAddPhone = false;
                 addPhoneReentryWithSameActivation = 0;
-                pageState = {
+                throw createPhoneFlowError(
+                  PHONE_ERROR_CODE_FREE_REUSE_PREPARE_FAILED,
+                  `Step 9: automatic free reuse number ${activation?.phoneNumber || ''} kept returning to add-phone and has been retired.`,
+                  {
+                    provider: PHONE_SMS_PROVIDER_HERO,
+                    reason: FREE_REUSE_PREPARE_REASON_ADD_PHONE_LOOP,
+                    payload: {
+                      phoneNumber: String(activation?.phoneNumber || '').trim(),
+                    },
+                  }
+                );
+              }
+              activation = null;
+              shouldCancelActivation = false;
+              preferReuseExistingActivationOnAddPhone = false;
+              addPhoneReentryWithSameActivation = 0;
+              pageState = {
                   ...pageState,
                   addPhonePage: true,
                   phoneVerificationPage: false,

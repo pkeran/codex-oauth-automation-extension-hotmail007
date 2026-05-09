@@ -63,6 +63,8 @@ function createApiWithErrorText(errorText) {
   return new Function(`
 ${extractConst('INVALID_VERIFICATION_CODE_PATTERN')}
 ${extractConst('PHONE_VERIFICATION_DELIVERY_BLOCKED_PATTERN')}
+${extractConst('PHONE_VERIFICATION_NUMBER_USED_PATTERN')}
+${extractConst('PHONE_VERIFICATION_NUMBER_INVALID_PATTERN')}
 const VERIFICATION_CODE_INPUT_SELECTOR = 'input[name="code"]';
 ${extractFunction('getVerificationErrorMessages')}
 ${extractFunction('getVerificationErrorText')}
@@ -117,4 +119,26 @@ test('getVerificationErrorOutcome matches English delivery-blocked variants for 
       errorText: variant,
     });
   }
+});
+
+test('getVerificationErrorOutcome returns structured signup phone used-number error', () => {
+  const errorText = 'This phone number is already associated with another account.';
+  const api = createApiWithErrorText(errorText);
+  const outcome = api.getVerificationErrorOutcome(4);
+  assert.deepEqual(outcome, {
+    phoneNumberUsed: true,
+    errorCode: 'PHONE_SIGNUP_NUMBER_USED',
+    errorText,
+  });
+});
+
+test('getVerificationErrorOutcome returns structured signup phone invalid-number error', () => {
+  const errorText = 'This phone number is not valid. Please use a different number.';
+  const api = createApiWithErrorText(errorText);
+  const outcome = api.getVerificationErrorOutcome(4);
+  assert.deepEqual(outcome, {
+    phoneNumberInvalid: true,
+    errorCode: 'PHONE_SIGNUP_NUMBER_INVALID',
+    errorText,
+  });
 });

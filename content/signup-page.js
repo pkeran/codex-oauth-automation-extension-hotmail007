@@ -148,6 +148,8 @@ const POST_SIGNUP_ONBOARDING_TITLE_PATTERN = /what\s+brings\s+you\s+to\s+chatgpt
 const POST_SIGNUP_ONBOARDING_SKIP_PATTERN = /skip(?:\s+(?:tour|guide|intro))?|跳过(?:导览)?/i;
 const POST_SIGNUP_ONBOARDING_NEXT_PATTERN = /next|continue|get\s*started|start|let'?s\s*go|下一步|继续|开始吧|好的，开始吧/i;
 const PHONE_VERIFICATION_DELIVERY_BLOCKED_PATTERN = /无法向(?:此|该)?电话号码发送文本消息|unable to send (?:a )?text messages? to (?:this phone number|this number)|cannot send (?:a )?text messages? to (?:this phone number|this number)|we couldn['’]?t send (?:a )?text messages? to (?:this phone number|this number)|we could not send (?:a )?text messages? to (?:this phone number|this number)/i;
+const PHONE_VERIFICATION_NUMBER_USED_PATTERN = /phone_max_usage_exceeded|phone_number_in_use|already\s+linked\s+to\s+the\s+maximum\s+number\s+of\s+accounts|phone\s+number\s+is\s+already\s+(?:in\s+use|linked|registered)|phone\s+number\s+has\s+already\s+been\s+used|already\s+associated\s+with\s+another\s+account|not\s+eligible\s+to\s+be\s+used|cannot\s+be\s+used\s+for\s+verification|号码.*(?:已|被).*(?:使用|占用|绑定|注册)|手机号.*(?:已|被).*(?:使用|占用|绑定|注册)|该手机号.*(?:已|被).*(?:使用|占用|绑定|注册)/i;
+const PHONE_VERIFICATION_NUMBER_INVALID_PATTERN = /phone\s+number\s+is\s+not\s+valid|invalid\s+phone\s+number|invalid\s+phone|not\s+a\s+valid\s+phone|号码.*无效|手机号.*无效|电话号码.*无效/i;
 const POST_SIGNUP_ONBOARDING_OPTION_PATTERNS = [
   /school|学校/i,
   /work|工作/i,
@@ -2736,6 +2738,24 @@ function getVerificationErrorOutcome(step = 0) {
       phoneDeliveryBlocked: true,
       errorCode: 'PHONE_SIGNUP_CANNOT_SEND_TEXT',
       errorText: deliveryBlockedText,
+    };
+  }
+
+  const phoneNumberUsedText = messages.find((text) => PHONE_VERIFICATION_NUMBER_USED_PATTERN.test(text)) || '';
+  if (phoneNumberUsedText && safeStep === 4) {
+    return {
+      phoneNumberUsed: true,
+      errorCode: 'PHONE_SIGNUP_NUMBER_USED',
+      errorText: phoneNumberUsedText,
+    };
+  }
+
+  const phoneNumberInvalidText = messages.find((text) => PHONE_VERIFICATION_NUMBER_INVALID_PATTERN.test(text)) || '';
+  if (phoneNumberInvalidText && safeStep === 4) {
+    return {
+      phoneNumberInvalid: true,
+      errorCode: 'PHONE_SIGNUP_NUMBER_INVALID',
+      errorText: phoneNumberInvalidText,
     };
   }
 
