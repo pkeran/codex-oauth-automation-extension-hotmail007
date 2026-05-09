@@ -1,8 +1,13 @@
 # Multi-Page Automation
 
-## Fork Documents
+## Hotmail007 Fork 说明
 
-- Hotmail007 fork README: [README.hotmail007-fork.md](README.hotmail007-fork.md)
+> [!IMPORTANT]
+> 这是 `pkeran/codex-oauth-automation-extension` 的 Hotmail007 改版 fork 发布线。  
+> 当前默认分支：`dev-hotmail007`  
+> 当前扩展版本：`8.0`
+
+- Fork 专用 README： [README.hotmail007-fork.md](README.hotmail007-fork.md)
 - 中文发布说明: [docs/Hotmail007-Fork-发布说明.md](docs/Hotmail007-Fork-%E5%8F%91%E5%B8%83%E8%AF%B4%E6%98%8E.md)
 
 一个用于批量跑通 ChatGPT OAuth 注册/登录流程的 Chrome 扩展。
