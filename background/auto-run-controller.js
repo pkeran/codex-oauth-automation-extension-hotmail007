@@ -185,26 +185,8 @@
       if (signupMethod !== 'phone') {
         return null;
       }
-      const activation = state?.signupPhoneCompletedActivation;
-      if (!activation || typeof activation !== 'object' || Array.isArray(activation)) {
-        return null;
-      }
-      const activationId = String(
-        activation.activationId
-        || activation.latestActivationId
-        || activation.id
-        || ''
-      ).trim();
-      const phoneNumber = String(
-        state?.signupPhoneNumber
-        || activation.phoneNumber
-        || activation.number
-        || activation.phone
-        || ''
-      ).trim();
       const password = String(state?.password || state?.customPassword || '').trim();
-      const costOutcome = String(activation.costOutcome || '').trim().toLowerCase();
-      if (!activationId || !phoneNumber || !password || costOutcome !== 'consumed') {
+      if (!password) {
         return null;
       }
 
@@ -213,25 +195,80 @@
       }
 
       const hintedStep = Math.max(0, Math.floor(Number(context.resumeStepHint || context.failedStep || 0)));
-      const startStep = hintedStep >= 7
-        ? 7
-        : hintedStep === 6
-          ? 6
-          : hintedStep === 5
-            ? 5
-            : (context.restartCurrentAttemptRequired ? 7 : 0);
-
-      if (!startStep) {
-        return null;
+      const completedActivation = state?.signupPhoneCompletedActivation;
+      if (completedActivation && typeof completedActivation === 'object' && !Array.isArray(completedActivation)) {
+        const activationId = String(
+          completedActivation.activationId
+          || completedActivation.latestActivationId
+          || completedActivation.id
+          || ''
+        ).trim();
+        const phoneNumber = String(
+          state?.signupPhoneNumber
+          || completedActivation.phoneNumber
+          || completedActivation.number
+          || completedActivation.phone
+          || ''
+        ).trim();
+        const costOutcome = String(completedActivation.costOutcome || '').trim().toLowerCase();
+        const startStep = hintedStep >= 7
+          ? 7
+          : hintedStep === 6
+            ? 6
+            : hintedStep === 5
+              ? 5
+              : (context.restartCurrentAttemptRequired ? 7 : 0);
+        if (activationId && phoneNumber && costOutcome === 'consumed' && startStep) {
+          return {
+            mode: 'completed',
+            password,
+            phoneNumber,
+            activation: completedActivation,
+            startStep,
+            preserveTabContext: startStep <= 6,
+          };
+        }
       }
 
-      return {
-        password,
-        phoneNumber,
-        activation,
-        startStep,
-        preserveTabContext: startStep <= 6,
-      };
+      const pendingActivation = state?.signupPhoneActivation;
+      const pendingReason = String(context?.error?.reason || '').trim();
+      const pendingCode = String(state?.currentPhoneVerificationCode || '').trim();
+      const pendingPhoneNumber = String(
+        state?.signupPhoneNumber
+        || pendingActivation?.phoneNumber
+        || pendingActivation?.number
+        || pendingActivation?.phone
+        || ''
+      ).trim();
+      const pendingActivationId = String(
+        pendingActivation?.activationId
+        || pendingActivation?.latestActivationId
+        || pendingActivation?.id
+        || ''
+      ).trim();
+      if (
+        pendingReason === 'PHONE_SIGNUP_VERIFICATION_HTTP_500'
+        && pendingActivation
+        && typeof pendingActivation === 'object'
+        && !Array.isArray(pendingActivation)
+        && pendingActivationId
+        && pendingPhoneNumber
+        && hintedStep >= 2
+      ) {
+        return {
+          mode: 'pending',
+          password,
+          phoneNumber: pendingPhoneNumber,
+          activation: pendingActivation,
+          verificationCode: pendingCode,
+          verificationPurpose: String(state?.signupPhoneVerificationPurpose || 'signup').trim() || 'signup',
+          verificationRequestedAt: state?.signupPhoneVerificationRequestedAt ?? null,
+          startStep: hintedStep,
+          preserveTabContext: true,
+        };
+      }
+
+      return null;
     }
 
     const AUTO_RUN_STAGE_STALLED_CODE = 'AUTO_RUN_STAGE_STALLED';
@@ -569,10 +606,21 @@
               ...(preservedFreshAttemptState ? {
                 password: preservedFreshAttemptState.password,
                 signupPhoneNumber: preservedFreshAttemptState.phoneNumber,
-                signupPhoneCompletedActivation: preservedFreshAttemptState.activation,
-                signupPhoneActivation: null,
-                signupPhoneVerificationRequestedAt: null,
-                signupPhoneVerificationPurpose: '',
+                signupPhoneCompletedActivation: preservedFreshAttemptState.mode === 'completed'
+                  ? preservedFreshAttemptState.activation
+                  : null,
+                signupPhoneActivation: preservedFreshAttemptState.mode === 'pending'
+                  ? preservedFreshAttemptState.activation
+                  : null,
+                currentPhoneVerificationCode: preservedFreshAttemptState.mode === 'pending'
+                  ? String(preservedFreshAttemptState.verificationCode || '').trim()
+                  : '',
+                signupPhoneVerificationRequestedAt: preservedFreshAttemptState.mode === 'pending'
+                  ? (preservedFreshAttemptState.verificationRequestedAt ?? null)
+                  : null,
+                signupPhoneVerificationPurpose: preservedFreshAttemptState.mode === 'pending'
+                  ? String(preservedFreshAttemptState.verificationPurpose || 'signup').trim() || 'signup'
+                  : '',
                 accountIdentifierType: 'phone',
                 accountIdentifier: preservedFreshAttemptState.phoneNumber,
               } : {}),

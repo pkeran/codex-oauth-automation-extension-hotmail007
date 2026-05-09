@@ -112,6 +112,7 @@
     const PHONE_ERROR_CODE_SIGNUP_CANNOT_SEND_TEXT = 'PHONE_SIGNUP_CANNOT_SEND_TEXT';
     const PHONE_ERROR_CODE_SIGNUP_NUMBER_USED = 'PHONE_SIGNUP_NUMBER_USED';
     const PHONE_ERROR_CODE_SIGNUP_NUMBER_INVALID = 'PHONE_SIGNUP_NUMBER_INVALID';
+    const PHONE_ERROR_CODE_SIGNUP_VERIFICATION_HTTP_500 = 'PHONE_SIGNUP_VERIFICATION_HTTP_500';
     const PHONE_ERROR_CODE_FREE_REUSE_PREPARE_FAILED = 'PHONE_FREE_REUSE_PREPARE_FAILED';
     const PHONE_SMS_RATE_LIMIT_ERROR_PREFIX = 'PHONE_SMS_RATE_LIMIT::';
     const PHONE_CODE_TIMEOUT_ERROR_PREFIX = 'PHONE_CODE_TIMEOUT::';
@@ -119,6 +120,7 @@
     const PHONE_RESEND_THROTTLED_ERROR_PREFIX = 'PHONE_RESEND_THROTTLED::';
     const PHONE_ROUTE_405_RECOVERY_FAILED_ERROR_PREFIX = 'PHONE_ROUTE_405_RECOVERY_FAILED::';
     const PHONE_SMS_FAILURE_SKIP_THRESHOLD = 2;
+    const PHONE_SIGNUP_HTTP_500_RETRY_LIMIT = 3;
     const PHONE_COUNTRY_FAILURE_THRESHOLD_MIN = 1;
     const PHONE_COUNTRY_FAILURE_THRESHOLD_MAX = 10;
     const PHONE_ADD_PHONE_RETRY_LIMIT_MIN = 0;
@@ -1262,6 +1264,7 @@
             : (normalizeCountryId(rawCountryId, 0) || inferHeroSmsCountryIdFromPhoneNumber(phoneNumber) || fallbackCountryId)
         );
       const phoneVerificationSuccessCount = normalizeUseCount(record.phoneVerificationSuccessCount);
+      const step4Http500RecoveryCount = Math.max(0, Math.floor(Number(record.step4Http500RecoveryCount) || 0));
       return {
         activationId,
         ...(explicitLatestActivationId ? { latestActivationId: explicitLatestActivationId } : {}),
@@ -1283,6 +1286,7 @@
           : {}),
         ...(String(record?.costSettledAt || '').trim() ? { costSettledAt: String(record.costSettledAt || '').trim() } : {}),
         ...(phoneVerificationSuccessCount > 0 ? { phoneVerificationSuccessCount } : {}),
+        ...(step4Http500RecoveryCount > 0 ? { step4Http500RecoveryCount } : {}),
         ...(expiresAt > 0 ? { expiresAt } : {}),
         ...(statusAction ? { statusAction } : {}),
       };
@@ -1970,6 +1974,11 @@
       return code === PHONE_ERROR_CODE_SIGNUP_CANNOT_SEND_TEXT
         || code === PHONE_ERROR_CODE_SIGNUP_NUMBER_USED
         || code === PHONE_ERROR_CODE_SIGNUP_NUMBER_INVALID;
+    }
+
+    function isSignupPhoneVerificationHttp500Result(result = {}) {
+      return Boolean(result?.verificationHttp500)
+        && String(result?.errorCode || '').trim() === PHONE_ERROR_CODE_SIGNUP_VERIFICATION_HTTP_500;
     }
 
     async function fetchHeroSmsPayload(config, query, actionLabel) {
@@ -5973,6 +5982,7 @@
         }
 
         let shouldCancelActivation = true;
+        let shouldClearRuntimeState = true;
         const restartCurrentAttemptForDeliveryBlockedNumber = async (result = {}) => {
           const errorText = String(result?.errorText || '无法向此电话号码发送文本消息').trim();
           await addLog(
@@ -6038,11 +6048,95 @@
             }
           );
         };
+        const restartCurrentAttemptForSignupVerificationHttp500 = async (result = {}) => {
+          const latestStateForPreserve = await getState();
+          const errorText = String(
+            result?.errorText
+            || result?.url
+            || 'auth.openai.com 当前无法处理此请求。 HTTP ERROR 500'
+          ).trim();
+          const nextRecoveryCount = Math.max(
+            0,
+            Math.floor(Number(
+              activation?.step4Http500RecoveryCount
+              || state?.signupPhoneActivation?.step4Http500RecoveryCount
+              || 0
+            ) || 0)
+          ) + 1;
+
+          if (nextRecoveryCount >= PHONE_SIGNUP_HTTP_500_RETRY_LIMIT) {
+            await addLog(
+              `步骤 4：当前号码 ${activation.phoneNumber} 在注册验证码页已连续命中 HTTP 500 ${nextRecoveryCount}/${PHONE_SIGNUP_HTTP_500_RETRY_LIMIT} 次，当前号码将废弃并重新开始本轮。${errorText ? `（${errorText}）` : ''}`,
+              'warn',
+              { step: 4, stepKey: 'fetch-signup-code' }
+            );
+            await cancelSignupPhoneActivation(state, activation).catch(() => {});
+            await markPhoneSignupActivationNonReusable(state, activation).catch(() => []);
+            await retireFreeReusableActivationIfMatching(
+              activation,
+              activation ? `自动白嫖复用号码 ${activation.phoneNumber} 在注册验证码页连续命中 HTTP 500，已退役。` : ''
+            ).catch(() => {});
+            shouldCancelActivation = false;
+            throw createPhoneFlowError(
+              'RESTART_CURRENT_ATTEMPT',
+              `RESTART_CURRENT_ATTEMPT::步骤 4：当前号码在注册验证码页连续命中 HTTP 500 已达上限，已废弃并重新开始本轮。${errorText ? `（${errorText}）` : ''}`,
+              {
+                reason: PHONE_ERROR_CODE_SIGNUP_VERIFICATION_HTTP_500,
+                provider: activation?.provider,
+                payload: {
+                  phoneNumber: String(activation?.phoneNumber || '').trim(),
+                  errorText,
+                  retryCount: nextRecoveryCount,
+                },
+              }
+            );
+          }
+
+          const preservedActivation = normalizeActivation({
+            ...activation,
+            step4Http500RecoveryCount: nextRecoveryCount,
+          }) || {
+            ...activation,
+            step4Http500RecoveryCount: nextRecoveryCount,
+          };
+          await setPhoneRuntimeState({
+            signupPhoneActivation: preservedActivation,
+            signupPhoneNumber: preservedActivation.phoneNumber,
+            signupPhoneVerificationRequestedAt: latestStateForPreserve?.signupPhoneVerificationRequestedAt || Date.now(),
+            signupPhoneVerificationPurpose: 'signup',
+            [PHONE_VERIFICATION_CODE_STATE_KEY]: String(latestStateForPreserve?.[PHONE_VERIFICATION_CODE_STATE_KEY] || '').trim(),
+            accountIdentifierType: 'phone',
+            accountIdentifier: preservedActivation.phoneNumber,
+          });
+          await addLog(
+            `步骤 4：注册验证码页命中 HTTP 500，保留当前号码 ${activation.phoneNumber} 并重新开始本轮（${nextRecoveryCount}/${PHONE_SIGNUP_HTTP_500_RETRY_LIMIT}）。${errorText ? `（${errorText}）` : ''}`,
+            'warn',
+            { step: 4, stepKey: 'fetch-signup-code' }
+          );
+          shouldCancelActivation = false;
+          shouldClearRuntimeState = false;
+          const restartError = createPhoneFlowError(
+            'RESTART_CURRENT_ATTEMPT',
+            `RESTART_CURRENT_ATTEMPT::步骤 4：注册验证码页命中 HTTP 500，保留当前手机号并重新开始本轮。${errorText ? `（${errorText}）` : ''}`,
+            {
+              reason: PHONE_ERROR_CODE_SIGNUP_VERIFICATION_HTTP_500,
+              provider: activation?.provider,
+              payload: {
+                phoneNumber: String(activation?.phoneNumber || '').trim(),
+                errorText,
+                retryCount: nextRecoveryCount,
+              },
+            }
+          );
+          restartError.phoneSignupFreshAttemptResumeStep = 2;
+          throw restartError;
+        };
         try {
           for (let attempt = 1; attempt <= DEFAULT_PHONE_SUBMIT_ATTEMPTS; attempt += 1) {
             throwIfStopped();
             state = await getState();
-            const code = await waitForSignupPhoneCode(state, activation, {
+            const preservedCode = attempt === 1 ? String(state?.[PHONE_VERIFICATION_CODE_STATE_KEY] || '').trim() : '';
+            const code = preservedCode || await waitForSignupPhoneCode(state, activation, {
               onTimeoutWindow: async () => {
                 try {
                   const resendResult = await resendSignupPhoneVerificationCode(tabId);
@@ -6064,6 +6158,12 @@
                 }
               },
             });
+            if (preservedCode) {
+              await addLog(`步骤 4：检测到当前号码已存在待提交验证码 ${preservedCode}，本次优先复用旧验证码继续提交流程。`, 'warn', {
+                step: 4,
+                stepKey: 'fetch-signup-code',
+              });
+            }
 
             await setPhoneRuntimeState({
               [PHONE_VERIFICATION_CODE_STATE_KEY]: String(code || '').trim(),
@@ -6082,6 +6182,9 @@
             if (isSignupPhoneTerminalRejectResult(submitResult)) {
               await restartCurrentAttemptForRejectedSignupNumber(submitResult);
             }
+            if (isSignupPhoneVerificationHttp500Result(submitResult)) {
+              await restartCurrentAttemptForSignupVerificationHttp500(submitResult);
+            }
 
             if (submitResult.invalidCode) {
               const invalidErrorText = String(submitResult.errorText || submitResult.url || '未知错误').trim();
@@ -6094,6 +6197,9 @@
                 const resendResult = await resendSignupPhoneVerificationCode(tabId);
                 if (isSignupPhoneTerminalRejectResult(resendResult)) {
                   await restartCurrentAttemptForRejectedSignupNumber(resendResult);
+                }
+                if (isSignupPhoneVerificationHttp500Result(resendResult)) {
+                  await restartCurrentAttemptForSignupVerificationHttp500(resendResult);
                 }
               } catch (resendError) {
                 if (isStopRequestedError(resendError) || String(resendError?.code || '').trim() === 'RESTART_CURRENT_ATTEMPT') {
@@ -6131,11 +6237,13 @@
           if (shouldCancelActivation && activation) {
             await cancelSignupPhoneActivation(state, activation).catch(() => {});
           }
-          await setPhoneRuntimeState({
-            [PHONE_VERIFICATION_CODE_STATE_KEY]: '',
-            signupPhoneVerificationRequestedAt: null,
-            signupPhoneVerificationPurpose: '',
-          });
+          if (shouldClearRuntimeState) {
+            await setPhoneRuntimeState({
+              [PHONE_VERIFICATION_CODE_STATE_KEY]: '',
+              signupPhoneVerificationRequestedAt: null,
+              signupPhoneVerificationPurpose: '',
+            });
+          }
           throw sanitizePhoneCodeTimeoutError(error);
         }
       });

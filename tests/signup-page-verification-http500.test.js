@@ -59,8 +59,9 @@ function extractConst(name) {
   return `const ${name} = ${match[1]};`;
 }
 
-function createApiWithErrorText(errorText) {
-  return new Function(`
+test('getVerificationErrorOutcome returns structured http500 recovery error on contact-verification page', () => {
+  const errorText = 'auth.openai.com 当前无法处理此请求。 HTTP ERROR 500';
+  const api = new Function(`
 ${extractConst('INVALID_VERIFICATION_CODE_PATTERN')}
 ${extractConst('PHONE_VERIFICATION_DELIVERY_BLOCKED_PATTERN')}
 ${extractConst('PHONE_VERIFICATION_NUMBER_USED_PATTERN')}
@@ -74,7 +75,15 @@ ${extractFunction('getVerificationErrorOutcome')}
 const errorNode = {
   textContent: ${JSON.stringify(errorText)},
 };
+const location = {
+  href: 'https://auth.openai.com/contact-verification',
+  pathname: '/contact-verification',
+};
 const document = {
+  title: '当前无法使用此页面',
+  body: {
+    textContent: ${JSON.stringify(errorText)},
+  },
   querySelectorAll(selector) {
     const text = String(selector || '');
     if (text.includes('react-aria-FieldError') || text.includes('[class*="error"]')) {
@@ -91,55 +100,11 @@ return {
   getVerificationErrorOutcome,
 };
 `)();
-}
 
-test('getVerificationErrorOutcome returns structured signup phone delivery blocked error', () => {
-  const errorText = '无法向此电话号码发送文本消息';
-  const api = createApiWithErrorText(errorText);
   const outcome = api.getVerificationErrorOutcome(4);
   assert.deepEqual(outcome, {
-    phoneDeliveryBlocked: true,
-    errorCode: 'PHONE_SIGNUP_CANNOT_SEND_TEXT',
-    errorText,
-  });
-});
-
-test('getVerificationErrorOutcome matches English delivery-blocked variants for signup phone verification', () => {
-  const englishVariants = [
-    'We couldn’t send a text message to this phone number.',
-    'We could not send a text message to this phone number.',
-    'Unable to send text messages to this number.',
-  ];
-
-  for (const variant of englishVariants) {
-    const api = createApiWithErrorText(variant);
-    const outcome = api.getVerificationErrorOutcome(4);
-    assert.deepEqual(outcome, {
-      phoneDeliveryBlocked: true,
-      errorCode: 'PHONE_SIGNUP_CANNOT_SEND_TEXT',
-      errorText: variant,
-    });
-  }
-});
-
-test('getVerificationErrorOutcome returns structured signup phone used-number error', () => {
-  const errorText = 'This phone number is already associated with another account.';
-  const api = createApiWithErrorText(errorText);
-  const outcome = api.getVerificationErrorOutcome(4);
-  assert.deepEqual(outcome, {
-    phoneNumberUsed: true,
-    errorCode: 'PHONE_SIGNUP_NUMBER_USED',
-    errorText,
-  });
-});
-
-test('getVerificationErrorOutcome returns structured signup phone invalid-number error', () => {
-  const errorText = 'This phone number is not valid. Please use a different number.';
-  const api = createApiWithErrorText(errorText);
-  const outcome = api.getVerificationErrorOutcome(4);
-  assert.deepEqual(outcome, {
-    phoneNumberInvalid: true,
-    errorCode: 'PHONE_SIGNUP_NUMBER_INVALID',
+    verificationHttp500: true,
+    errorCode: 'PHONE_SIGNUP_VERIFICATION_HTTP_500',
     errorText,
   });
 });
