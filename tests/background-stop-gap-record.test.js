@@ -56,6 +56,7 @@ test('generic stopped record resolves to next unfinished step during execution g
     extractFunction('extractStoppedStepFromRecordStatus'),
     extractFunction('resolveAccountRunRecordReasonForStop'),
     extractFunction('buildRunCostSnapshotFromState'),
+    extractFunction('attachRecoveredAutoRunOutcome'),
     extractFunction('appendAndBroadcastAccountRunRecord'),
   ].join('\n');
 
@@ -263,6 +264,7 @@ test('appendAndBroadcastAccountRunRecord preserves latest phone completion cost 
     extractFunction('extractStoppedStepFromRecordStatus'),
     extractFunction('resolveAccountRunRecordReasonForStop'),
     extractFunction('buildRunCostSnapshotFromState'),
+    extractFunction('attachRecoveredAutoRunOutcome'),
     extractFunction('appendAndBroadcastAccountRunRecord'),
   ].join('\n');
 
@@ -374,6 +376,7 @@ test('appendAndBroadcastAccountRunRecord keeps consumed signup phone activation 
     extractFunction('extractStoppedStepFromRecordStatus'),
     extractFunction('resolveAccountRunRecordReasonForStop'),
     extractFunction('buildRunCostSnapshotFromState'),
+    extractFunction('attachRecoveredAutoRunOutcome'),
     extractFunction('appendAndBroadcastAccountRunRecord'),
   ].join('\n');
 

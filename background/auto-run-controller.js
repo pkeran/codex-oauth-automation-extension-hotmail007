@@ -744,12 +744,16 @@
               && structuredErrorCode === 'HOTMAIL_ACCOUNT_INVALID';
             const blockedByStageStalled = structuredErrorCode === AUTO_RUN_STAGE_STALLED_CODE;
             const blockedByStep3PhoneCredentialInvalid = structuredErrorCode === 'STEP3_PHONE_CREDENTIAL_INVALID';
+            const blockedByStep3PageCommTimeout = structuredErrorCode === 'STEP3_PAGE_COMM_TIMEOUT';
+            const blockedByStep4SignupCodePageTimeout = structuredErrorCode === 'STEP4_SIGNUP_CODE_PAGE_TIMEOUT';
             const blockedByAddPhone = !blockedByPhoneSmsRateLimit
               && !blockedByPhoneNoSupply
               && !blockedByHotmailNoStock
               && !blockedByHotmailAccountInvalid
               && !blockedByStageStalled
               && !blockedByStep3PhoneCredentialInvalid
+              && !blockedByStep3PageCommTimeout
+              && !blockedByStep4SignupCodePageTimeout
               && typeof isAddPhoneAuthFailure === 'function'
               && isAddPhoneAuthFailure(err);
             const blockedByPlusNonFreeTrial = typeof isPlusCheckoutNonFreeTrialFailure === 'function'
@@ -786,6 +790,8 @@
                 ||
                 (forceCurrentRoundRetry && attemptRun < maxAttemptsForRound)
                 || (blockedByStep3PhoneCredentialInvalid && attemptRun < maxAttemptsForRound)
+                || (blockedByStep3PageCommTimeout && attemptRun < maxAttemptsForRound)
+                || (blockedByStep4SignupCodePageTimeout && attemptRun < maxAttemptsForRound)
                 || (
                   (
                     mailboxProviderTransient
@@ -799,6 +805,8 @@
                       && !blockedBySignupUserAlreadyExists
                       && !blockedByStep4Route405
                       && !blockedByStep3PhoneCredentialInvalid
+                      && !blockedByStep3PageCommTimeout
+                      && !blockedByStep4SignupCodePageTimeout
                     )
                   )
                   && (autoRunSkipFailures || autoRunNeverStop)

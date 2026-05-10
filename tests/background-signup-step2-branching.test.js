@@ -783,3 +783,37 @@ test('signup flow helper converts step 3 invalid phone/password into structured 
   assert.equal(cleanupCalls.length, 1);
   assert.equal(cleanupCalls[0].step, 3);
 });
+
+test('signup flow helper tags retryable step 3 finalize transport timeout with structured code', async () => {
+  const helpers = signupFlowApi.createSignupFlowHelpers({
+    addLog: async () => {},
+    buildGeneratedAliasEmail: () => '',
+    chrome: { tabs: { get: async () => ({ id: 31, url: 'https://auth.openai.com/create-account/password' }) } },
+    ensureContentScriptReadyOnTab: async () => {},
+    ensureHotmailAccountForFlow: async () => ({}),
+    ensureLuckmailPurchaseForFlow: async () => ({}),
+    isGeneratedAliasProvider: () => false,
+    isReusableGeneratedAliasEmail: () => false,
+    isHotmailProvider: () => false,
+    isRetryableContentScriptTransportError: (error) => /did not respond in 45s/i.test(error?.message || String(error || '')),
+    isLuckmailProvider: () => false,
+    isSignupEmailVerificationPageUrl: () => false,
+    isSignupPasswordPageUrl: () => true,
+    reuseOrCreateTab: async () => 31,
+    sendToContentScriptResilient: async () => {
+      throw new Error('Content script on signup-page did not respond in 45s. Try refreshing the tab and retry.');
+    },
+    setEmailState: async () => {},
+    SIGNUP_ENTRY_URL: 'https://chatgpt.com/',
+    SIGNUP_PAGE_INJECT_FILES: ['content/utils.js', 'content/signup-page.js'],
+    waitForTabUrlMatch: async () => null,
+  });
+
+  await assert.rejects(
+    () => helpers.finalizeSignupPasswordSubmitInTab(31, 'Secret123!', 3),
+    (error) => {
+      assert.equal(error.code, 'STEP3_PAGE_COMM_TIMEOUT');
+      return true;
+    }
+  );
+});

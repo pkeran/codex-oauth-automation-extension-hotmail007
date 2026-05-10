@@ -459,6 +459,60 @@ test('auto-run controller does not let STEP3_PHONE_CREDENTIAL_INVALID fall into 
   assert.equal(events.broadcasts.some(({ phase }) => phase === 'retrying'), true);
 });
 
+test('auto-run controller retries STEP3_PAGE_COMM_TIMEOUT in the same round even when auto retry is disabled', async () => {
+  let attempts = 0;
+  const { controller, events } = createHarness({
+    totalRuns: 1,
+    autoRunSkipFailures: false,
+    runImpl: async () => {
+      attempts += 1;
+      if (attempts === 1) {
+        const error = new Error('step 3 page communication timeout');
+        error.code = 'STEP3_PAGE_COMM_TIMEOUT';
+        throw error;
+      }
+      return {};
+    },
+  });
+
+  await controller.autoRunLoop(1, {
+    autoRunSkipFailures: false,
+    mode: 'restart',
+  });
+
+  assert.equal(attempts, 2);
+  assert.deepEqual(events.runTargets, [1, 1]);
+  assert.equal(events.broadcasts.some(({ phase }) => phase === 'retrying'), true);
+  assert.equal(events.accountRecords.some(({ status }) => status === 'failed'), false);
+});
+
+test('auto-run controller retries STEP4_SIGNUP_CODE_PAGE_TIMEOUT in the same round even when auto retry is disabled', async () => {
+  let attempts = 0;
+  const { controller, events } = createHarness({
+    totalRuns: 1,
+    autoRunSkipFailures: false,
+    runImpl: async () => {
+      attempts += 1;
+      if (attempts === 1) {
+        const error = new Error('step 4 signup code page timeout');
+        error.code = 'STEP4_SIGNUP_CODE_PAGE_TIMEOUT';
+        throw error;
+      }
+      return {};
+    },
+  });
+
+  await controller.autoRunLoop(1, {
+    autoRunSkipFailures: false,
+    mode: 'restart',
+  });
+
+  assert.equal(attempts, 2);
+  assert.deepEqual(events.runTargets, [1, 1]);
+  assert.equal(events.broadcasts.some(({ phase }) => phase === 'retrying'), true);
+  assert.equal(events.accountRecords.some(({ status }) => status === 'failed'), false);
+});
+
 test('auto-run controller restarts the current round on generic failure when never-stop mode is enabled', async () => {
   let attempts = 0;
   const { controller, events } = createHarness({

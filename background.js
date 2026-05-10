@@ -10229,10 +10229,31 @@ function notifyStepError(step, error) {
   if (waiter) waiter.reject(normalizeStepWaiterError(error));
 }
 
+function attachRecoveredAutoRunOutcome(state = {}) {
+  if (!state || typeof state !== 'object') {
+    return state;
+  }
+  const currentRun = Math.max(0, Math.floor(Number(state.autoRunCurrentRun) || 0));
+  const roundSummaries = Array.isArray(state.autoRunRoundSummaries) ? state.autoRunRoundSummaries : [];
+  const roundSummary = currentRun > 0 ? roundSummaries[currentRun - 1] : null;
+  const recoveredFailureReasons = Array.isArray(roundSummary?.failureReasons)
+    ? roundSummary.failureReasons.map((item) => String(item || '').trim()).filter(Boolean)
+    : [];
+  const recoveredSuccess = recoveredFailureReasons.length > 0;
+  if (!recoveredSuccess) {
+    return { ...state };
+  }
+  return {
+    ...state,
+    recoveredSuccess,
+    recoveredFailureReasons,
+  };
+}
+
 async function runCompletedStepSideEffects(step, payload, completionState, lastStepId) {
   await handleStepData(step, payload);
   if (step === lastStepId) {
-    await appendAndBroadcastAccountRunRecord('success', completionState);
+    await appendAndBroadcastAccountRunRecord('success', attachRecoveredAutoRunOutcome(completionState));
   }
 }
 
@@ -11000,11 +11021,12 @@ async function appendAndBroadcastAccountRunRecord(status, stateOverride = null, 
       state[phoneCompletionKey] = latestState[phoneCompletionKey];
     }
   }
+  const recoveredState = attachRecoveredAutoRunOutcome(state);
   const resolvedStatus = resolveAccountRunRecordStatusForStop(status, state);
   const resolvedReason = resolveAccountRunRecordReasonForStop(resolvedStatus, reason);
   const recordState = {
-    ...state,
-    runCosts: buildRunCostSnapshotFromState(state),
+    ...recoveredState,
+    runCosts: buildRunCostSnapshotFromState(recoveredState),
   };
   const record = await accountRunHistoryHelpers.appendAccountRunRecord(resolvedStatus, recordState, resolvedReason);
   if (!record) {
@@ -12178,6 +12200,28 @@ const phoneVerificationHelpers = self.MultiPageBackgroundPhoneVerification?.crea
   DEFAULT_PHONE_CODE_POLL_INTERVAL_SECONDS,
   DEFAULT_PHONE_CODE_POLL_ROUNDS,
   ensureStep8SignupPageReady,
+  navigateAuthTabToAddPhone: async (tabId, options = {}) => {
+    const visibleStep = Math.floor(Number(options.visibleStep || options.step) || 0) || 9;
+    const requestedTimeoutMs = Number(options.timeoutMs);
+    const timeoutMs = Number.isFinite(requestedTimeoutMs) && requestedTimeoutMs > 0
+      ? requestedTimeoutMs
+      : await getOAuthFlowStepTimeoutMs(30000, {
+        step: visibleStep,
+        actionLabel: 'direct add-phone navigation',
+      });
+    await chrome.tabs.update(tabId, { url: 'https://auth.openai.com/add-phone', active: true });
+    await ensureStep8SignupPageReady(tabId, {
+      timeoutMs,
+      visibleStep,
+      logStepKey: options.logStepKey || 'phone-verification',
+      logMessage: options.logMessage || '步骤 9：认证页已失联，直接打开添加手机号页面后等待脚本恢复。',
+    });
+    return {
+      addPhonePage: true,
+      phoneVerificationPage: false,
+      url: 'https://auth.openai.com/add-phone',
+    };
+  },
   generateRandomBirthday,
   generateRandomName,
   getOAuthFlowRemainingMs,
@@ -13422,6 +13466,29 @@ function throwIfStep8SettledOrStopped(isSettled = false) {
   }
 }
 
+function isStep9AuthCallbackWaitPageUrl(rawUrl) {
+  if (!rawUrl) return false;
+  try {
+    const parsed = new URL(rawUrl);
+    const hostname = String(parsed.hostname || '').toLowerCase();
+    if (!['auth.openai.com', 'auth0.openai.com', 'accounts.openai.com'].includes(hostname)) {
+      return false;
+    }
+    const pathname = String(parsed.pathname || '');
+    return /\/api\/oauth\/oauth2\/auth(?:[/?#]|$)/i.test(pathname)
+      || /\/oauth\/oauth2\/auth(?:[/?#]|$)/i.test(pathname);
+  } catch {
+    return false;
+  }
+}
+
+async function shouldDeferStep9CallbackTimeout(details = {}) {
+  const tabId = details?.tabId;
+  if (!Number.isInteger(tabId)) return false;
+  const tab = await chrome.tabs.get(tabId).catch(() => null);
+  return isStep9AuthCallbackWaitPageUrl(tab?.url || '');
+}
+
 async function ensureStep8SignupPageReady(tabId, options = {}) {
   const visibleStep = Math.floor(Number(options.visibleStep || options.logStep || options.step) || 0);
   await ensureContentScriptReadyOnTab('signup-page', tabId, {
@@ -13876,6 +13943,7 @@ const step9Executor = self.MultiPageBackgroundStep9?.createStep9Executor({
   setStep8TabUpdatedListener,
   setWebNavCommittedListener,
   setWebNavListener,
+  shouldDeferStep9CallbackTimeout,
   sleepWithStop,
   STEP8_CLICK_RETRY_DELAY_MS,
   STEP8_MAX_ROUNDS,

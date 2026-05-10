@@ -14,6 +14,7 @@
       getState,
       sendToContentScript,
       sendToContentScriptResilient,
+      navigateAuthTabToAddPhone = null,
       setState,
       settlePersistedPhoneActivationCostLedger = async () => [],
       broadcastDataUpdate = null,
@@ -118,6 +119,7 @@
     const PHONE_CODE_TIMEOUT_ERROR_PREFIX = 'PHONE_CODE_TIMEOUT::';
     const PHONE_RESTART_STEP7_ERROR_PREFIX = 'PHONE_RESTART_STEP7::';
     const PHONE_RESEND_THROTTLED_ERROR_PREFIX = 'PHONE_RESEND_THROTTLED::';
+    const PHONE_RESEND_SERVER_ERROR_PREFIX = 'PHONE_RESEND_SERVER_ERROR::';
     const PHONE_ROUTE_405_RECOVERY_FAILED_ERROR_PREFIX = 'PHONE_ROUTE_405_RECOVERY_FAILED::';
     const PHONE_SMS_FAILURE_SKIP_THRESHOLD = 2;
     const PHONE_SIGNUP_HTTP_500_RETRY_LIMIT = 3;
@@ -1823,6 +1825,48 @@
         return true;
       }
       return /tried\s+to\s+resend\s+too\s+many\s+times|please\s+try\s+again\s+later|too\s+many\s+resend|resend\s+too\s+many|发送.*过于频繁|稍后再试/i.test(message);
+    }
+
+    function isWhatsAppPhoneResendResult(value) {
+      if (!value) {
+        return false;
+      }
+      const text = typeof value === 'string'
+        ? value
+        : [
+          value?.channel,
+          value?.channelText,
+          value?.text,
+          value?.message,
+        ].filter(Boolean).join(' ');
+      return /whats\s*app/i.test(String(text || ''));
+    }
+
+    function isPhoneResendServerError(error) {
+      const message = String(error?.message || error || '').trim();
+      if (!message) {
+        return false;
+      }
+      if (message.startsWith(PHONE_RESEND_SERVER_ERROR_PREFIX)) {
+        return true;
+      }
+      return /this\s+page\s+isn['’]?t\s+working|currently\s+unable\s+to\s+handle\s+this\s+request|http\s+error\s+500|500\s+internal\s+server\s+error/i.test(message);
+    }
+
+    function buildPhoneResendServerError(error) {
+      const message = String(error?.message || error || '').trim();
+      if (message.startsWith(PHONE_RESEND_SERVER_ERROR_PREFIX)) {
+        return new Error(message);
+      }
+      return new Error(`${PHONE_RESEND_SERVER_ERROR_PREFIX}${message || 'OpenAI contact-verification page returned HTTP ERROR 500 after resend.'}`);
+    }
+
+    function isAuthContentScriptUnreachableError(error) {
+      const message = String(error?.message || error || '').trim();
+      if (!message) {
+        return false;
+      }
+      return /receiving end does not exist|could not establish connection|message port closed|frame with id 0 is showing error page|error page/i.test(message);
     }
 
     function isPhoneRoute405RecoveryError(error) {
@@ -4741,7 +4785,7 @@
       return result || {};
     }
 
-    async function resendPhoneVerificationCode(tabId) {
+    async function resendPhoneVerificationCode(tabId, options = {}) {
       const visibleStep = normalizeLogStep(activePhoneVerificationLogStep) || 9;
       const timeoutMs = typeof getOAuthFlowStepTimeoutMs === 'function'
         ? await getOAuthFlowStepTimeoutMs(65000, { step: visibleStep, actionLabel: 'resend phone verification code' })
@@ -4749,7 +4793,7 @@
       const result = await sendToContentScriptResilient('signup-page', {
         type: 'RESEND_PHONE_VERIFICATION_CODE',
         source: 'background',
-        payload: {},
+        payload: { ...options },
       }, {
         timeoutMs,
         responseTimeoutMs: timeoutMs,
@@ -5709,7 +5753,6 @@
               );
               continue;
             }
-            await requestAdditionalPhoneSms(state, normalizedActivation);
             if (resendTriggeredForCurrentNumber) {
               await addLog(
                 `步骤 9：号码 ${normalizedActivation.phoneNumber} 已触发过一次页面重发；为避免限流，将继续轮询不再点击重发。`,
@@ -5718,12 +5761,40 @@
               continue;
             }
             try {
-              await resendPhoneVerificationCode(tabId);
+              const resendProbeResult = await resendPhoneVerificationCode(tabId, { probeOnly: true });
+              if (isWhatsAppPhoneResendResult(resendProbeResult)) {
+                await addLog(
+                  `步骤 9：页面重发入口显示 WhatsApp 通道（${resendProbeResult.channelText || resendProbeResult.text || 'WhatsApp'}），当前接码平台无法读取 WhatsApp 消息，立即更换号码。`,
+                  'warn'
+                );
+                await clearPhoneRuntimeCountdown();
+                return {
+                  code: '',
+                  replaceNumber: true,
+                  reason: 'whatsapp_resend_channel',
+                };
+              }
+              if (resendProbeResult?.probed) {
+                await requestAdditionalPhoneSms(state, normalizedActivation);
+                await resendPhoneVerificationCode(tabId);
+              }
               resendTriggeredForCurrentNumber = true;
               await addLog('步骤 9：已点击手机验证码页面的“重新发送短信”。', 'info');
             } catch (resendError) {
               if (isStopRequestedError(resendError)) {
                 throw resendError;
+              }
+              if (isPhoneResendServerError(resendError)) {
+                await addLog(
+                  `步骤 9：重发短信后进入 contact-verification 500 页面，立即更换号码。${resendError.message}`,
+                  'warn'
+                );
+                await clearPhoneRuntimeCountdown();
+                return {
+                  code: '',
+                  replaceNumber: true,
+                  reason: 'resend_server_error',
+                };
               }
               if (isPhoneResendThrottledError(resendError)) {
                 await addLog(
@@ -6151,6 +6222,12 @@
                   if (isStopRequestedError(resendError) || String(resendError?.code || '').trim() === 'RESTART_CURRENT_ATTEMPT') {
                     throw resendError;
                   }
+                  if (isPhoneResendServerError(resendError)) {
+                    throw buildPhoneResendServerError(resendError);
+                  }
+                  if (isPhoneResendServerError(resendError)) {
+                    throw buildPhoneResendServerError(resendError);
+                  }
                   await addLog(`步骤 4：注册手机验证码页面重发失败，将继续轮询短信。${resendError.message}`, 'warn', {
                     step: 4,
                     stepKey: 'fetch-signup-code',
@@ -6563,11 +6640,28 @@
         return matched?.label || `Country #${normalizedCountryId}`;
       };
 
-      const ensureAddPhonePageBeforeSubmit = async (attemptLabel = 'before submit') => {
+      const directNavigateToAddPhone = async (attemptLabel = 'after replace-number rotation') => {
+        if (typeof navigateAuthTabToAddPhone !== 'function') {
+          return null;
+        }
+        const visibleStep = normalizeLogStep(activePhoneVerificationLogStep) || 9;
+        return navigateAuthTabToAddPhone(tabId, {
+          visibleStep,
+          timeoutMs: 30000,
+          logMessage: '步骤 9：认证页已失联，直接打开添加手机号页面后等待脚本恢复。',
+          logStepKey: 'phone-verification',
+          attemptLabel,
+        });
+      };
+
+      const ensureAddPhonePageBeforeSubmit = async (attemptLabel = 'before submit', options = {}) => {
+        const allowDirectNavigation = Boolean(options.allowDirectNavigation);
         let snapshot = null;
+        let snapshotError = null;
         try {
           snapshot = await readPhonePageState(tabId, 12000);
         } catch (error) {
+          snapshotError = error;
           await addLog(
             `Step 9: failed to inspect auth page ${attemptLabel}. ${error.message}`,
             'warn'
@@ -6579,6 +6673,7 @@
           return snapshot;
         }
 
+        let returnError = null;
         try {
           const returned = await returnToAddPhone(tabId);
           const merged = {
@@ -6589,13 +6684,38 @@
             return merged;
           }
         } catch (error) {
+          returnError = error;
           await addLog(
             `Step 9: failed to return to add-phone page ${attemptLabel}. ${error.message}`,
             'warn'
           );
         }
 
-        const latest = await readPhonePageState(tabId, 15000);
+        if (
+          allowDirectNavigation
+          && (
+            isAuthContentScriptUnreachableError(snapshotError)
+            || isAuthContentScriptUnreachableError(returnError)
+          )
+        ) {
+          const navigated = await directNavigateToAddPhone(attemptLabel);
+          if (navigated) {
+            return navigated;
+          }
+        }
+
+        let latest = null;
+        try {
+          latest = await readPhonePageState(tabId, 15000);
+        } catch (error) {
+          if (allowDirectNavigation && isAuthContentScriptUnreachableError(error)) {
+            const navigated = await directNavigateToAddPhone(attemptLabel);
+            if (navigated) {
+              return navigated;
+            }
+          }
+          throw error;
+        }
         if (!latest?.addPhonePage) {
           throw new Error(
             `Step 9: auth page is not on add-phone before phone submit (${attemptLabel}). URL: ${latest?.url || 'unknown'}`
@@ -7378,7 +7498,10 @@
             }
           }
           try {
-            const verifiedAddPhoneState = await ensureAddPhonePageBeforeSubmit('after replace-number rotation');
+            const verifiedAddPhoneState = await ensureAddPhonePageBeforeSubmit(
+              'after replace-number rotation',
+              { allowDirectNavigation: true }
+            );
             returnResult = {
               ...returnResult,
               ...verifiedAddPhoneState,

@@ -19,10 +19,14 @@
       waitForElement,
     } = deps;
     const PHONE_RESEND_THROTTLED_ERROR_PREFIX = 'PHONE_RESEND_THROTTLED::';
+    const PHONE_RESEND_BANNED_NUMBER_ERROR_PREFIX = 'PHONE_RESEND_BANNED_NUMBER::';
+    const PHONE_RESEND_SERVER_ERROR_PREFIX = 'PHONE_RESEND_SERVER_ERROR::';
     const PHONE_ROUTE_405_RECOVERY_FAILED_ERROR_PREFIX = 'PHONE_ROUTE_405_RECOVERY_FAILED::';
     const PHONE_ROUTE_405_RECOVERY_COOLDOWN_MS = 6000;
     const PHONE_RESEND_ROUTE_405_MAX_RECOVERIES = 2;
     const PHONE_RESEND_ROUTE_405_MAX_RECOVERY_TOTAL_MS = 12000;
+    const PHONE_RESEND_BANNED_NUMBER_PATTERN = /无法向此电话号码发送短信|无法向此手机号发送短信|无法发送短信到此电话号码|无法发送短信到此手机号|can(?:not|'t)\s+send\s+(?:an?\s+)?(?:sms|text(?:\s+message)?)\s+to\s+(?:this|that)\s+(?:phone\s+)?number|unable\s+to\s+send\s+(?:an?\s+)?(?:sms|text(?:\s+message)?)\s+to\s+(?:this|that)\s+(?:phone\s+)?number/i;
+    const PHONE_RESEND_SERVER_ERROR_PATTERN = /this\s+page\s+isn['’]?t\s+working|currently\s+unable\s+to\s+handle\s+this\s+request|http\s+error\s+500|500\s+internal\s+server\s+error/i;
     const PHONE_RESEND_THROTTLED_PATTERN = /tried\s+to\s+resend\s+too\s+many\s+times|please\s+try\s+again\s+later|too\s+many\s+resend|resend\s+too\s+many|发送.*过于频繁|稍后再试|重试次数过多/i;
     const PHONE_ROUTE_405_PATTERN = /405\s+method\s+not\s+allowed|route\s+error.*405|did\s+not\s+provide\s+an?\s+[`'"]?action|post\s+request\s+to\s+["']?\/phone-verification/i;
     const PHONE_ROUTE_405_MAX_RECOVERY_CLICKS = 3;
@@ -403,6 +407,32 @@
       }) || null;
     }
 
+    function getPhoneVerificationResendActionText(button) {
+      return [
+        getActionText(button),
+        button?.textContent,
+        button?.value,
+        button?.getAttribute?.('aria-label'),
+        button?.getAttribute?.('title'),
+      ].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+    }
+
+    function isWhatsAppResendText(value) {
+      return /whats\s*app/i.test(String(value || ''));
+    }
+
+    function getPhoneVerificationResendActionInfo(button) {
+      const text = getPhoneVerificationResendActionText(button);
+      const channel = isWhatsAppResendText(text)
+        ? 'whatsapp'
+        : (/(?:sms|text\s+message|短信)/i.test(text) ? 'sms' : '');
+      return {
+        channel,
+        channelText: text,
+        text,
+      };
+    }
+
     function getPhoneVerificationDisplayedPhone() {
       const text = getPageTextSnapshot();
       const matches = text.match(/\+\d[\d\s-]{6,}\d/g);
@@ -491,6 +521,85 @@
         return String(concise?.[0] || pageSnapshot).trim();
       }
       return '';
+    }
+
+    function getPhoneResendBannedNumberText() {
+      const inlineMatch = getPhoneVerificationInlineMessages()
+        .find((text) => PHONE_RESEND_BANNED_NUMBER_PATTERN.test(text));
+      if (inlineMatch) {
+        return inlineMatch;
+      }
+      const pageSnapshot = String(getPageTextSnapshot?.() || '').replace(/\s+/g, ' ').trim();
+      if (pageSnapshot && PHONE_RESEND_BANNED_NUMBER_PATTERN.test(pageSnapshot)) {
+        return pageSnapshot;
+      }
+      return '';
+    }
+
+    function getPhoneResendServerErrorText() {
+      const path = String(location?.pathname || '');
+      if (!/\/contact-verification(?:[/?#]|$)/i.test(path)) {
+        return '';
+      }
+      const text = String(getPageTextSnapshot?.() || '').replace(/\s+/g, ' ').trim();
+      const title = String(document?.title || '').replace(/\s+/g, ' ').trim();
+      const combined = `${title} ${text}`.trim();
+      if (!PHONE_RESEND_SERVER_ERROR_PATTERN.test(combined)) {
+        return '';
+      }
+      return combined || 'OpenAI contact-verification page returned HTTP ERROR 500 after resend.';
+    }
+
+    function checkPhoneResendError() {
+      const maxUsageText = getAddPhoneErrorText();
+      if (maxUsageText && /phone_max_usage_exceeded/i.test(maxUsageText)) {
+        return {
+          hasError: true,
+          reason: 'phone_max_usage_exceeded',
+          message: maxUsageText,
+          url: location.href,
+        };
+      }
+
+      const bannedNumberText = getPhoneResendBannedNumberText();
+      if (bannedNumberText) {
+        return {
+          hasError: true,
+          reason: 'resend_phone_banned',
+          prefix: PHONE_RESEND_BANNED_NUMBER_ERROR_PREFIX,
+          message: bannedNumberText,
+          url: location.href,
+        };
+      }
+
+      const throttledText = getPhoneResendThrottleText();
+      if (throttledText) {
+        return {
+          hasError: true,
+          reason: 'resend_throttled',
+          prefix: PHONE_RESEND_THROTTLED_ERROR_PREFIX,
+          message: throttledText,
+          url: location.href,
+        };
+      }
+
+      const serverErrorText = getPhoneResendServerErrorText();
+      if (serverErrorText) {
+        return {
+          hasError: true,
+          reason: 'resend_server_error',
+          prefix: PHONE_RESEND_SERVER_ERROR_PREFIX,
+          message: serverErrorText,
+          url: location.href,
+        };
+      }
+
+      return {
+        hasError: false,
+        reason: '',
+        message: '',
+        url: location.href,
+      };
     }
 
     function getAuthRetryButton(options = {}) {
@@ -746,7 +855,7 @@
       return waitForPhoneVerificationOutcome();
     }
 
-    async function resendPhoneVerificationCode(timeout = 45000) {
+    async function resendPhoneVerificationCode(timeout = 45000, options = {}) {
       if (activePhoneResendPromise) {
         return activePhoneResendPromise;
       }
@@ -779,12 +888,35 @@
             await recoverRoute405WithinResend();
             continue;
           }
-          const throttledText = getPhoneResendThrottleText();
-          if (throttledText) {
-            throw new Error(`${PHONE_RESEND_THROTTLED_ERROR_PREFIX}${throttledText}`);
+          const resendErrorState = checkPhoneResendError();
+          if (resendErrorState.hasError) {
+            if (resendErrorState.reason === 'phone_max_usage_exceeded') {
+              return resendErrorState;
+            }
+            throw new Error(`${resendErrorState.prefix}${resendErrorState.message}`);
           }
           const resendButton = getPhoneVerificationResendButton({ allowDisabled: true });
           if (resendButton && isActionEnabled(resendButton)) {
+            const resendInfo = getPhoneVerificationResendActionInfo(resendButton);
+            if (resendInfo.channel === 'whatsapp') {
+              return {
+                resent: false,
+                channel: 'whatsapp',
+                channelText: resendInfo.channelText,
+                text: resendInfo.text,
+                url: location.href,
+              };
+            }
+            if (options?.probeOnly) {
+              return {
+                resent: false,
+                probed: true,
+                channel: resendInfo.channel || 'unknown',
+                channelText: resendInfo.channelText,
+                text: resendInfo.text,
+                url: location.href,
+              };
+            }
             await humanPause(250, 700);
             simulateClick(resendButton);
             await sleep(1000);
@@ -792,21 +924,30 @@
               await recoverRoute405WithinResend();
               continue;
             }
-            const afterClickThrottleText = getPhoneResendThrottleText();
-            if (afterClickThrottleText) {
-              throw new Error(`${PHONE_RESEND_THROTTLED_ERROR_PREFIX}${afterClickThrottleText}`);
+            const afterClickErrorState = checkPhoneResendError();
+            if (afterClickErrorState.hasError) {
+              if (afterClickErrorState.reason === 'phone_max_usage_exceeded') {
+                return afterClickErrorState;
+              }
+              throw new Error(`${afterClickErrorState.prefix}${afterClickErrorState.message}`);
             }
             return {
               resent: true,
+              channel: resendInfo.channel || 'sms',
+              channelText: resendInfo.channelText,
+              text: resendInfo.text,
               url: location.href,
             };
           }
           await sleep(250);
         }
 
-        const timeoutThrottleText = getPhoneResendThrottleText();
-        if (timeoutThrottleText) {
-          throw new Error(`${PHONE_RESEND_THROTTLED_ERROR_PREFIX}${timeoutThrottleText}`);
+        const timeoutErrorState = checkPhoneResendError();
+        if (timeoutErrorState.hasError) {
+          if (timeoutErrorState.reason === 'phone_max_usage_exceeded') {
+            return timeoutErrorState;
+          }
+          throw new Error(`${timeoutErrorState.prefix}${timeoutErrorState.message}`);
         }
 
         throw new Error('Timed out waiting for the phone verification resend button.');

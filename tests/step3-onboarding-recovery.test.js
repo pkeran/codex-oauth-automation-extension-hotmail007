@@ -492,3 +492,44 @@ return {
     /STEP3_PHONE_CREDENTIAL_INVALID::Incorrect phone number or password/
   );
 });
+
+test('prepareSignupVerificationFlow throws structured timeout code when signup code page never becomes ready', async () => {
+  const api = new Function(`
+const location = {
+  href: 'https://auth.openai.com/create-account/password',
+};
+
+function throwIfStopped() {}
+function log() {}
+async function waitForDocumentLoadComplete() {}
+async function waitForVerificationCodeTarget() {}
+async function recoverCurrentAuthRetryPage() {}
+function logSignupPasswordDiagnostics() {}
+function isActionEnabled() { return false; }
+function getActionText() { return 'Continue'; }
+function fillInput() {}
+function simulateClick() {}
+async function humanPause() {}
+async function sleep() {}
+
+async function waitForSignupVerificationTransition() {
+  return {
+    state: 'unknown',
+    url: location.href,
+  };
+}
+
+${extractFunction('prepareSignupVerificationFlow')}
+
+return {
+  async run() {
+    return prepareSignupVerificationFlow({ password: 'Secret123!' }, 30);
+  },
+};
+`)();
+
+  await assert.rejects(
+    () => api.run(),
+    /STEP4_SIGNUP_CODE_PAGE_TIMEOUT::/
+  );
+});

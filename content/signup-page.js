@@ -96,7 +96,7 @@ async function handleCommand(message) {
       }
       return await submitPhoneVerificationCodeWithProfileFallback(message.payload);
     case 'RESEND_PHONE_VERIFICATION_CODE':
-      return await phoneAuthHelpers.resendPhoneVerificationCode();
+      return await phoneAuthHelpers.resendPhoneVerificationCode(45000, message.payload || {});
     case 'RETURN_TO_ADD_PHONE':
       return await phoneAuthHelpers.returnToAddPhone();
     case 'ENSURE_SIGNUP_ENTRY_READY':
@@ -144,6 +144,7 @@ const LOGIN_EXTERNAL_IDP_PATTERN = /google|microsoft|apple|sso|single\s+sign[-\s
 const LOGIN_CODE_ONLY_ACTION_PATTERN = /one[-\s]*time|passcode|use\s+(?:a\s+)?code|验证码|一次性/i;
 
 const RESEND_VERIFICATION_CODE_PATTERN = /重新发送(?:验证码)?|再次发送(?:验证码)?|重发(?:验证码)?|未收到(?:验证码|邮件)|resend(?:\s+code)?|send\s+(?:a\s+)?new\s+code|send\s+(?:it\s+)?again|request\s+(?:a\s+)?new\s+code|didn'?t\s+receive/i;
+const PHONE_RESEND_SERVER_ERROR_PREFIX = 'PHONE_RESEND_SERVER_ERROR::';
 const POST_SIGNUP_ONBOARDING_TITLE_PATTERN = /what\s+brings\s+you\s+to\s+chatgpt|what\s+brought\s+you\s+to\s+chatgpt|是什么促使你使用\s*chatgpt|你为何使用\s*chatgpt|你想如何使用\s*chatgpt/i;
 const POST_SIGNUP_ONBOARDING_SKIP_PATTERN = /skip(?:\s+(?:tour|guide|intro))?|跳过(?:导览)?/i;
 const POST_SIGNUP_ONBOARDING_NEXT_PATTERN = /next|continue|get\s*started|start|let'?s\s*go|下一步|继续|开始吧|好的，开始吧/i;
@@ -263,6 +264,27 @@ function isEmailVerificationPage() {
   return /\/email-verification(?:[/?#]|$)/i.test(location.pathname || '');
 }
 
+function getContactVerificationServerErrorText() {
+  const path = String(location?.pathname || '');
+  if (!/\/contact-verification(?:[/?#]|$)/i.test(path)) {
+    return '';
+  }
+  const text = String(getPageTextSnapshot?.() || document?.body?.textContent || '').replace(/\s+/g, ' ').trim();
+  const title = String(document?.title || '').replace(/\s+/g, ' ').trim();
+  const combined = `${title} ${text}`.trim();
+  if (!PHONE_VERIFICATION_HTTP_500_PATTERN.test(combined)) {
+    return '';
+  }
+  return combined || 'OpenAI contact-verification page returned HTTP ERROR 500 after resend.';
+}
+
+function throwIfContactVerificationServerError() {
+  const serverErrorText = getContactVerificationServerErrorText();
+  if (serverErrorText) {
+    throw new Error(`${PHONE_RESEND_SERVER_ERROR_PREFIX}${serverErrorText}`);
+  }
+}
+
 async function resendVerificationCode(step, timeout = 45000) {
   if (step === 8) {
     await waitForLoginVerificationPageReady(10000, step);
@@ -274,6 +296,7 @@ async function resendVerificationCode(step, timeout = 45000) {
 
   while (Date.now() - start < timeout) {
     throwIfStopped();
+    throwIfContactVerificationServerError();
 
     // Check for 405 error page and recover by clicking "Try again"
     if (is405MethodNotAllowedPage()) {
@@ -303,6 +326,9 @@ async function resendVerificationCode(step, timeout = 45000) {
       if (verificationErrorOutcome?.phoneDeliveryBlocked) {
         return verificationErrorOutcome;
       }
+      if (verificationErrorOutcome?.verificationHttp500) {
+        throwIfContactVerificationServerError();
+      }
 
       return {
         resent: true,
@@ -318,6 +344,7 @@ async function resendVerificationCode(step, timeout = 45000) {
     await sleep(250);
   }
 
+  throwIfContactVerificationServerError();
   throw new Error('无法点击重新发送验证码按钮。URL: ' + location.href);
 }
 
@@ -4927,7 +4954,7 @@ async function prepareSignupVerificationFlow(payload = {}, timeout = 30000) {
     log(`${prepareLogLabel}：页面仍在切换中，准备继续等待（${recoveryRound}/${maxRecoveryRounds}）...`, 'warn');
   }
 
-  throw new Error(`等待注册验证码页面就绪超时或自动恢复失败（已尝试 ${recoveryRound}/${maxRecoveryRounds} 轮）。URL: ${location.href}`);
+  throw new Error(`STEP4_SIGNUP_CODE_PAGE_TIMEOUT::等待注册验证码页面就绪超时或自动恢复失败（已尝试 ${recoveryRound}/${maxRecoveryRounds} 轮）。URL: ${location.href}`);
 }
 
 

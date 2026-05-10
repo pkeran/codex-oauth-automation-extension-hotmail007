@@ -281,13 +281,19 @@
           if (typeof addLog === 'function') {
             await addLog(message, 'warn');
           }
-          throw new Error(message);
+          const nextError = new Error(message);
+          nextError.code = 'STEP3_PAGE_COMM_TIMEOUT';
+          throw nextError;
         }
         throw error;
       }
 
       if (result?.error) {
-        throw new Error(result.error);
+        const nextError = new Error(result.error);
+        if (/^STEP4_SIGNUP_CODE_PAGE_TIMEOUT::/i.test(String(result.error || ''))) {
+          nextError.code = 'STEP4_SIGNUP_CODE_PAGE_TIMEOUT';
+        }
+        throw nextError;
       }
 
       return result || {};

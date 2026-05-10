@@ -90,6 +90,7 @@ async function handleStepData(step, payload) {
 async function appendAndBroadcastAccountRunRecord(status, state) {
   events.push({ type: 'record', status, state });
 }
+${extractFunction('attachRecoveredAutoRunOutcome')}
 ${extractFunction('runCompletedStepSideEffects')}
 ${extractFunction('reportCompletedStepSideEffectError')}
 ${extractFunction('completeStepFromBackground')}
@@ -124,4 +125,59 @@ test('completeStepFromBackground keeps non-final step data handling before compl
   const types = events.map((event) => event.type);
   assert.equal(types.indexOf('handle-done') < types.indexOf('notify'), true);
   assert.equal(types.includes('record'), false);
+});
+
+test('completeStepFromBackground passes recovered success markers into final account run record', async () => {
+  const events = [];
+  const api = new Function('events', `
+let stopRequested = false;
+const LOG_PREFIX = '[test]';
+const STOP_ERROR_MESSAGE = '流程已被用户停止。';
+const LAST_STEP_ID = 10;
+function getErrorMessage(error) {
+  return error?.message || String(error || '');
+}
+async function getState() {
+  return {
+    stepStatuses: {},
+    contributionMode: true,
+    autoRunning: true,
+    autoRunCurrentRun: 1,
+    autoRunRoundSummaries: [
+      {
+        round: 1,
+        status: 'success',
+        attempts: 2,
+        failureReasons: ['STEP3_PAGE_COMM_TIMEOUT::timeout'],
+        finalFailureReason: '',
+      },
+    ],
+  };
+}
+function getLastStepIdForState() {
+  return 10;
+}
+async function setStepStatus() {}
+async function addLog() {}
+async function appendManualAccountRunRecordIfNeeded() {}
+function notifyStepError() {}
+function notifyStepComplete() {}
+async function handleStepData() {}
+async function appendAndBroadcastAccountRunRecord(status, state) {
+  events.push({ status, state });
+}
+${extractFunction('attachRecoveredAutoRunOutcome')}
+${extractFunction('runCompletedStepSideEffects')}
+${extractFunction('reportCompletedStepSideEffectError')}
+${extractFunction('completeStepFromBackground')}
+return { completeStepFromBackground };
+`)(events);
+
+  await api.completeStepFromBackground(10, {});
+  await new Promise((resolve) => setTimeout(resolve, 10));
+
+  assert.equal(events.length, 1);
+  assert.equal(events[0].status, 'success');
+  assert.equal(events[0].state.recoveredSuccess, true);
+  assert.deepStrictEqual(events[0].state.recoveredFailureReasons, ['STEP3_PAGE_COMM_TIMEOUT::timeout']);
 });
