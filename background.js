@@ -11723,6 +11723,7 @@ async function ensureAutoEmailReady(targetRun, totalRuns, attemptRuns) {
 async function runAutoSequenceFromStep(startStep, context = {}) {
   const { targetRun, totalRuns, attemptRuns, continued = false } = context;
   let postStep7RestartCount = 0;
+  const postStep7RestartLimitPerAttempt = 3;
   const structuredStep7FreshAttemptCodes = new Set([
     'login_password_invalid',
     'one_time_code_switch_unexpected_state',
@@ -11921,6 +11922,18 @@ async function runAutoSequenceFromStep(startStep, context = {}) {
           }
         }
         postStep7RestartCount += 1;
+        if (postStep7RestartCount >= postStep7RestartLimitPerAttempt) {
+          await addLog(
+            `步骤 ${step}：同轮授权链路已连续回到步骤 7 重开 ${postStep7RestartCount} 次，停止当前 attempt 内重开，改为抛出整轮 fresh attempt。`,
+            'warn'
+          );
+          const restartCurrentAttemptError = new Error(
+            `RESTART_CURRENT_ATTEMPT::Step 7 restart limit exceeded (${postStep7RestartCount}/${postStep7RestartLimitPerAttempt})`
+          );
+          restartCurrentAttemptError.code = 'RESTART_CURRENT_ATTEMPT';
+          restartCurrentAttemptError.restartReasonCode = 'step7_restart_limit_exceeded';
+          throw restartCurrentAttemptError;
+        }
         const restartStep = restartDecision.restartStep
           || (typeof getAuthChainStartStepId === 'function'
             ? getAuthChainStartStepId(await getState())

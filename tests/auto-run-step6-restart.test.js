@@ -198,30 +198,50 @@ return {
 `)();
 }
 
-test('auto-run keeps restarting from step 7 after post-login failures without a hard cap', async () => {
+test('auto-run keeps restarting from step 7 for generic post-login failures before hitting the hard cap', async () => {
   const harness = createHarness({
     failureStep: 10,
-    failureBudget: 6,
+    failureBudget: 2,
     failureMessage: '认证失败: Request failed with status code 502',
     authState: { state: 'password_page', url: 'https://auth.openai.com/log-in' },
   });
 
   const events = await harness.run();
 
-  assert.equal(events.invalidations.length, 6);
+  assert.equal(events.invalidations.length, 2);
   assert.deepStrictEqual(
     events.steps,
     [
       7, 8, 9, 10,
       7, 8, 9, 10,
       7, 8, 9, 10,
-      7, 8, 9, 10,
+    ]
+  );
+  assert.ok(events.logs.some(({ message }) => /回到步骤 7 重新开始授权流程/.test(message)));
+});
+
+test('auto-run escalates generic repeated post-step7 restarts into a fresh attempt after 3 hits', async () => {
+  const harness = createHarness({
+    failureStep: 10,
+    failureBudget: 3,
+    failureMessage: '璁よ瘉澶辫触: Request failed with status code 502',
+    authState: { state: 'password_page', url: 'https://auth.openai.com/log-in' },
+  });
+
+  const result = await harness.runAndCaptureError();
+
+  assert.equal(result?.error?.code, 'RESTART_CURRENT_ATTEMPT');
+  assert.equal(result?.error?.restartReasonCode, 'step7_restart_limit_exceeded');
+  assert.equal(result.events.invalidations.length, 2);
+  assert.deepStrictEqual(
+    result.events.steps,
+    [
       7, 8, 9, 10,
       7, 8, 9, 10,
       7, 8, 9, 10,
     ]
   );
-  assert.ok(events.logs.some(({ message }) => /回到步骤 7 重新开始授权流程/.test(message)));
+  assert.ok(result.events.logs.some(({ message }) => /step 7 重开已达上限|fresh attempt|整轮/.test(String(message || ''))));
 });
 
 test('auto-run rethrows RESTART_CURRENT_ATTEMPT immediately without page-level step7 restart', async () => {
