@@ -24,12 +24,12 @@
 
 ## 3. 当前 fork 版本
 
-- `manifest.version = 8.0`
-- `manifest.version_name = 8.0`
+- `manifest.version = 8.1`
+- `manifest.version_name = 8.1`
 
 版本口径说明：
 
-- 这里的 `8.0` 不是单纯照搬上游 release tag
+- 这里的 `8.1` 不是单纯照搬上游 release tag
 - 而是当前 fork 线的独立发布口径
 - 后续若继续发布，可在该 fork 线内继续递增维护
 
@@ -134,7 +134,7 @@ node --test tests/background-free-reusable-phone-country.test.js
 
 当前 fork 已经具备：
 
-- 独立版本号 `8.0`
+- 独立版本号 `8.1`
 - 独立远端发布分支 `dev-hotmail007`
 - fork 专用 README
 - 中文发布说明

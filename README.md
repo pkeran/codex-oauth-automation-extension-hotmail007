@@ -5,7 +5,7 @@
 > [!IMPORTANT]
 > 这是 `pkeran/codex-oauth-automation-extension` 的 Hotmail007 改版 fork 发布线。  
 > 当前默认分支：`dev-hotmail007`  
-> 当前扩展版本：`8.0`
+> 当前扩展版本：`8.1`
 
 - Fork 专用 README： [README.hotmail007-fork.md](README.hotmail007-fork.md)
 - 中文发布说明: [docs/Hotmail007-Fork-发布说明.md](docs/Hotmail007-Fork-%E5%8F%91%E5%B8%83%E8%AF%B4%E6%98%8E.md)

@@ -12,8 +12,8 @@ This fork keeps the original repository name, but carries local Hotmail007-orien
 
 ## Current fork release
 
-- Extension version: `8.0`
-- Extension version name: `8.0`
+- Extension version: `8.1`
+- Extension version name: `8.1`
 - Recommended remote branch: `dev-hotmail007`
 
 ## Main fork-specific changes
@@ -52,8 +52,8 @@ The extension manifest currently uses:
 
 ```json
 {
-  "version": "8.0",
-  "version_name": "8.0"
+  "version": "8.1",
+  "version_name": "8.1"
 }
 ```
 
