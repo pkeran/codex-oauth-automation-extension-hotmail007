@@ -3910,20 +3910,35 @@ function buildRunCostSnapshotFromState(state = {}) {
     return null;
   }
 
-  const defaultCurrency = String(mail?.currency || phone?.currency || '').trim();
-  const totalAmount = Math.round(((Number(mail?.amount || 0) + Number(phone?.amount || 0)) * 10000)) / 10000;
   const totalStatus = [mail, phone].some((item) => String(item?.status || '').trim().toLowerCase() === 'estimated')
     ? 'estimated'
     : 'exact';
+  const totalsByCurrency = new Map();
+  for (const part of [mail, phone]) {
+    if (!part) {
+      continue;
+    }
+    const currency = String(part.currency || '').trim();
+    const currentAmount = totalsByCurrency.get(currency) || 0;
+    totalsByCurrency.set(currency, Math.round((currentAmount + Number(part.amount || 0)) * 10000) / 10000);
+  }
+  const totalByCurrency = [...totalsByCurrency.entries()]
+    .map(([currency, amount]) => ({ currency, amount }))
+    .sort((left, right) => String(left.currency).localeCompare(String(right.currency)));
 
   return {
     ...(mail ? { mail } : {}),
     ...(phone ? { phone } : {}),
-    total: {
-      amount: totalAmount,
-      currency: defaultCurrency,
-      status: totalStatus,
-    },
+    ...(totalByCurrency.length === 1
+      ? {
+        total: {
+          amount: totalByCurrency[0].amount,
+          currency: totalByCurrency[0].currency,
+          status: totalStatus,
+        },
+      }
+      : {}),
+    ...(totalByCurrency.length > 1 ? { totalByCurrency } : {}),
   };
 }
 
@@ -11731,6 +11746,7 @@ async function runAutoSequenceFromStep(startStep, context = {}) {
   const structuredStep7RestartHits = new Map();
   let goPayCheckoutRestartCount = 0;
   let step4RestartCount = 0;
+  const step4RestartLimitPerAttempt = 3;
   let currentStartStep = startStep;
   let continueCurrentAttempt = continued;
   const resolvedSignupMethod = await ensureResolvedSignupMethodForRun();
@@ -11873,6 +11889,20 @@ async function runAutoSequenceFromStep(startStep, context = {}) {
           throw err;
         }
         step4RestartCount += 1;
+        if (step4RestartCount > step4RestartLimitPerAttempt) {
+          const failureMessage = getErrorMessage(err);
+          await addLog(
+            `步骤 4：同一 attempt 内已连续回到步骤 1 重开 ${step4RestartLimitPerAttempt} 次仍失败，停止当前 attempt 内重开并交给自动运行控制器处理。原因：${failureMessage}`,
+            'error'
+          );
+          const restartCurrentAttemptError = new Error(
+            `RESTART_CURRENT_ATTEMPT::STEP4_RESTART_LIMIT_EXCEEDED::步骤 4 同一 attempt 内重开超过 ${step4RestartLimitPerAttempt} 次。原因：${failureMessage}`
+          );
+          restartCurrentAttemptError.code = 'RESTART_CURRENT_ATTEMPT';
+          restartCurrentAttemptError.restartReasonCode = 'step4_restart_limit_exceeded';
+          restartCurrentAttemptError.originalErrorMessage = failureMessage;
+          throw restartCurrentAttemptError;
+        }
         const preservedState = await getState();
         const preservedEmail = String(preservedState.email || '').trim();
         const preservedPassword = String(preservedState.password || '').trim();

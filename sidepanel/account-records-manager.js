@@ -246,18 +246,18 @@
           return summary;
         }
 
-        const totalCost = record?.costs?.total;
-        const amount = normalizeCostAmount(totalCost?.amount);
-        if (amount === null) {
+        const totalEntries = getRecordTotalCostEntries(record);
+        if (!totalEntries.length) {
           return summary;
         }
 
-        const currency = String(totalCost?.currency || '').trim();
         summary.successCount += 1;
-        summary.totalByCurrency.set(
-          currency,
-          Math.round(((summary.totalByCurrency.get(currency) || 0) + amount) * 10000) / 10000
-        );
+        totalEntries.forEach((entry) => {
+          summary.totalByCurrency.set(
+            entry.currency,
+            Math.round(((summary.totalByCurrency.get(entry.currency) || 0) + Number(entry.amount || 0)) * 10000) / 10000
+          );
+        });
         return summary;
       }, {
         successCount: 0,
@@ -310,6 +310,44 @@
       return entries.map((entry) => formatCostAmount(entry.amount, entry.currency)).join(' / ');
     }
 
+    function mapCurrencyTotalsToArray(totalsByCurrency = new Map()) {
+      return [...totalsByCurrency.entries()]
+        .map(([currency, amount]) => ({ currency, amount }))
+        .sort((left, right) => String(left.currency).localeCompare(String(right.currency)));
+    }
+
+    function getRecordTotalCostEntries(record = {}) {
+      const totalsByCurrency = new Map();
+      const explicitEntries = Array.isArray(record?.costs?.totalByCurrency)
+        ? record.costs.totalByCurrency
+        : [];
+      explicitEntries.forEach((entry) => {
+        const amount = normalizeCostAmount(entry?.amount);
+        if (amount === null) {
+          return;
+        }
+        const currency = String(entry?.currency || '').trim();
+        totalsByCurrency.set(
+          currency,
+          Math.round(((totalsByCurrency.get(currency) || 0) + amount) * 10000) / 10000
+        );
+      });
+      if (totalsByCurrency.size) {
+        return mapCurrencyTotalsToArray(totalsByCurrency);
+      }
+
+      const amount = normalizeCostAmount(record?.costs?.total?.amount);
+      if (amount === null) {
+        return [];
+      }
+      return [
+        {
+          currency: String(record?.costs?.total?.currency || '').trim(),
+          amount,
+        },
+      ];
+    }
+
     function getDayKey(value) {
       const date = new Date(value);
       if (Number.isNaN(date.getTime())) {
@@ -351,15 +389,16 @@
           return;
         }
         dayEntry.successCount += 1;
-        const amount = normalizeCostAmount(record?.costs?.total?.amount);
-        if (amount === null) {
+        const totalEntries = getRecordTotalCostEntries(record);
+        if (!totalEntries.length) {
           return;
         }
-        const currency = String(record?.costs?.total?.currency || '').trim();
-        dayEntry.successTotalByCurrency.set(
-          currency,
-          Math.round(((dayEntry.successTotalByCurrency.get(currency) || 0) + amount) * 10000) / 10000
-        );
+        totalEntries.forEach((entry) => {
+          dayEntry.successTotalByCurrency.set(
+            entry.currency,
+            Math.round(((dayEntry.successTotalByCurrency.get(entry.currency) || 0) + Number(entry.amount || 0)) * 10000) / 10000
+          );
+        });
       });
 
       ledgerEntries.forEach((entry) => {
@@ -795,6 +834,7 @@
       updateStats(allRecords);
       updateToolbarState(allRecords);
       renderRecordList(allRecords, filteredRecords);
+      renderDailyCostGroups(currentState);
     }
 
     function openPanel() {

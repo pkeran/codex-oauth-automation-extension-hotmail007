@@ -273,6 +273,8 @@
 
     const AUTO_RUN_STAGE_STALLED_CODE = 'AUTO_RUN_STAGE_STALLED';
     const AUTO_RUN_STAGE_STALLED_MAX_RESTARTS_PER_ROUND = 3;
+    const autoRunMaxRetriesPerRound = Math.max(0, Math.floor(Number(AUTO_RUN_MAX_RETRIES_PER_ROUND) || 0));
+    const autoRunMaxAttemptsPerRound = autoRunMaxRetriesPerRound + 1;
 
     function isPhoneNumberSupplyExhaustedFailure(error) {
       if (error && typeof error === 'object' && String(error.code || '').trim() === 'PHONE_SMS_NO_SUPPLY') {
@@ -541,11 +543,7 @@
         const keepSameEmailUntilAddPhone = autoRunSkipFailures && shouldKeepCustomMailProviderPoolEmail(currentRoundState);
         const maxAttemptsForRound = autoRunNeverStop
           ? Number.MAX_SAFE_INTEGER
-          : (
-            autoRunSkipFailures
-              ? (keepSameEmailUntilAddPhone ? Number.MAX_SAFE_INTEGER : AUTO_RUN_MAX_RETRIES_PER_ROUND + 1)
-              : (AUTO_RUN_MAX_RETRIES_PER_ROUND + 1)
-          );
+          : autoRunMaxAttemptsPerRound;
 
         while (attemptRun <= maxAttemptsForRound) {
           runtime.set({
@@ -1174,9 +1172,17 @@
             }
             await addLog(`第 ${targetRun}/${totalRuns} 轮最终失败：${reason}`, 'error');
             await addLog(
-              targetRun < totalRuns
-                ? `第 ${targetRun}/${totalRuns} 轮已达到 ${AUTO_RUN_MAX_RETRIES_PER_ROUND} 次重试上限，继续下一轮。`
-                : `第 ${targetRun}/${totalRuns} 轮已达到 ${AUTO_RUN_MAX_RETRIES_PER_ROUND} 次重试上限，本次自动运行结束。`,
+              keepSameEmailUntilAddPhone
+                ? (
+                  targetRun < totalRuns
+                    ? `第 ${targetRun}/${totalRuns} 轮继续使用当前邮箱已达到 ${autoRunMaxRetriesPerRound} 次同轮重试上限，继续下一轮。`
+                    : `第 ${targetRun}/${totalRuns} 轮继续使用当前邮箱已达到 ${autoRunMaxRetriesPerRound} 次同轮重试上限，本次自动运行结束。`
+                )
+                : (
+                  targetRun < totalRuns
+                    ? `第 ${targetRun}/${totalRuns} 轮已达到 ${AUTO_RUN_MAX_RETRIES_PER_ROUND} 次重试上限，继续下一轮。`
+                    : `第 ${targetRun}/${totalRuns} 轮已达到 ${AUTO_RUN_MAX_RETRIES_PER_ROUND} 次重试上限，本次自动运行结束。`
+                ),
               'warn'
             );
             cancelPendingCommands('当前轮已达到重试上限。');

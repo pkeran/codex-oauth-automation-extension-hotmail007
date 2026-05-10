@@ -213,6 +213,165 @@ return {
   assert.equal(events.logs.some(({ message }) => /沿用当前邮箱回到步骤 1 重新开始/.test(message)), true);
 });
 
+test('auto-run caps step 4 to step 1 restarts inside the same attempt', async () => {
+  const api = new Function(`
+const AUTO_STEP_DELAYS = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0, 8: 0, 9: 0, 10: 0 };
+const LAST_STEP_ID = 10;
+const FINAL_OAUTH_CHAIN_START_STEP = 7;
+const SIGNUP_METHOD_PHONE = 'phone';
+const chrome = {
+  tabs: {
+    update: async () => {},
+  },
+  runtime: {
+    sendMessage: async () => {},
+  },
+};
+
+let remainingFailures = 4;
+let currentState = {
+  email: 'cap@example.com',
+  password: 'Secret123!',
+  mailProvider: '163',
+  stepStatuses: {
+    1: 'pending',
+    2: 'pending',
+    3: 'pending',
+    4: 'pending',
+    5: 'pending',
+    6: 'pending',
+    7: 'pending',
+    8: 'pending',
+    9: 'pending',
+    10: 'pending',
+  },
+};
+const events = {
+  steps: [],
+  invalidations: [],
+  logs: [],
+};
+
+async function addLog(message, level = 'info') {
+  events.logs.push({ message, level });
+}
+
+async function ensureAutoEmailReady() {
+  return currentState.email;
+}
+
+async function broadcastAutoRunStatus() {}
+async function ensureResolvedSignupMethodForRun() { return 'email'; }
+
+async function getState() {
+  return currentState;
+}
+
+async function setState(updates) {
+  currentState = {
+    ...currentState,
+    ...updates,
+    stepStatuses: updates.stepStatuses ? { ...updates.stepStatuses } : currentState.stepStatuses,
+  };
+}
+
+function isStopError(error) {
+  return false;
+  /*
+  return (error?.message || String(error || '')) === '娴佺▼宸茶鐢ㄦ埛鍋滄銆?;
+  */
+}
+
+function isStepDoneStatus(status) {
+  return status === 'completed' || status === 'manual_completed' || status === 'skipped';
+}
+
+async function executeStepAndWait(step) {
+  events.steps.push(step);
+  if (step === 4 && remainingFailures > 0) {
+    remainingFailures -= 1;
+    throw new Error('Step 4 transient failure before signup code submit.');
+  }
+}
+
+async function getTabId() {
+  return 1;
+}
+
+async function invalidateDownstreamAfterStepRestart(step, options = {}) {
+  events.invalidations.push({ step, options });
+  currentState = {
+    ...currentState,
+    stepStatuses: {
+      1: currentState.stepStatuses[1] || 'completed',
+      2: 'pending',
+      3: 'pending',
+      4: 'pending',
+      5: 'pending',
+      6: 'pending',
+      7: 'pending',
+      8: 'pending',
+      9: 'pending',
+      10: 'pending',
+    },
+  };
+}
+
+function getLoginAuthStateLabel(state) {
+  return state || 'unknown';
+}
+
+function getErrorMessage(error) {
+  return error?.message || String(error || '');
+}
+
+async function getLoginAuthStateFromContent() {
+  return { state: 'password_page', url: 'https://auth.openai.com/log-in' };
+}
+
+${bundle}
+
+return {
+  async run() {
+    try {
+      await runAutoSequenceFromStep(1, {
+        targetRun: 1,
+        totalRuns: 1,
+        attemptRuns: 1,
+        continued: false,
+      });
+      return { events, currentState, error: null };
+    } catch (error) {
+      return {
+        events,
+        currentState,
+        error: {
+          message: error.message,
+          code: error.code,
+          restartReasonCode: error.restartReasonCode,
+        },
+      };
+    }
+  },
+};
+`)();
+
+  const result = await api.run();
+
+  assert.match(result.error?.message || '', /STEP4_RESTART_LIMIT_EXCEEDED::/);
+  assert.equal(result.error?.code, 'RESTART_CURRENT_ATTEMPT');
+  assert.equal(result.error?.restartReasonCode, 'step4_restart_limit_exceeded');
+  assert.equal(result.events.invalidations.length, 3);
+  assert.deepStrictEqual(result.events.steps, [
+    1, 2, 3, 4,
+    1, 2, 3, 4,
+    1, 2, 3, 4,
+    1, 2, 3, 4,
+  ]);
+  assert.equal(result.currentState.email, 'cap@example.com');
+  assert.equal(result.currentState.password, 'Secret123!');
+});
+
 test('auto-run does not restart step 4 current attempt when user_already_exists is detected', async () => {
   const api = new Function(`
 const AUTO_STEP_DELAYS = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0, 8: 0, 9: 0, 10: 0 };

@@ -464,6 +464,73 @@ test('account records manager keeps per-record cost lines but no longer renders 
   assert.match(list.innerHTML, /手机 0\.0500/);
 });
 
+test('account records manager summarizes mixed-currency snapshots in daily cost lines', () => {
+  const source = fs.readFileSync('sidepanel/account-records-manager.js', 'utf8');
+  const windowObject = {};
+  const api = new Function('window', `${source}; return window.SidepanelAccountRecordsManager;`)(windowObject);
+
+  const daily = createNode();
+  const manager = api.createAccountRecordsManager({
+    state: {
+      getLatestState: () => ({
+        accountRunHistory: [
+          {
+            recordId: 'mixed-cost@example.com',
+            email: 'mixed-cost@example.com',
+            password: 'secret',
+            finalStatus: 'success',
+            finishedAt: '2026-05-06T08:00:00.000Z',
+            retryCount: 0,
+            failureLabel: 'success',
+            costs: {
+              mail: { provider: 'hotmail007', amount: 0.02, currency: 'USD', status: 'exact' },
+              phone: { provider: 'hero-sms', amount: 1.5, currency: 'CNY', status: 'exact' },
+              totalByCurrency: [
+                { amount: 0.02, currency: 'USD' },
+                { amount: 1.5, currency: 'CNY' },
+              ],
+            },
+          },
+        ],
+        accountCostLedger: [],
+      }),
+      syncLatestState() {},
+    },
+    dom: {
+      accountRecordsList: createNode(),
+      accountRecordsDailyCosts: daily,
+      accountRecordsMeta: createNode(),
+      accountRecordsOverlay: createNode(),
+      accountRecordsPageLabel: createNode(),
+      accountRecordsStats: createNode(),
+      btnAccountRecordsNext: createNode(),
+      btnAccountRecordsPrev: createNode(),
+      btnClearAccountRecords: createNode(),
+      btnClearAccountCostLedger: createNode(),
+      btnCloseAccountRecords: createNode(),
+      btnDeleteSelectedAccountRecords: createNode(),
+      btnOpenAccountRecords: createNode(),
+      btnToggleAccountRecordsSelection: createNode(),
+    },
+    helpers: {
+      escapeHtml: (value) => String(value || ''),
+    },
+    runtime: {
+      sendMessage: async () => ({}),
+    },
+    constants: {
+      displayTimeZone: 'Asia/Shanghai',
+      pageSize: 10,
+    },
+  });
+
+  manager.render();
+
+  assert.match(daily.innerHTML, /2026-05-06/);
+  assert.match(daily.innerHTML, /0\.0200 USD/);
+  assert.match(daily.innerHTML, /1\.5000 CNY/);
+});
+
 test('account records manager shows signup method text and failed cost snapshot without extra sections', () => {
   const source = fs.readFileSync('sidepanel/account-records-manager.js', 'utf8');
   const windowObject = {};

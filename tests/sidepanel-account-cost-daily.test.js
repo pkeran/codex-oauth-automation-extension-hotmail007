@@ -205,6 +205,74 @@ test('account cost ledger manager renders daily ledger groups and clears cost le
   });
 });
 
+test('account cost ledger manager summarizes mixed-currency run cost snapshots by currency', async () => {
+  const source = fs.readFileSync('sidepanel/account-cost-ledger-manager.js', 'utf8');
+  const windowObject = {};
+  const api = new Function('window', `${source}; return window.SidepanelAccountCostLedgerManager;`)(windowObject);
+
+  const latestState = {
+    accountRunHistory: [
+      {
+        recordId: 'mixed-success@example.com',
+        email: 'mixed-success@example.com',
+        finalStatus: 'success',
+        finishedAt: '2026-05-06T08:00:00.000Z',
+        retryCount: 0,
+        failureLabel: 'success',
+        costs: {
+          mail: { provider: 'hotmail007', amount: 0.02, currency: 'USD', status: 'exact' },
+          phone: { provider: 'hero-sms', amount: 1.5, currency: 'CNY', status: 'exact' },
+          totalByCurrency: [
+            { amount: 0.02, currency: 'USD' },
+            { amount: 1.5, currency: 'CNY' },
+          ],
+        },
+      },
+    ],
+    accountCostLedger: [],
+  };
+
+  const summary = createNode();
+  const daily = createNode();
+  const manager = api.createAccountCostLedgerManager({
+    state: {
+      getLatestState: () => latestState,
+      syncLatestState() {},
+    },
+    dom: {
+      accountCostLedgerSummary: summary,
+      accountCostLedgerDailyList: daily,
+      accountCostLedgerMeta: createNode(),
+      accountCostLedgerOverlay: createNode(),
+      btnOpenAccountCostLedger: createNode(),
+      btnCloseAccountCostLedger: createNode(),
+      btnClearAccountCostLedger: createNode(),
+      btnToggleAccountCostLedgerCurrency: createNode(),
+      accountCostLedgerRateMeta: createNode(),
+    },
+    helpers: {
+      escapeHtml: (value) => String(value || ''),
+      openConfirmModal: async () => true,
+      showToast() {},
+    },
+    runtime: {
+      sendMessage: async () => ({}),
+    },
+    constants: {
+      displayTimeZone: 'Asia/Shanghai',
+      pageSize: 10,
+    },
+  });
+
+  manager.render();
+
+  assert.match(summary.innerHTML, /0\.0200 USD/);
+  assert.match(summary.innerHTML, /1\.5000 CNY/);
+  assert.match(daily.innerHTML, /2026-05-06/);
+  assert.match(daily.innerHTML, /0\.0200 USD/);
+  assert.match(daily.innerHTML, /1\.5000 CNY/);
+});
+
 test('account cost ledger manager keeps success denominator consistent and can toggle usd totals into cny', async () => {
   const source = fs.readFileSync('sidepanel/account-cost-ledger-manager.js', 'utf8');
   const windowObject = {};

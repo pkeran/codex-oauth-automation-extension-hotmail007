@@ -252,6 +252,29 @@
       return normalized;
     }
 
+    function normalizeCostTotalsByCurrency(entries) {
+      if (!Array.isArray(entries)) {
+        return [];
+      }
+
+      const totalsByCurrency = new Map();
+      for (const entry of entries) {
+        if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+          continue;
+        }
+        const amount = normalizeCostAmount(entry.amount);
+        if (amount === null) {
+          continue;
+        }
+        const currency = String(entry.currency || '').trim();
+        totalsByCurrency.set(currency, Math.round(((totalsByCurrency.get(currency) || 0) + amount) * 10000) / 10000);
+      }
+
+      return [...totalsByCurrency.entries()]
+        .map(([currency, amount]) => ({ currency, amount }))
+        .sort((left, right) => String(left.currency).localeCompare(String(right.currency)));
+    }
+
     function normalizeRecoveredFailureReasons(reasons) {
       if (!Array.isArray(reasons)) {
         return [];
@@ -282,8 +305,9 @@
       const mail = normalizeCostPart(costs.mail, 'mail');
       const phone = normalizeCostPart(costs.phone, 'phone');
       const total = normalizeCostPart(costs.total, 'total');
+      const totalByCurrency = normalizeCostTotalsByCurrency(costs.totalByCurrency);
 
-      if (!mail && !phone && !total) {
+      if (!mail && !phone && !total && !totalByCurrency.length) {
         return null;
       }
 
@@ -291,6 +315,7 @@
         ...(mail ? { mail } : {}),
         ...(phone ? { phone } : {}),
         ...(total ? { total } : {}),
+        ...(totalByCurrency.length ? { totalByCurrency } : {}),
       };
     }
 

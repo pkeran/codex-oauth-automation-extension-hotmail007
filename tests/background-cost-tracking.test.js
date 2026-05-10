@@ -115,6 +115,57 @@ return { buildRunCostSnapshotFromState };
   });
 });
 
+test('buildRunCostSnapshotFromState keeps mixed currencies separated instead of adding a single total', () => {
+  const bundle = [
+    extractFunction('buildRunCostSnapshotFromState'),
+  ].join('\n');
+
+  const api = new Function(`
+const HOTMAIL_PROVIDER = 'hotmail';
+const LUCKMAIL_PROVIDER = 'luckmail-api';
+function isHotmailProvider(state) { return String(state?.mailProvider || '').trim() === HOTMAIL_PROVIDER; }
+function isLuckmailProvider(state) { return String(state?.mailProvider || '').trim() === LUCKMAIL_PROVIDER; }
+function findHotmailAccount(accounts, accountId) {
+  return (Array.isArray(accounts) ? accounts : []).find((account) => account?.id === accountId) || null;
+}
+function getCurrentLuckmailPurchase(state = {}) {
+  return state.currentLuckmailPurchase || null;
+}
+${bundle}
+return { buildRunCostSnapshotFromState };
+`)();
+
+  const costs = api.buildRunCostSnapshotFromState({
+    mailProvider: 'hotmail',
+    currentHotmailAccountId: 'hm-1',
+    hotmailAccounts: [
+      {
+        id: 'hm-1',
+        source: 'hotmail007',
+        purchaseType: 'hotmail',
+        purchasePrice: 0.02,
+        purchaseCurrency: 'USD',
+        purchaseCostStatus: 'exact',
+      },
+    ],
+    completedPhoneActivation: {
+      provider: 'hero-sms',
+      activationId: 'act-1',
+      phoneNumber: '66880000000',
+      countryId: 52,
+      price: 1.5,
+      priceCurrency: 'CNY',
+      priceStatus: 'exact',
+    },
+  });
+
+  assert.equal(costs.total, undefined);
+  assert.deepStrictEqual(costs.totalByCurrency, [
+    { currency: 'CNY', amount: 1.5 },
+    { currency: 'USD', amount: 0.02 },
+  ]);
+});
+
 test('buildPhoneActivationCostLedgerEntry keeps refundable providers pending until settlement', () => {
   const bundle = [
     extractFunction('normalizeCostLedgerEntry'),

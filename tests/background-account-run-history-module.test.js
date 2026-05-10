@@ -288,6 +288,53 @@ test('account run history helper keeps success cost snapshot for panel statistic
   });
 });
 
+test('account run history helper preserves mixed-currency cost totals', () => {
+  const source = fs.readFileSync('background/account-run-history.js', 'utf8');
+  const globalScope = {};
+  const api = new Function('self', `${source}; return self.MultiPageBackgroundAccountRunHistory;`)(globalScope);
+
+  const helpers = api.createAccountRunHistoryHelpers({
+    chrome: { storage: { local: { get: async () => ({}), set: async () => {} } } },
+    getState: async () => ({}),
+    normalizeAccountRunHistoryHelperBaseUrl: () => '',
+  });
+
+  const record = helpers.normalizeAccountRunHistoryRecord({
+    email: 'mixed-cost@example.com',
+    password: 'secret',
+    finalStatus: 'success',
+    finishedAt: '2026-05-06T08:00:00.000Z',
+    costs: {
+      mail: { provider: 'hotmail007', amount: '0.02', currency: 'USD', status: 'exact' },
+      phone: { provider: 'hero-sms', countryId: 52, amount: '1.5', currency: 'CNY', status: 'exact' },
+      totalByCurrency: [
+        { amount: '0.02', currency: 'USD' },
+        { amount: '1.5', currency: 'CNY' },
+      ],
+    },
+  });
+
+  assert.deepStrictEqual(record.costs, {
+    mail: {
+      provider: 'hotmail007',
+      amount: 0.02,
+      currency: 'USD',
+      status: 'exact',
+    },
+    phone: {
+      provider: 'hero-sms',
+      countryId: 52,
+      amount: 1.5,
+      currency: 'CNY',
+      status: 'exact',
+    },
+    totalByCurrency: [
+      { currency: 'CNY', amount: 1.5 },
+      { currency: 'USD', amount: 0.02 },
+    ],
+  });
+});
+
 test('account run history helper preserves signup method and failed cost snapshot', () => {
   const source = fs.readFileSync('background/account-run-history.js', 'utf8');
   const globalScope = {};
