@@ -51,8 +51,8 @@ npm test
 
 ```json
 {
-  "version": "8.1",
-  "version_name": "8.1"
+  "version": "8.1.1",
+  "version_name": "8.1.1"
 }
 ```
 
