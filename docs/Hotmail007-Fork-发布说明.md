@@ -1,5 +1,21 @@
 # Hotmail007 Fork 发布说明
 
+## 0. 独立项目状态
+
+当前 Hotmail007 改版已不再只依赖 fork 仓库发布，而是已经迁移到独立仓库持续维护。
+
+- 独立仓库：[`pkeran/codex-oauth-automation-extension-hotmail007`](https://github.com/pkeran/codex-oauth-automation-extension-hotmail007)
+- 历史 fork 仓库：[`pkeran/codex-oauth-automation-extension`](https://github.com/pkeran/codex-oauth-automation-extension)
+- 独立仓库默认分支：`main`
+- 当前扩展版本：`8.1`
+- 迁移完成日期：`2026-05-10`
+
+独立项目后的发布规则：
+
+- GitHub 主发布面以独立仓库为准，不再依赖 fork 网络展示
+- 版本号继续沿用本地独立维护口径
+- 保留 Apache-2.0 许可证、上游来源说明与历史迁移说明
+
 ## 1. 项目定位
 
 本分支是基于上游 `QLHazyCoder/codex-oauth-automation-extension` 的定制化 fork，主要用于承载本地持续迭代的 Hotmail007、手机号接码、自动恢复、成本记账与侧边栏管理增强能力。

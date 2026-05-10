@@ -1,5 +1,23 @@
 # Hotmail007 Fork README
 
+## 历史来源
+
+本项目最初基于上游仓库进行定制开发，后续迁移为独立仓库持续维护。
+
+- 独立仓库：[`pkeran/codex-oauth-automation-extension-hotmail007`](https://github.com/pkeran/codex-oauth-automation-extension-hotmail007)
+- 历史 fork 仓库：[`pkeran/codex-oauth-automation-extension`](https://github.com/pkeran/codex-oauth-automation-extension)
+- 历史主分支：`dev-hotmail007`
+- 当前独立仓库默认分支：`main`
+
+## 当前角色
+
+这个文件现在只承担两件事：
+
+- 记录 Hotmail007 改版最早来自哪个 fork 背景
+- 给仍在使用旧 fork 仓库的人一个清晰迁移入口
+
+当前应优先参考独立仓库中的 `main` 分支与主 README，而不是继续把 fork README 当成主入口。
+
 ## Overview
 
 This branch is a maintained fork of the upstream project:
