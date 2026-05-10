@@ -22,3 +22,9 @@
 - 远端默认分支已确认：`main`
 - 当前迁移采用 clean import + push 的方式完成，规避了原对象库推送异常
 - 后续 README / 发布说明 / 历史来源文档应全部以独立仓库口径继续维护
+
+## 旧 fork 清理状态
+
+- 本地仓库已切换到 `standalone` 远端作为独立项目发布目标
+- GitHub 旧 fork 删除需要当前 `gh` 凭据具备 `delete_repo` scope
+- 在该 scope 补齐前，旧 fork 只能视为待清理历史资源，不能作为后续发布入口

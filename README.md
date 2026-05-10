@@ -1,27 +1,26 @@
-# Multi-Page Automation
+# Codex OAuth Automation Extension · Hotmail007 独立版
 
 ## 项目定位
 
 > [!IMPORTANT]
-> 本项目现已作为 **独立维护仓库** 持续开发。  
-> 历史上源自 `QLHazyCoder/codex-oauth-automation-extension`，当前版本聚焦 Hotmail007、接码恢复、自动化稳定性与本地调试增强。
+> 本仓库已经完成独立化迁移，当前是 **唯一持续维护入口**。  
+> 当前版本聚焦 Hotmail007、接码恢复、自动化稳定性、本地调试与成本记账增强。
 
 - 独立仓库：[`pkeran/codex-oauth-automation-extension-hotmail007`](https://github.com/pkeran/codex-oauth-automation-extension-hotmail007)
-- 历史 fork 仓库：[`pkeran/codex-oauth-automation-extension`](https://github.com/pkeran/codex-oauth-automation-extension)
+- 仓库定位：独立项目，不再作为 GitHub fork 入口维护
 - 当前默认开发分支：`main`（独立仓库） / `dev`（本地主开发分支）
 - 当前扩展版本：`8.1`
-- 历史来源说明：[`README.hotmail007-fork.md`](README.hotmail007-fork.md)
-- 中文发布说明：[`docs/Hotmail007-Fork-发布说明.md`](docs/Hotmail007-Fork-%E5%8F%91%E5%B8%83%E8%AF%B4%E6%98%8E.md)
+- 历史来源说明：[`README.history.md`](README.history.md)
+- 中文发布说明：[`docs/独立版发布说明.md`](docs/%E7%8B%AC%E7%AB%8B%E7%89%88%E5%8F%91%E5%B8%83%E8%AF%B4%E6%98%8E.md)
 
-## 历史 fork 说明
+## 历史来源
 
 > [!IMPORTANT]
-> 旧的 fork 仓库仍保留作上游同步与历史参考。  
-> 历史 fork 主工作分支：`dev-hotmail007`  
-> 当前独立仓库默认分支：`main`
+> 本项目最早基于上游仓库定制开发，后续经历过 fork 阶段，最终迁移为独立仓库。  
+> 当前对外应只使用本仓库与 `main` 分支，不再以旧 fork 仓库作为发布入口。
 
-- 历史 fork README： [README.hotmail007-fork.md](README.hotmail007-fork.md)
-- 中文发布说明： [docs/Hotmail007-Fork-发布说明.md](docs/Hotmail007-Fork-%E5%8F%91%E5%B8%83%E8%AF%B4%E6%98%8E.md)
+- 历史来源文档： [README.history.md](README.history.md)
+- 独立版发布说明： [docs/独立版发布说明.md](docs/%E7%8B%AC%E7%AB%8B%E7%89%88%E5%8F%91%E5%B8%83%E8%AF%B4%E6%98%8E.md)
 
 一个用于批量跑通 ChatGPT OAuth 注册/登录流程的 Chrome 扩展。
 
