@@ -67,6 +67,16 @@
       return count > 0 ? count : 0;
     }
 
+    function isRecoveredSuccessRecord(record = {}) {
+      if (record?.finalStatus !== 'success') {
+        return false;
+      }
+      const reasons = Array.isArray(record?.recoveredFailureReasons)
+        ? record.recoveredFailureReasons.filter(Boolean)
+        : [];
+      return Boolean(record?.recoveredSuccess) || reasons.length > 0;
+    }
+
     function buildRecordId(record = {}) {
       const rawRecordId = String(record.recordId || '').trim();
       if (rawRecordId) {
@@ -182,6 +192,9 @@
         summary.total += 1;
         if (record.finalStatus === 'success') {
           summary.success += 1;
+          if (isRecoveredSuccessRecord(record)) {
+            summary.recoveredSuccess += 1;
+          }
         } else if (record.finalStatus === 'failed') {
           summary.failed += 1;
         } else if (record.finalStatus === 'stopped') {
@@ -195,6 +208,7 @@
       }, {
         total: 0,
         success: 0,
+        recoveredSuccess: 0,
         failed: 0,
         stopped: 0,
         retryRecordCount: 0,
@@ -630,6 +644,8 @@
       dom.accountRecordsStats.innerHTML = [
         createStatChip('all', summary.total),
         createStatChip('success', summary.success),
+        createInfoStatChip('最终成功', summary.success, 'is-success'),
+        createInfoStatChip('恢复后成功', summary.recoveredSuccess, 'is-success'),
         createStatChip('failed', summary.failed),
         createStatChip('stopped', summary.stopped),
         createStatChip('retry', summary.retryTotal),

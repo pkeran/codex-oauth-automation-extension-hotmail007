@@ -662,3 +662,72 @@ test('account records manager displays combined email and phone identities in on
     /title="\+447700900123 \/ 邮箱 bound@example\.com"/
   );
 });
+test('account records manager separates final success and recovered success in summary chips', () => {
+  const source = fs.readFileSync('sidepanel/account-records-manager.js', 'utf8');
+  const windowObject = {};
+  const api = new Function('window', `${source}; return window.SidepanelAccountRecordsManager;`)(windowObject);
+
+  const stats = createNode();
+  const manager = api.createAccountRecordsManager({
+    state: {
+      getLatestState: () => ({
+        accountRunHistory: [
+          {
+            recordId: 'clean@example.com',
+            email: 'clean@example.com',
+            password: 'secret',
+            finalStatus: 'success',
+            finishedAt: '2026-05-10T01:00:00.000Z',
+            retryCount: 0,
+            failureLabel: '娴佺▼瀹屾垚',
+            recoveredSuccess: false,
+            recoveredFailureReasons: [],
+          },
+          {
+            recordId: 'recovered@example.com',
+            email: 'recovered@example.com',
+            password: 'secret',
+            finalStatus: 'success',
+            finishedAt: '2026-05-10T02:00:00.000Z',
+            retryCount: 1,
+            failureLabel: '娴佺▼瀹屾垚',
+            recoveredSuccess: true,
+            recoveredFailureReasons: ['STEP3_PAGE_COMM_TIMEOUT::timeout'],
+          },
+        ],
+      }),
+      syncLatestState() {},
+    },
+    dom: {
+      accountRecordsList: createNode(),
+      accountRecordsMeta: createNode(),
+      accountRecordsOverlay: createNode(),
+      accountRecordsPageLabel: createNode(),
+      accountRecordsStats: stats,
+      btnAccountRecordsNext: createNode(),
+      btnAccountRecordsPrev: createNode(),
+      btnClearAccountRecords: createNode(),
+      btnCloseAccountRecords: createNode(),
+      btnDeleteSelectedAccountRecords: createNode(),
+      btnOpenAccountRecords: createNode(),
+      btnToggleAccountRecordsSelection: createNode(),
+    },
+    helpers: {
+      escapeHtml: (value) => String(value || ''),
+    },
+    runtime: {
+      sendMessage: async () => ({}),
+    },
+    constants: {
+      displayTimeZone: 'Asia/Shanghai',
+      pageSize: 10,
+    },
+  });
+
+  manager.render();
+
+  assert.match(stats.innerHTML, /最终成功/);
+  assert.match(stats.innerHTML, /恢复后成功/);
+  assert.match(stats.innerHTML, /data-account-record-filter="success"/);
+  assert.match(stats.innerHTML, /<strong>1<\/strong>恢复后成功/);
+});

@@ -717,3 +717,45 @@ test('account run history helper deletes selected records and syncs remaining sn
   });
   assert.equal(logs[0].message, '账号记录快照已同步到本地：C:/tmp/account-run-history.json');
 });
+test('account run history helper preserves recovered success markers on success records', () => {
+  const source = fs.readFileSync('background/account-run-history.js', 'utf8');
+  const globalScope = {};
+  const api = new Function('self', `${source}; return self.MultiPageBackgroundAccountRunHistory;`)(globalScope);
+
+  const helpers = api.createAccountRunHistoryHelpers({
+    chrome: { storage: { local: { get: async () => ({}), set: async () => {} } } },
+    getState: async () => ({}),
+    normalizeAccountRunHistoryHelperBaseUrl: () => '',
+  });
+
+  const record = helpers.buildAccountRunHistoryRecord({
+    email: 'recovered@example.com',
+    password: 'secret',
+    recoveredSuccess: true,
+    recoveredFailureReasons: [
+      'STEP3_PAGE_COMM_TIMEOUT::页面通信超时',
+      'STEP4_SIGNUP_CODE_PAGE_TIMEOUT::验证码页超时',
+    ],
+  }, 'success');
+
+  assert.equal(record.recoveredSuccess, true);
+  assert.deepStrictEqual(record.recoveredFailureReasons, [
+    'STEP3_PAGE_COMM_TIMEOUT::页面通信超时',
+    'STEP4_SIGNUP_CODE_PAGE_TIMEOUT::验证码页超时',
+  ]);
+
+  const normalized = helpers.normalizeAccountRunHistoryRecord({
+    ...record,
+    recoveredSuccess: true,
+    recoveredFailureReasons: [
+      'STEP3_PAGE_COMM_TIMEOUT::页面通信超时',
+      'STEP4_SIGNUP_CODE_PAGE_TIMEOUT::验证码页超时',
+    ],
+  });
+
+  assert.equal(normalized.recoveredSuccess, true);
+  assert.deepStrictEqual(normalized.recoveredFailureReasons, [
+    'STEP3_PAGE_COMM_TIMEOUT::页面通信超时',
+    'STEP4_SIGNUP_CODE_PAGE_TIMEOUT::验证码页超时',
+  ]);
+});

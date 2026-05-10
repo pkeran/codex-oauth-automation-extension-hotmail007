@@ -252,6 +252,28 @@
       return normalized;
     }
 
+    function normalizeRecoveredFailureReasons(reasons) {
+      if (!Array.isArray(reasons)) {
+        return [];
+      }
+      return reasons
+        .map((item) => String(item || '').trim())
+        .filter(Boolean);
+    }
+
+    function normalizeRecoveredSuccess(value, reasons = []) {
+      if (typeof value === 'string') {
+        const normalized = value.trim().toLowerCase();
+        if (['true', '1', 'yes'].includes(normalized)) {
+          return true;
+        }
+        if (['false', '0', 'no'].includes(normalized)) {
+          return false;
+        }
+      }
+      return Boolean(value) || normalizeRecoveredFailureReasons(reasons).length > 0;
+    }
+
     function normalizeAccountRunCosts(costs) {
       if (!costs || typeof costs !== 'object' || Array.isArray(costs)) {
         return null;
@@ -348,6 +370,10 @@
         record.signupMethod || record.resolvedSignupMethod,
         accountIdentifierType === 'phone' ? 'phone' : 'email'
       );
+      const recoveredFailureReasons = normalizeRecoveredFailureReasons(record.recoveredFailureReasons);
+      const recoveredSuccess = finalStatus === 'success'
+        ? normalizeRecoveredSuccess(record.recoveredSuccess, recoveredFailureReasons)
+        : false;
 
       return {
         recordId: String(record.recordId || '').trim() || buildRecordId(accountIdentifier, accountIdentifierType),
@@ -369,6 +395,12 @@
         autoRunContext: source === 'auto' ? autoRunContext : null,
         plusModeEnabled: Boolean(record.plusModeEnabled),
         contributionMode: Boolean(record.contributionMode),
+        ...(recoveredSuccess || recoveredFailureReasons.length
+          ? {
+            recoveredSuccess,
+            recoveredFailureReasons,
+          }
+          : {}),
         ...(normalizedCosts ? { costs: normalizedCosts } : {}),
       };
     }
@@ -433,6 +465,12 @@
         state.resolvedSignupMethod || state.signupMethod,
         accountIdentifierType === 'phone' ? 'phone' : 'email'
       );
+      const recoveredFailureReasons = finalStatus === 'success'
+        ? normalizeRecoveredFailureReasons(state.recoveredFailureReasons)
+        : [];
+      const recoveredSuccess = finalStatus === 'success'
+        ? normalizeRecoveredSuccess(state.recoveredSuccess, recoveredFailureReasons)
+        : false;
 
       return {
         recordId: buildRecordId(accountIdentifier, accountIdentifierType),
@@ -452,6 +490,12 @@
         autoRunContext,
         plusModeEnabled: Boolean(state.plusModeEnabled),
         contributionMode: Boolean(state.contributionMode),
+        ...(recoveredSuccess || recoveredFailureReasons.length
+          ? {
+            recoveredSuccess,
+            recoveredFailureReasons,
+          }
+          : {}),
         ...(normalizedCosts ? { costs: normalizedCosts } : {}),
       };
     }
