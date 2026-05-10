@@ -70,6 +70,8 @@
 
 - 历史来源文档：[`README.history.md`](README.history.md)
 - 独立版发布说明：[`docs/独立版发布说明.md`](docs/%E7%8B%AC%E7%AB%8B%E7%89%88%E5%8F%91%E5%B8%83%E8%AF%B4%E6%98%8E.md)
+- 安装与配置指南：[`docs/安装与配置指南.md`](docs/%E5%AE%89%E8%A3%85%E4%B8%8E%E9%85%8D%E7%BD%AE%E6%8C%87%E5%8D%97.md)
+- 当前独立版 Release Notes：[`docs/releases/standalone-v8.1.md`](docs/releases/standalone-v8.1.md)
 - 独立仓库迁移清单：[`docs/standalone-project-migration-checklist.md`](docs/standalone-project-migration-checklist.md)
 
 ## 快速开始
@@ -104,6 +106,10 @@
    - 接码 provider key
    - 自动运行策略
    - 记账与账号记录相关开关
+
+更完整的面向使用者说明见：
+
+- [`docs/安装与配置指南.md`](docs/%E5%AE%89%E8%A3%85%E4%B8%8E%E9%85%8D%E7%BD%AE%E6%8C%87%E5%8D%97.md)
 
 ### 最小验证顺序
 
@@ -155,6 +161,8 @@ README.history.md                          历史来源说明
 - 主说明：[`README.md`](README.md)
 - 历史来源：[`README.history.md`](README.history.md)
 - 独立版发布说明：[`docs/独立版发布说明.md`](docs/%E7%8B%AC%E7%AB%8B%E7%89%88%E5%8F%91%E5%B8%83%E8%AF%B4%E6%98%8E.md)
+- 安装与配置指南：[`docs/安装与配置指南.md`](docs/%E5%AE%89%E8%A3%85%E4%B8%8E%E9%85%8D%E7%BD%AE%E6%8C%87%E5%8D%97.md)
+- 当前独立版 Release Notes：[`docs/releases/standalone-v8.1.md`](docs/releases/standalone-v8.1.md)
 - 独立仓库迁移清单：[`docs/standalone-project-migration-checklist.md`](docs/standalone-project-migration-checklist.md)
 
 ## 许可证
