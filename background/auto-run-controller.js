@@ -741,6 +741,7 @@
             const blockedByHotmailAccountInvalid = !blockedByPhoneSmsRateLimit
               && structuredErrorCode === 'HOTMAIL_ACCOUNT_INVALID';
             const blockedByStageStalled = structuredErrorCode === AUTO_RUN_STAGE_STALLED_CODE;
+            const blockedByStepIdleRestart = structuredErrorCode === 'AUTO_RUN_STEP_IDLE_RESTART';
             const blockedByStep3PhoneCredentialInvalid = structuredErrorCode === 'STEP3_PHONE_CREDENTIAL_INVALID';
             const blockedByStep3PageCommTimeout = structuredErrorCode === 'STEP3_PAGE_COMM_TIMEOUT';
             const blockedByStep4SignupCodePageTimeout = structuredErrorCode === 'STEP4_SIGNUP_CODE_PAGE_TIMEOUT';
@@ -777,6 +778,11 @@
               && !blockedByBrowserSwitch
               && !blockedByConfigurationFatal
               && (
+                (
+                  blockedByStepIdleRestart
+                  && attemptRun < maxAttemptsForRound
+                )
+                ||
                 (
                   blockedByStageStalled
                   && autoRunNeverStop

@@ -27,6 +27,9 @@
       if (!normalized) {
         return '';
       }
+      if (normalized === 'running' || /_running$/.test(normalized)) {
+        return 'running';
+      }
       if (normalized === 'success') {
         return 'success';
       }
@@ -41,7 +44,7 @@
 
     function extractRecordStep(status = '', detail = '') {
       const normalizedStatus = String(status || '').trim().toLowerCase();
-      const statusMatch = normalizedStatus.match(/^step(\d+)_(?:failed|stopped)$/);
+      const statusMatch = normalizedStatus.match(/^step(\d+)_(?:failed|stopped|running)$/);
       if (statusMatch) {
         const step = Number(statusMatch[1]);
         return Number.isInteger(step) && step > 0 ? step : null;
@@ -71,6 +74,12 @@
     function buildFailureLabel(finalStatus, failedStep, failureDetail = '') {
       if (finalStatus === 'success') {
         return '流程完成';
+      }
+      if (finalStatus === 'running') {
+        if (Number.isInteger(failedStep) && failedStep > 0) {
+          return `步骤 ${failedStep} 运行中`;
+        }
+        return '流程运行中';
       }
       if (finalStatus === 'stopped') {
         if (Number.isInteger(failedStep) && failedStep > 0) {
@@ -478,7 +487,7 @@
       }
 
       const failureDetail = finalStatus === 'failed' || finalStatus === 'stopped' ? String(reason || '').trim() : '';
-      const failedStep = finalStatus === 'failed' || finalStatus === 'stopped'
+      const failedStep = finalStatus === 'failed' || finalStatus === 'stopped' || finalStatus === 'running'
         ? extractRecordStep(status, failureDetail)
         : null;
       const source = Boolean(state.autoRunning) ? 'auto' : 'manual';

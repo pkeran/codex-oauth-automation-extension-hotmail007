@@ -7,7 +7,7 @@
 - 独立仓库：[`pkeran/codex-oauth-automation-extension-hotmail007`](https://github.com/pkeran/codex-oauth-automation-extension-hotmail007)
 - 默认发布分支：`main`
 - 本地主开发分支：`dev`
-- 当前扩展版本：`8.1.2`
+- 当前扩展版本：`8.1.3`
 
 ## 仓库定位
 
@@ -71,7 +71,7 @@
 - 历史来源文档：[`README.history.md`](README.history.md)
 - 独立版发布说明：[`docs/独立版发布说明.md`](docs/%E7%8B%AC%E7%AB%8B%E7%89%88%E5%8F%91%E5%B8%83%E8%AF%B4%E6%98%8E.md)
 - 安装与配置指南：[`docs/安装与配置指南.md`](docs/%E5%AE%89%E8%A3%85%E4%B8%8E%E9%85%8D%E7%BD%AE%E6%8C%87%E5%8D%97.md)
-- 当前独立版 Release Notes：[`docs/releases/standalone-v8.1.2.md`](docs/releases/standalone-v8.1.2.md)
+- 当前独立版 Release Notes：[`docs/releases/standalone-v8.1.3.md`](docs/releases/standalone-v8.1.3.md)
 - 独立仓库迁移清单：[`docs/standalone-project-migration-checklist.md`](docs/standalone-project-migration-checklist.md)
 
 ## 快速开始

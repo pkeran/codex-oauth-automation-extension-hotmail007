@@ -36,6 +36,12 @@
         matches: (record) => record.finalStatus === 'stopped',
         metaLabel: '停止',
       },
+      running: {
+        label: '运行',
+        className: 'is-running',
+        matches: (record) => record.finalStatus === 'running',
+        metaLabel: '运行中',
+      },
       retry: {
         label: '重试',
         className: 'is-retry',
@@ -510,6 +516,9 @@
       if (record.finalStatus === 'success') {
         return { kind: 'success', label: '成功' };
       }
+      if (record.finalStatus === 'running') {
+        return { kind: 'running', label: '运行中' };
+      }
       if (record.finalStatus === 'stopped') {
         return { kind: 'stopped', label: '停止' };
       }
@@ -533,6 +542,9 @@
       const failureLabel = String(record.failureLabel || '').trim();
       if (record.finalStatus === 'success') {
         return `${signupMethodLabel} · 流程完成`;
+      }
+      if (record.finalStatus === 'running') {
+        return `${signupMethodLabel} · ${failureLabel || '流程运行中'}`;
       }
 
       return `${signupMethodLabel} · ${failureLabel || '流程失败'}`;

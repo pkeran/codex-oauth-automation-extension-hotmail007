@@ -531,6 +531,63 @@ test('account records manager summarizes mixed-currency snapshots in daily cost 
   assert.match(daily.innerHTML, /1\.5000 CNY/);
 });
 
+test('account records manager renders running account records as running instead of failed', () => {
+  const source = fs.readFileSync('sidepanel/account-records-manager.js', 'utf8');
+  const windowObject = {};
+  const api = new Function('window', `${source}; return window.SidepanelAccountRecordsManager;`)(windowObject);
+
+  const list = createNode();
+  const manager = api.createAccountRecordsManager({
+    state: {
+      getLatestState: () => ({
+        accountRunHistory: [
+          {
+            recordId: 'running@example.com',
+            email: 'running@example.com',
+            password: 'secret',
+            finalStatus: 'running',
+            finishedAt: '2026-05-11T01:00:00.000Z',
+            retryCount: 0,
+            failureLabel: '步骤 4 运行中',
+          },
+        ],
+      }),
+      syncLatestState() {},
+    },
+    dom: {
+      accountRecordsList: list,
+      accountRecordsDailyCosts: createNode(),
+      accountRecordsMeta: createNode(),
+      accountRecordsOverlay: createNode(),
+      accountRecordsPageLabel: createNode(),
+      accountRecordsStats: createNode(),
+      btnAccountRecordsNext: createNode(),
+      btnAccountRecordsPrev: createNode(),
+      btnClearAccountRecords: createNode(),
+      btnClearAccountCostLedger: createNode(),
+      btnCloseAccountRecords: createNode(),
+      btnDeleteSelectedAccountRecords: createNode(),
+      btnOpenAccountRecords: createNode(),
+      btnToggleAccountRecordsSelection: createNode(),
+    },
+    helpers: {
+      escapeHtml: (value) => String(value || ''),
+    },
+    runtime: {
+      sendMessage: async () => ({}),
+    },
+    constants: {
+      displayTimeZone: 'Asia/Shanghai',
+      pageSize: 10,
+    },
+  });
+
+  manager.render();
+
+  assert.match(list.innerHTML, /运行中/);
+  assert.doesNotMatch(list.innerHTML, /失败/);
+});
+
 test('account records manager shows signup method text and failed cost snapshot without extra sections', () => {
   const source = fs.readFileSync('sidepanel/account-records-manager.js', 'utf8');
   const windowObject = {};

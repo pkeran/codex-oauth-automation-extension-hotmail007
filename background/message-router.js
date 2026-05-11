@@ -146,7 +146,33 @@
         return null;
       }
 
-      return appendAccountRunRecord(status, state, reason);
+      const explicitStepMatch = String(status || '').trim().toLowerCase().match(/^step(\d+)_(?:failed|stopped|running)$/);
+      const nextState = explicitStepMatch && !(Number(state?.failedStep) > 0)
+        ? { ...state, failedStep: Number(explicitStepMatch[1]) || 0 }
+        : state;
+      return appendAccountRunRecord(status, nextState, reason);
+    }
+
+    function isTerminalStepStatus(status = '') {
+      const normalized = String(status || '').trim().toLowerCase();
+      return normalized === 'completed'
+        || normalized === 'manual_completed'
+        || normalized === 'skipped'
+        || normalized === 'failed'
+        || normalized === 'stopped';
+    }
+
+    function isStaleStepExecutionMessage(message = {}, state = {}) {
+      const step = Math.max(0, Math.floor(Number(message.step) || 0));
+      if (!step) {
+        return false;
+      }
+      const currentStatus = String(state?.stepStatuses?.[step] || '').trim().toLowerCase();
+      if (isTerminalStepStatus(currentStatus)) {
+        return true;
+      }
+      const currentStep = Math.max(0, Math.floor(Number(state?.currentStep) || 0));
+      return currentStatus !== 'running' && currentStep > step;
     }
 
     async function ensureManualStepPrerequisites(step) {
@@ -568,6 +594,11 @@
         }
 
         case 'STEP_COMPLETE': {
+          const latestState = await getState();
+          if (isStaleStepExecutionMessage(message, latestState)) {
+            await addLog(`忽略步骤 ${message.step} 的过期完成消息。`, 'warn', { step: message.step });
+            return { ok: true, ignored: true };
+          }
           if (getStopRequested()) {
             await setStepStatus(message.step, 'stopped');
             await appendManualAccountRunRecordIfNeeded(`step${message.step}_stopped`, null, '流程已被用户停止。');
@@ -610,6 +641,11 @@
         }
 
         case 'STEP_ERROR': {
+          const latestState = await getState();
+          if (isStaleStepExecutionMessage(message, latestState)) {
+            await addLog(`忽略步骤 ${message.step} 的过期失败消息。`, 'warn', { step: message.step });
+            return { ok: true, ignored: true };
+          }
           if (typeof isCloudflareSecurityBlockedError === 'function' && isCloudflareSecurityBlockedError(message.error)) {
             const userMessage = typeof handleCloudflareSecurityBlocked === 'function'
               ? await handleCloudflareSecurityBlocked(message.error)

@@ -4630,9 +4630,10 @@
     }
 
     async function readPhonePageState(tabId, timeoutMs = 10000) {
+      const boundedTimeoutMs = Math.max(1500, Math.min(6000, Math.floor(Number(timeoutMs) || 10000)));
       const visibleStep = normalizeLogStep(activePhoneVerificationLogStep) || 9;
       await ensureStep8SignupPageReady(tabId, {
-        timeoutMs,
+        timeoutMs: boundedTimeoutMs,
         logMessage: '步骤 9：等待认证页脚本恢复后继续手机号验证。',
         visibleStep,
         logStepKey: 'phone-verification',
@@ -4642,8 +4643,8 @@
         source: 'background',
         payload: { visibleStep },
       }, {
-        timeoutMs,
-        responseTimeoutMs: timeoutMs,
+        timeoutMs: boundedTimeoutMs,
+        responseTimeoutMs: boundedTimeoutMs,
         retryDelayMs: 600,
         logMessage: '步骤 9：认证页正在切换，等待后重新检查手机号验证状态...',
         logStep: visibleStep,

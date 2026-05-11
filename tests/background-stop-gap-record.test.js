@@ -133,6 +133,7 @@ return {
     status: 'step7_stopped',
     state: {
       ...state,
+      failedStep: 7,
       runCosts: null,
     },
     reason: '步骤 7 已被用户停止。',

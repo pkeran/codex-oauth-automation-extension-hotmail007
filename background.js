@@ -8658,9 +8658,18 @@ async function setStepStatus(step, status) {
   }
   const state = await getState();
   const statuses = { ...state.stepStatuses };
+  const previousStatus = statuses[step];
   statuses[step] = status;
   await setState({ stepStatuses: statuses, currentStep: step });
   touchAutoRunStageProgress(`step ${step} -> ${status}`, { step });
+  if (status === 'running' && previousStatus !== 'running' && state.autoRunning) {
+    await appendManualAccountRunRecordIfNeeded(`step${step}_running`, {
+      ...state,
+      stepStatuses: statuses,
+      currentStep: step,
+      failedStep: step,
+    });
+  }
   chrome.runtime.sendMessage({
     type: 'STEP_STATUS_CHANGED',
     payload: { step, status },
@@ -9192,6 +9201,51 @@ function isAutoRunStageWatchdogPhase(phase = '') {
 
 function isAutoRunStageWatchdogExemptStep(step) {
   return AUTO_RUN_STAGE_STALLED_EXEMPT_STEPS.has(Number(step) || 0);
+}
+
+function buildAutoRunStepIdleRestartError(options = {}) {
+  const step = Math.max(0, Number(options.step) || 0);
+  const idleMs = Math.max(0, Number(options.idleMs) || 0);
+  const phase = String(options.phase || '').trim().toLowerCase() || 'running';
+  const lastReason = String(options.reason || '').trim();
+  const sessionId = normalizeAutoRunSessionId(options.sessionId);
+  const detail = lastReason ? ` 最近日志：${lastReason}` : '';
+  const error = new Error(
+    `AUTO_RUN_STEP_IDLE_RESTART::步骤 ${step || '?'} 已 ${Math.round(idleMs / 1000)} 秒无新进展，准备重启当前 attempt。${detail}`
+  );
+  error.code = 'AUTO_RUN_STEP_IDLE_RESTART';
+  error.step = step;
+  error.phase = phase;
+  error.idleMs = idleMs;
+  error.sessionId = sessionId;
+  error.reason = lastReason;
+  return error;
+}
+
+function throwIfAutoRunStepIdleRestart() {
+  if (!autoRunStageWatchdogEnabled) {
+    return;
+  }
+  if (String(autoRunStageWatchdogPhase || '').trim().toLowerCase() !== 'running') {
+    return;
+  }
+  if (isAutoRunStageWatchdogExemptStep(autoRunStageWatchdogStep)) {
+    return;
+  }
+  if (autoRunStageWatchdogLastProgressAt <= 0) {
+    return;
+  }
+  const idleMs = Date.now() - autoRunStageWatchdogLastProgressAt;
+  if (idleMs < AUTO_RUN_STEP_IDLE_RESTART_TIMEOUT_MS) {
+    return;
+  }
+  throw buildAutoRunStepIdleRestartError({
+    step: autoRunStageWatchdogStep,
+    phase: autoRunStageWatchdogPhase,
+    idleMs,
+    reason: autoRunStageWatchdogLastProgressReason,
+    sessionId: autoRunStageWatchdogSessionId,
+  });
 }
 
 function beginAutoRunStageWatchdog(options = {}) {
@@ -9866,6 +9920,9 @@ function throwIfStopped(error = null) {
   }
   if (stopRequested) {
     throw new Error(STOP_ERROR_MESSAGE);
+  }
+  if (typeof throwIfAutoRunStepIdleRestart === 'function') {
+    throwIfAutoRunStepIdleRestart();
   }
   if (typeof throwIfAutoRunStageStalled === 'function') {
     throwIfAutoRunStageStalled();
@@ -10965,6 +11022,7 @@ let autoRunAttemptRun = 0;
 let autoRunSessionId = 0;
 let autoRunSessionSeed = 0;
 const AUTO_RUN_STAGE_STALLED_TIMEOUT_MS = 10 * 60 * 1000;
+const AUTO_RUN_STEP_IDLE_RESTART_TIMEOUT_MS = 2 * 60 * 1000;
 const AUTO_RUN_STAGE_STALLED_EXEMPT_STEPS = new Set();
 let autoRunStageWatchdogEnabled = false;
 let autoRunStageWatchdogPhase = 'idle';
@@ -11039,6 +11097,10 @@ async function appendAndBroadcastAccountRunRecord(status, stateOverride = null, 
   const recoveredState = attachRecoveredAutoRunOutcome(state);
   const resolvedStatus = resolveAccountRunRecordStatusForStop(status, state);
   const resolvedReason = resolveAccountRunRecordReasonForStop(resolvedStatus, reason);
+  const explicitStepMatch = String(resolvedStatus || '').trim().toLowerCase().match(/^step(\d+)_(?:failed|stopped|running)$/);
+  if (explicitStepMatch && !(Number(recoveredState.failedStep) > 0)) {
+    recoveredState.failedStep = Number(explicitStepMatch[1]) || 0;
+  }
   const recordState = {
     ...recoveredState,
     runCosts: buildRunCostSnapshotFromState(recoveredState),
@@ -13558,7 +13620,25 @@ async function getStep8PageState(tabId, responseTimeoutMs = 1500, visibleStep = 
     return result;
   } catch (err) {
     if (isRetryableContentScriptTransportError(err)) {
-      return null;
+      try {
+        const tab = await chrome.tabs.get(tabId);
+        const url = String(tab?.url || '').trim();
+        if (!url) {
+          return null;
+        }
+        const consentPage = /\/sign-in-with-chatgpt\/[^/?#]+\/consent(?:[/?#]|$)/i.test(url);
+        const phoneVerificationPage = /\/phone-verification(?:[/?#]|$)/i.test(url);
+        return {
+          url,
+          snapshotSource: 'tab_url_fallback',
+          addPhonePage: isAddPhoneAuthUrl(url) && !phoneVerificationPage,
+          phoneVerificationPage,
+          consentPage,
+          consentReady: consentPage,
+        };
+      } catch (_tabSnapshotError) {
+        return null;
+      }
     }
     throw err;
   }
