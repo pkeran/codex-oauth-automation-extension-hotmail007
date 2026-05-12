@@ -184,9 +184,9 @@
               recoverableError.code = recoverableCode;
               recoverableError.restartReasonCode = recoverableCode;
             }
-            if (recoverableCode === 'login_password_invalid') {
+            if (['login_password_invalid', 'one_time_code_switch_unexpected_state'].includes(recoverableCode)) {
               recoverableError.code = 'RESTART_CURRENT_ATTEMPT';
-              recoverableError.restartReasonCode = 'login_password_invalid';
+              recoverableError.restartReasonCode = recoverableCode;
             }
             throw recoverableError;
           }

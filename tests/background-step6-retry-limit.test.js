@@ -90,7 +90,7 @@ test('step 7 retries up to configured limit and then fails', async () => {
   assert.equal(events.completed, 0);
 });
 
-test('step 7 does not internally retry one_time_code_switch_unexpected_state and preserves the structured code', async () => {
+test('step 7 directly upgrades one_time_code_switch_unexpected_state to RESTART_CURRENT_ATTEMPT', async () => {
   const source = fs.readFileSync('background/steps/oauth-login.js', 'utf8');
   const globalScope = {};
   const api = new Function('self', `${source}; return self.MultiPageBackgroundStep7;`)(globalScope);
@@ -128,7 +128,7 @@ test('step 7 does not internally retry one_time_code_switch_unexpected_state and
 
   const error = await executor.executeStep7({ email: 'user@example.com', password: 'secret' }).catch((err) => err);
 
-  assert.equal(error?.code, 'one_time_code_switch_unexpected_state');
+  assert.equal(error?.code, 'RESTART_CURRENT_ATTEMPT');
   assert.equal(error?.restartReasonCode, 'one_time_code_switch_unexpected_state');
   assert.match(String(error?.message || ''), /one-time-code login/i);
   assert.equal(events.refreshCalls, 1);

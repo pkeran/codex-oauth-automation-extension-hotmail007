@@ -11803,7 +11803,6 @@ async function runAutoSequenceFromStep(startStep, context = {}) {
   const postStep7RestartLimitPerAttempt = 3;
   const structuredStep7FreshAttemptCodes = new Set([
     'login_password_invalid',
-    'one_time_code_switch_unexpected_state',
   ]);
   const structuredStep7RestartHits = new Map();
   let goPayCheckoutRestartCount = 0;
@@ -11997,6 +11996,18 @@ async function runAutoSequenceFromStep(startStep, context = {}) {
           || err?.code
           || ''
         ).trim().toLowerCase();
+        if (restartReasonCode === 'one_time_code_switch_unexpected_state') {
+          await addLog(
+            `步骤 ${step}：命中 ${restartReasonCode}，直接改为整轮 fresh attempt，不再执行页内 Step 7 重开。`,
+            'warn'
+          );
+          const restartCurrentAttemptError = new Error(
+            `RESTART_CURRENT_ATTEMPT::Step 7 direct structured recoverable failure (${restartReasonCode})`
+          );
+          restartCurrentAttemptError.code = 'RESTART_CURRENT_ATTEMPT';
+          restartCurrentAttemptError.restartReasonCode = restartReasonCode;
+          throw restartCurrentAttemptError;
+        }
         if (structuredStep7FreshAttemptCodes.has(restartReasonCode)) {
           const hitCount = (structuredStep7RestartHits.get(restartReasonCode) || 0) + 1;
           structuredStep7RestartHits.set(restartReasonCode, hitCount);

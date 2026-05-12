@@ -265,7 +265,7 @@ test('auto-run rethrows RESTART_CURRENT_ATTEMPT immediately without page-level s
   assert.ok(!result.events.logs.some(({ message }) => /回到步骤 7 重新开始授权流程/.test(String(message || ''))));
 });
 
-test('auto-run allows one page-level step7 restart for first one_time_code_switch_unexpected_state hit', async () => {
+test('auto-run directly escalates first one_time_code_switch_unexpected_state hit into a fresh attempt restart', async () => {
   const harness = createHarness({
     failureStep: 7,
     failureBudget: 1,
@@ -278,36 +278,14 @@ test('auto-run allows one page-level step7 restart for first one_time_code_switc
     authState: { state: 'password_page', url: 'https://auth.openai.com/log-in/password' },
   });
 
-  const events = await harness.run();
-
-  assert.deepStrictEqual(events.steps, [7, 7, 8, 9, 10]);
-  assert.equal(events.invalidations.length, 1);
-  assert.ok(events.logs.some(({ message }) => String(message || '').includes('回到步骤 7')));
-});
-
-test('auto-run escalates repeated one_time_code_switch_unexpected_state in the same round into a fresh attempt restart', async () => {
-  const harness = createHarness({
-    failureStep: 7,
-    failureBudget: 2,
-    failureMessages: [
-      '切换到一次性验证码登录后仍停留在密码页。',
-      '切换到一次性验证码登录后仍停留在密码页。',
-    ],
-    failureCodes: [
-      'one_time_code_switch_unexpected_state',
-      'one_time_code_switch_unexpected_state',
-    ],
-    authState: { state: 'password_page', url: 'https://auth.openai.com/log-in/password' },
-  });
-
   const result = await harness.runAndCaptureError();
 
   assert.equal(result?.error?.code, 'RESTART_CURRENT_ATTEMPT');
   assert.equal(result?.error?.restartReasonCode, 'one_time_code_switch_unexpected_state');
-  assert.deepStrictEqual(result.events.steps, [7, 7]);
-  assert.equal(result.events.invalidations.length, 1);
-  assert.ok(result.events.logs.some(({ message }) => /one_time_code_switch_unexpected_state/.test(String(message || ''))));
-  assert.ok(result.events.logs.some(({ message }) => /fresh attempt|整轮/.test(String(message || ''))));
+  assert.deepStrictEqual(result.events.steps, [7]);
+  assert.equal(result.events.invalidations.length, 0);
+  assert.ok(!result.events.logs.some(({ message }) => String(message || '').includes('回到步骤 7')));
+  assert.ok(result.events.logs.some(({ message }) => /one_time_code_switch_unexpected_state|fresh attempt|整轮/.test(String(message || ''))));
 });
 
 test('auto-run stops restarting once add-phone is detected', async () => {
