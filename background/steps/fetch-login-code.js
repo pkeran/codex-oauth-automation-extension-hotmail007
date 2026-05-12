@@ -4,7 +4,9 @@
   const MAIL_2925_FILTER_LOOKBACK_MS = 10 * 60 * 1000;
   const STEP8_ADD_EMAIL_URL = 'https://auth.openai.com/add-email';
   const STEP8_CURRENT_STEP_RECOVERY_MAX_ATTEMPTS = 3;
-  const STEP8_RERUN_STEP7_LIMIT_PER_ATTEMPT = 3;
+  // Trigger-count budget: the third trigger escalates to a fresh attempt
+  // instead of executing a third in-place Step 7 rerun.
+  const STEP8_RERUN_STEP7_TRIGGER_LIMIT_PER_ATTEMPT = 3;
 
   function createStep8Executor(deps = {}) {
     const {
@@ -552,16 +554,16 @@
       let currentStepRecoveryAttempt = 0;
       let step7RerunCount = 0;
 
-      const rerunStep7WithinAttemptCap = async (currentError, visibleStep, authLoginStep, options = {}) => {
+      const rerunStep7WithinAttemptTriggerCap = async (currentError, visibleStep, authLoginStep, options = {}) => {
         step7RerunCount += 1;
-        if (step7RerunCount >= STEP8_RERUN_STEP7_LIMIT_PER_ATTEMPT) {
+        if (step7RerunCount >= STEP8_RERUN_STEP7_TRIGGER_LIMIT_PER_ATTEMPT) {
           const failureMessage = String(currentError?.message || currentError || '').trim() || 'unknown step8 recovery failure';
           await addLog(
-            `步骤 ${visibleStep}：同一 attempt 内已连续回到步骤 ${authLoginStep} 重开 ${step7RerunCount} 次，停止当前链路内重开并交给自动运行控制器整轮重试。原因：${failureMessage}`,
+            `步骤 ${visibleStep}：同一 attempt 内已第 ${step7RerunCount} 次触发回到步骤 ${authLoginStep} 重开，停止继续页内重开并交给自动运行控制器整轮重试。原因：${failureMessage}`,
             'error'
           );
           const restartCurrentAttemptError = new Error(
-            `RESTART_CURRENT_ATTEMPT::STEP8_RERUN_STEP7_LIMIT_EXCEEDED::步骤 ${visibleStep} 同一 attempt 内回到步骤 ${authLoginStep} 重开已达 ${step7RerunCount} 次。原因：${failureMessage}`
+            `RESTART_CURRENT_ATTEMPT::STEP8_RERUN_STEP7_LIMIT_EXCEEDED::步骤 ${visibleStep} 同一 attempt 内已第 ${step7RerunCount} 次触发回到步骤 ${authLoginStep} 重开。原因：${failureMessage}`
           );
           restartCurrentAttemptError.code = 'RESTART_CURRENT_ATTEMPT';
           restartCurrentAttemptError.restartReasonCode = 'step8_rerun_step7_limit_exceeded';
@@ -644,7 +646,7 @@
                 `步骤 ${visibleStep}：邮箱通信异常在当前链路已连续重试 ${retryWithoutStep7Streak} 次，改为回到步骤 ${authLoginStep} 重新发起授权链路，避免空轮询循环。`,
                 'warn'
               );
-              await rerunStep7WithinAttemptCap(currentError, visibleStep, authLoginStep, {
+              await rerunStep7WithinAttemptTriggerCap(currentError, visibleStep, authLoginStep, {
                 logMessage: `邮箱通信异常持续未恢复，正在回到步骤 ${authLoginStep} 重新发起登录流程...`,
                 logStep: visibleStep,
                 logStepKey: 'fetch-login-code',
@@ -689,7 +691,7 @@
               : `步骤 ${visibleStep}：检测到邮箱轮询类失败，准备从步骤 ${authLoginStep} 重新开始（${mailPollingAttempt}/${STEP7_MAIL_POLLING_RECOVERY_MAX_ATTEMPTS}）...`,
             'warn'
           );
-          await rerunStep7WithinAttemptCap(currentError, visibleStep, authLoginStep, {
+          await rerunStep7WithinAttemptTriggerCap(currentError, visibleStep, authLoginStep, {
             logMessage: isStep8RestartStep7Error(currentError)
               ? `认证页进入重试/超时报错状态，正在回到步骤 ${authLoginStep} 重新发起登录流程...`
               : `正在回到步骤 ${authLoginStep}，重新发起登录验证码流程...`,

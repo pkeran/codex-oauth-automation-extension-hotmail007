@@ -6,7 +6,7 @@ const step8Source = fs.readFileSync('background/steps/fetch-login-code.js', 'utf
 const step8GlobalScope = {};
 const step8Api = new Function('self', `${step8Source}; return self.MultiPageBackgroundStep8;`)(step8GlobalScope);
 
-test('step 8 escalates repeated direct rerun-step7 recoveries into RESTART_CURRENT_ATTEMPT', async () => {
+test('step 8 escalates on the third direct rerun-step7 trigger into RESTART_CURRENT_ATTEMPT', async () => {
   const calls = {
     rerunStep7: 0,
     ensureReady: 0,
@@ -62,11 +62,11 @@ test('step 8 escalates repeated direct rerun-step7 recoveries into RESTART_CURRE
   assert.equal(error?.code, 'RESTART_CURRENT_ATTEMPT');
   assert.equal(error?.restartReasonCode, 'step8_rerun_step7_limit_exceeded');
   assert.match(String(error?.message || ''), /RESTART_CURRENT_ATTEMPT::STEP8_RERUN_STEP7_LIMIT_EXCEEDED::/);
-  assert.equal(calls.rerunStep7, 2);
+  assert.equal(calls.rerunStep7, 2, 'limit=3 uses trigger-count semantics, so the third trigger escalates instead of performing a third rerun');
   assert.equal(calls.ensureReady, 3);
 });
 
-test('step 8 escalates repeated polling-driven rerun-step7 recoveries into RESTART_CURRENT_ATTEMPT', async () => {
+test('step 8 escalates on the third polling-driven rerun-step7 trigger into RESTART_CURRENT_ATTEMPT', async () => {
   const calls = {
     rerunStep7: 0,
     ensureReady: 0,
@@ -125,6 +125,6 @@ test('step 8 escalates repeated polling-driven rerun-step7 recoveries into RESTA
   assert.equal(error?.code, 'RESTART_CURRENT_ATTEMPT');
   assert.equal(error?.restartReasonCode, 'step8_rerun_step7_limit_exceeded');
   assert.match(String(error?.message || ''), /RESTART_CURRENT_ATTEMPT::STEP8_RERUN_STEP7_LIMIT_EXCEEDED::/);
-  assert.equal(calls.rerunStep7, 2);
+  assert.equal(calls.rerunStep7, 2, 'limit=3 uses trigger-count semantics, so the third trigger escalates instead of performing a third rerun');
   assert.equal(calls.ensureReady >= 12, true);
 });
