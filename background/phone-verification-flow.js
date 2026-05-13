@@ -6205,8 +6205,13 @@
         };
         const inspectSignupPhoneVerificationHttp500AfterCode = async (tabId, causeError = null) => {
           const buildSnapshotResult = (snapshot = {}, probeError = null) => {
-            const url = String(snapshot?.url || '').trim();
-            if (!/\/contact-verification(?:[/?#]|$)/i.test(url)) {
+            const matchedUrl = [
+              snapshot?.pendingUrl,
+              snapshot?.url,
+            ]
+              .map((value) => String(value || '').trim())
+              .find((value) => /\/contact-verification(?:[/?#]|$)/i.test(value));
+            if (!matchedUrl) {
               return null;
             }
             const title = String(snapshot?.title || '').trim();
@@ -6224,7 +6229,7 @@
               verificationHttp500: true,
               errorCode: PHONE_ERROR_CODE_SIGNUP_VERIFICATION_HTTP_500,
               errorText: combined || 'OpenAI contact-verification page returned HTTP ERROR 500 after signup SMS code was received.',
-              url,
+              url: matchedUrl,
             };
           };
 
