@@ -6203,6 +6203,65 @@
           restartError.phoneSignupFreshAttemptResumeStep = 2;
           throw restartError;
         };
+        const inspectSignupPhoneVerificationHttp500AfterCode = async (tabId, causeError = null) => {
+          const buildSnapshotResult = (snapshot = {}, probeError = null) => {
+            const url = String(snapshot?.url || '').trim();
+            if (!/\/contact-verification(?:[/?#]|$)/i.test(url)) {
+              return null;
+            }
+            const title = String(snapshot?.title || '').trim();
+            const probeMessage = String(probeError?.message || probeError || '').trim();
+            const causeMessage = String(causeError?.message || causeError || '').trim();
+            const combined = [title, probeMessage, causeMessage].filter(Boolean).join(' ').trim();
+            if (
+              !isPhoneResendServerError(combined)
+              && !isAuthContentScriptUnreachableError(probeError)
+              && !isAuthContentScriptUnreachableError(causeError)
+            ) {
+              return null;
+            }
+            return {
+              verificationHttp500: true,
+              errorCode: PHONE_ERROR_CODE_SIGNUP_VERIFICATION_HTTP_500,
+              errorText: combined || 'OpenAI contact-verification page returned HTTP ERROR 500 after signup SMS code was received.',
+              url,
+            };
+          };
+
+          try {
+            const result = await sendToContentScriptResilient('signup-page', {
+              type: 'GET_VERIFICATION_ERROR_OUTCOME',
+              step: 4,
+              source: 'background',
+              payload: {},
+            }, {
+              timeoutMs: 5000,
+              responseTimeoutMs: 2000,
+              retryDelayMs: 400,
+              logStep: 4,
+              logStepKey: 'fetch-signup-code',
+            });
+            if (isSignupPhoneVerificationHttp500Result(result)) {
+              return result;
+            }
+          } catch (probeError) {
+            const chromeApi = globalThis?.chrome;
+            if (chromeApi?.tabs?.get) {
+              const snapshot = await chromeApi.tabs.get(tabId).catch(() => null);
+              const snapshotResult = buildSnapshotResult(snapshot, probeError);
+              if (snapshotResult) {
+                return snapshotResult;
+              }
+            }
+            return null;
+          }
+
+          if (causeError && globalThis?.chrome?.tabs?.get) {
+            const snapshot = await globalThis.chrome.tabs.get(tabId).catch(() => null);
+            return buildSnapshotResult(snapshot, null);
+          }
+          return null;
+        };
         try {
           for (let attempt = 1; attempt <= DEFAULT_PHONE_SUBMIT_ATTEMPTS; attempt += 1) {
             throwIfStopped();
@@ -6253,9 +6312,23 @@
               stepKey: 'fetch-signup-code',
             });
 
-            const submitResult = await submitSignupPhoneVerificationCode(tabId, code, {
-              signupProfile: options.signupProfile || null,
-            });
+            const preSubmitHttp500 = await inspectSignupPhoneVerificationHttp500AfterCode(tabId);
+            if (preSubmitHttp500) {
+              await restartCurrentAttemptForSignupVerificationHttp500(preSubmitHttp500);
+            }
+
+            let submitResult;
+            try {
+              submitResult = await submitSignupPhoneVerificationCode(tabId, code, {
+                signupProfile: options.signupProfile || null,
+              });
+            } catch (submitError) {
+              const postSubmitHttp500 = await inspectSignupPhoneVerificationHttp500AfterCode(tabId, submitError);
+              if (postSubmitHttp500) {
+                await restartCurrentAttemptForSignupVerificationHttp500(postSubmitHttp500);
+              }
+              throw submitError;
+            }
 
             if (isSignupPhoneTerminalRejectResult(submitResult)) {
               await restartCurrentAttemptForRejectedSignupNumber(submitResult);

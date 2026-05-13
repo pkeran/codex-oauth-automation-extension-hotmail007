@@ -108,3 +108,59 @@ return {
     errorText,
   });
 });
+
+test('handleCommand exposes signup verification http500 probe result', async () => {
+  const errorText = 'auth.openai.com is currently unable to handle this request. HTTP ERROR 500';
+  const api = new Function(`
+${extractConst('INVALID_VERIFICATION_CODE_PATTERN')}
+${extractConst('PHONE_VERIFICATION_DELIVERY_BLOCKED_PATTERN')}
+${extractConst('PHONE_VERIFICATION_NUMBER_USED_PATTERN')}
+${extractConst('PHONE_VERIFICATION_NUMBER_INVALID_PATTERN')}
+${extractConst('PHONE_VERIFICATION_HTTP_500_PATTERN')}
+const VERIFICATION_CODE_INPUT_SELECTOR = 'input[name="code"]';
+${extractFunction('getVerificationErrorMessages')}
+${extractFunction('getVerificationErrorText')}
+${extractFunction('getVerificationErrorOutcome')}
+${extractFunction('handleCommand')}
+
+const errorNode = {
+  textContent: ${JSON.stringify(errorText)},
+};
+const location = {
+  href: 'https://auth.openai.com/contact-verification',
+  pathname: '/contact-verification',
+};
+const document = {
+  title: 'This page isn\\'t working',
+  body: {
+    textContent: ${JSON.stringify(errorText)},
+  },
+  querySelectorAll(selector) {
+    const text = String(selector || '');
+    if (text.includes('react-aria-FieldError') || text.includes('[class*="error"]')) {
+      return [errorNode];
+    }
+    return [];
+  },
+  querySelector() {
+    return null;
+  },
+};
+
+return {
+  handleCommand,
+};
+`)();
+
+  const outcome = await api.handleCommand({
+    type: 'GET_VERIFICATION_ERROR_OUTCOME',
+    step: 4,
+  });
+
+  assert.deepEqual(outcome, {
+    verificationHttp500: true,
+    errorCode: 'PHONE_SIGNUP_VERIFICATION_HTTP_500',
+    errorText,
+    url: 'https://auth.openai.com/contact-verification',
+  });
+});

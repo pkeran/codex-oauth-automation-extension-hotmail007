@@ -812,6 +812,12 @@ test('signup phone helper completes signup SMS verification without touching add
     purpose: message.payload?.purpose,
   })), [
     {
+      type: 'GET_VERIFICATION_ERROR_OUTCOME',
+      step: 4,
+      code: undefined,
+      purpose: undefined,
+    },
+    {
       type: 'SUBMIT_PHONE_VERIFICATION_CODE',
       step: 4,
       code: '123456',
@@ -1035,6 +1041,7 @@ test('signup phone helper retires current number and restarts current attempt wh
   );
 
   assert.deepStrictEqual(contentMessages.map((message) => message.type), [
+    'GET_VERIFICATION_ERROR_OUTCOME',
     'SUBMIT_PHONE_VERIFICATION_CODE',
   ]);
   assert.deepStrictEqual(statusActions, ['8']);
@@ -1144,6 +1151,7 @@ test('signup phone helper retires current number and restarts current attempt wh
   );
 
   assert.deepStrictEqual(contentMessages.map((message) => message.type), [
+    'GET_VERIFICATION_ERROR_OUTCOME',
     'SUBMIT_PHONE_VERIFICATION_CODE',
   ]);
   assert.deepStrictEqual(statusActions, ['8']);
@@ -1244,6 +1252,7 @@ test('signup phone helper preserves current activation and code when submit repo
   );
 
   assert.deepStrictEqual(contentMessages.map((message) => message.type), [
+    'GET_VERIFICATION_ERROR_OUTCOME',
     'SUBMIT_PHONE_VERIFICATION_CODE',
   ]);
   assert.deepStrictEqual(statusActions, []);
@@ -1252,6 +1261,191 @@ test('signup phone helper preserves current activation and code when submit repo
   assert.equal(currentState.signupPhoneVerificationPurpose, 'signup');
   assert.equal(currentState.currentPhoneVerificationCode, '230059');
   assert.equal(currentState.currentPhoneActivation.activationId, 'add-phone-activation');
+});
+
+test('signup phone helper checks contact-verification http500 after receiving signup SMS before submit', async () => {
+  const contentMessages = [];
+  const statusActions = [];
+  let currentState = {
+    heroSmsApiKey: 'demo-key',
+    heroSmsReuseEnabled: false,
+    phoneCodeWaitSeconds: 15,
+    phoneCodeTimeoutWindows: 1,
+    phoneCodePollIntervalSeconds: 1,
+    phoneCodePollMaxRounds: 1,
+    signupPhoneNumber: '56986198316',
+    signupPhoneVerificationPurpose: 'signup',
+    signupPhoneActivation: {
+      activationId: 'signup-http500-pre-submit',
+      latestActivationId: 'signup-http500-pre-submit',
+      phoneNumber: '56986198316',
+      provider: 'hero-sms',
+      serviceCode: 'dr',
+      countryId: 56,
+      successfulUses: 0,
+      maxUses: 3,
+    },
+  };
+  const helpers = api.createPhoneVerificationHelpers({
+    addLog: async () => {},
+    ensureStep8SignupPageReady: async () => {},
+    fetchImpl: async (url) => {
+      const parsedUrl = new URL(url);
+      const action = parsedUrl.searchParams.get('action');
+      if (action === 'getStatus') {
+        return {
+          ok: true,
+          text: async () => 'STATUS_OK:230059',
+        };
+      }
+      if (action === 'setStatus') {
+        statusActions.push(parsedUrl.searchParams.get('status'));
+        return {
+          ok: true,
+          text: async () => 'ACCESS_READY',
+        };
+      }
+      throw new Error(`Unexpected HeroSMS action: ${action}`);
+    },
+    getOAuthFlowStepTimeoutMs: async (fallback) => fallback,
+    getState: async () => currentState,
+    sendToContentScriptResilient: async (_source, message) => {
+      contentMessages.push(message);
+      if (message.type === 'GET_VERIFICATION_ERROR_OUTCOME') {
+        return {
+          verificationHttp500: true,
+          errorCode: 'PHONE_SIGNUP_VERIFICATION_HTTP_500',
+          errorText: 'HTTP ERROR 500',
+          url: 'https://auth.openai.com/contact-verification',
+        };
+      }
+      if (message.type === 'SUBMIT_PHONE_VERIFICATION_CODE') {
+        throw new Error('submit should not be called after pre-submit http500 probe');
+      }
+      throw new Error(`Unexpected content-script message: ${message.type}`);
+    },
+    setState: async (updates) => {
+      currentState = { ...currentState, ...updates };
+    },
+    sleepWithStop: async () => {},
+    throwIfStopped: () => {},
+  });
+
+  await assert.rejects(
+    helpers.completeSignupPhoneVerificationFlow(77, {
+      state: currentState,
+    }),
+    (error) => {
+      assert.equal(error?.code, 'RESTART_CURRENT_ATTEMPT');
+      assert.equal(error?.reason, 'PHONE_SIGNUP_VERIFICATION_HTTP_500');
+      assert.equal(error?.phoneSignupFreshAttemptResumeStep, 2);
+      return true;
+    }
+  );
+
+  assert.deepStrictEqual(contentMessages.map((message) => message.type), [
+    'GET_VERIFICATION_ERROR_OUTCOME',
+  ]);
+  assert.deepStrictEqual(statusActions, []);
+  assert.equal(currentState.signupPhoneActivation.activationId, 'signup-http500-pre-submit');
+  assert.equal(currentState.signupPhoneActivation.step4Http500RecoveryCount, 1);
+  assert.equal(currentState.currentPhoneVerificationCode, '230059');
+});
+
+test('signup phone helper rechecks contact-verification http500 when submit transport fails after SMS', async () => {
+  const contentMessages = [];
+  const statusActions = [];
+  let probeCount = 0;
+  let currentState = {
+    heroSmsApiKey: 'demo-key',
+    heroSmsReuseEnabled: false,
+    phoneCodeWaitSeconds: 15,
+    phoneCodeTimeoutWindows: 1,
+    phoneCodePollIntervalSeconds: 1,
+    phoneCodePollMaxRounds: 1,
+    signupPhoneNumber: '56986198316',
+    signupPhoneVerificationPurpose: 'signup',
+    signupPhoneActivation: {
+      activationId: 'signup-http500-race',
+      latestActivationId: 'signup-http500-race',
+      phoneNumber: '56986198316',
+      provider: 'hero-sms',
+      serviceCode: 'dr',
+      countryId: 56,
+      successfulUses: 0,
+      maxUses: 3,
+    },
+  };
+  const helpers = api.createPhoneVerificationHelpers({
+    addLog: async () => {},
+    ensureStep8SignupPageReady: async () => {},
+    fetchImpl: async (url) => {
+      const parsedUrl = new URL(url);
+      const action = parsedUrl.searchParams.get('action');
+      if (action === 'getStatus') {
+        return {
+          ok: true,
+          text: async () => 'STATUS_OK:230059',
+        };
+      }
+      if (action === 'setStatus') {
+        statusActions.push(parsedUrl.searchParams.get('status'));
+        return {
+          ok: true,
+          text: async () => 'ACCESS_READY',
+        };
+      }
+      throw new Error(`Unexpected HeroSMS action: ${action}`);
+    },
+    getOAuthFlowStepTimeoutMs: async (fallback) => fallback,
+    getState: async () => currentState,
+    sendToContentScriptResilient: async (_source, message) => {
+      contentMessages.push(message);
+      if (message.type === 'GET_VERIFICATION_ERROR_OUTCOME') {
+        probeCount += 1;
+        if (probeCount === 1) {
+          return {};
+        }
+        return {
+          verificationHttp500: true,
+          errorCode: 'PHONE_SIGNUP_VERIFICATION_HTTP_500',
+          errorText: 'HTTP ERROR 500',
+          url: 'https://auth.openai.com/contact-verification',
+        };
+      }
+      if (message.type === 'SUBMIT_PHONE_VERIFICATION_CODE') {
+        throw new Error('Receiving end does not exist.');
+      }
+      throw new Error(`Unexpected content-script message: ${message.type}`);
+    },
+    setState: async (updates) => {
+      currentState = { ...currentState, ...updates };
+    },
+    sleepWithStop: async () => {},
+    throwIfStopped: () => {},
+  });
+
+  await assert.rejects(
+    helpers.completeSignupPhoneVerificationFlow(77, {
+      state: currentState,
+    }),
+    (error) => {
+      assert.equal(error?.code, 'RESTART_CURRENT_ATTEMPT');
+      assert.equal(error?.reason, 'PHONE_SIGNUP_VERIFICATION_HTTP_500');
+      assert.equal(error?.phoneSignupFreshAttemptResumeStep, 2);
+      return true;
+    }
+  );
+
+  assert.deepStrictEqual(contentMessages.map((message) => message.type), [
+    'GET_VERIFICATION_ERROR_OUTCOME',
+    'SUBMIT_PHONE_VERIFICATION_CODE',
+    'GET_VERIFICATION_ERROR_OUTCOME',
+  ]);
+  assert.deepStrictEqual(statusActions, []);
+  assert.equal(currentState.signupPhoneActivation.activationId, 'signup-http500-race');
+  assert.equal(currentState.signupPhoneActivation.step4Http500RecoveryCount, 1);
+  assert.equal(currentState.currentPhoneVerificationCode, '230059');
 });
 
 test('signup phone helper completes login SMS verification by reusing the completed signup activation', async () => {
